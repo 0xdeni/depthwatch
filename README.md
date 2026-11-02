@@ -7,6 +7,15 @@
 [refresh-badge]: https://github.com/0xdeni/depthwatch/actions/workflows/refresh-site.yml/badge.svg
 [refresh]: https://github.com/0xdeni/depthwatch/actions/workflows/refresh-site.yml
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/depthwatch-hero-dark.png" />
+  <img
+    src="docs/images/depthwatch-hero-light.png"
+    width="1000"
+    alt="A Depthwatch pool page for WETH / USDC on Aerodrome Slipstream: the depth curve shows $5.10M of selling to push the price down 2 % and $6.08M of buying to lift it 2 %, beside a Liquidity Health Score of 93, grade A (demo data)"
+  />
+</picture>
+
 Depthwatch is an open-source liquidity observatory for Base mainnet. For each Uniswap, Aerodrome
 and Aero pool it tracks, it measures how much buying or selling it takes to move the price and
 what a trade of a given size costs, and publishes the numbers through a dashboard, a REST API and

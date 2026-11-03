@@ -7,7 +7,9 @@ Every address in `packages/chain/src/addresses.ts` was verified on chain on 2026
 53,061,932 (code present plus one contract-specific view each; see §2.8 of the open items
 below), with no mismatch; §2.8 also flags the Aerodrome Voter's current state. The Aero entries
 (`## aero`, added on 2026-10-28 after Aerodrome became Aero) were read on chain at blocks
-53,211,601–53,213,030 (§2.9).
+53,211,601–53,213,030 (§2.9). The trade routers and quoters and the token checks behind the trade
+allowlist (`## trade`) were read on 2026-11-03 at blocks 53,467,794–53,468,151 through the public
+endpoint `https://mainnet.base.org` (§2.10, §2.11).
 
 Base-native addresses (here the `weth` WETH9 predeploy) can also be re-checked on the first live run against Base's contract-address reference, <https://docs.base.org/specifications/reference/base-contracts.md>, which Base's AGENTS.md describes as "canonical contract addresses for Base Mainnet and Base Sepolia" (see [../base/base-agents-reference.md](../base/base-agents-reference.md)). Whether that page lists any DEX or Multicall3 address is unverified: those stay tied to the per-address sources and verdicts below and to the factory logs read on the first live run.
 
@@ -44,6 +46,7 @@ Sources and notes per item:
 - `uniswap_v3_swap_router_02`: <https://raw.githubusercontent.com/Uniswap/docs/main/content/protocols/v3/deployments/v3-base-deployments.mdx>, <https://developers.uniswap.org/docs/protocols/v3/deployments/v3-base-deployments>, <https://raw.githubusercontent.com/Uniswap/sdk-core/main/src/addresses.ts>, <https://docs.base.org/chain/contracts>
   - sdk-core: BASE_ADDRESSES.swapRouter02Address; Base docs label it simply 'swapRouter'. Uniswap docs note UniversalRouter is now the preferred swap entrypoint, but SwapRouter02 remains deployed and is fine for read-only/simulation use.
   - verifier: confirmed via <https://www.cobo.com/agentic-wallet/recipes/uniswap-v3-swap (search snippet: 'swap_router_02 (BASE_ETH): 0x2626664c2603336E57B271c5C0b26F421741e481'); https://pkg.go.dev/github.com/aicora/w3x/dex/uniswap/core (BaseAddresses.SwapRouter02Address, fetched directly)> — Could not refute. Third-party Go port and the Cobo integration recipe both give the identical address for Base mainnet (cobo.com: unverified). Note: tradingstrategy's web3-ethereum-defi lists a different Base 'router' (0x5788F91Aa320e0610122fb88B39Ab8f35e50040b) but its own source comment says this is 'SwapRouter02 deployed by Mikko' from tradingstrategy-ai/swap-router-contracts, i.e. their private redeploy, not Uniswap's canonical SwapRouter02, so it does not contradict the claim. Ethereum/Polygon SwapRouter02 is 0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45, must not be reused on Base.
+  - 2026-11-03: re-cited from Uniswap's own deployments page and deployment registry and read on chain (`factory()`, `WETH9()`); see `## trade` and §2.10.
 - `uniswap_v3_pool_weth_usdc_500`: <https://basescan.org/nft/0x03a520b32c04bf3beef7beb72e919cf822ed34f1/266333>, <https://www.geckoterminal.com/base/pools/0xd0b53d9277642d899df5c87a3966a349a798f224>, <https://defillama.com/yields/pool/8b3cadb9-b9f1-4539-998c-18c02e9e65a0>, <https://dexscreener.com/base/0xd0b53d9277642d899df5c87a3966a349a798f224>, <https://dexrabbit.bitquery.io/base/pool/0xd0b53d9277642d899df5c87a3966a349a798f224>
   - Basescan's NFT page for NPM position #266333 (search snippet) lists this pool address with USDC 0x8335...2913, WETH 0x4200...0006, Fee Tier 0.05%; GeckoTerminal titles it 'USDC/WETH on Uniswap V3 (Base) with 0.05% Fee'; DeFiLlama lists WETH-USDC 0.05% Uniswap V3 Base with this address. token0 = WETH (0x4200...0006), token1 = USDC (0x8335...2913) by the factory's address-sort rule (lower address is token0); fee = 500, tickSpacing = 10. Aggregator snapshots: TVL ~$8.6M (Dexscreener), ~$10.5M (DeFiLlama), ~$13.4M (Bitquery, Mar 2026). The explorer page itself is unverified - confirm token0()/fee() at first run.
   - verifier: confirmed via <https://basescan.org/nft/0x03a520b32c04bf3beef7beb72e919cf822ed34f1/1778385 (search-result title 'Uniswap - 0.05% - USDC/WETH', a different position from #266333 above; snippet lists this pool address with USDC 0x8335...2913, WETH 0x4200...0006, Fee Tier 0.05%); https://dexpaprika.com/base/pool/0xd0b53d9277642d899df5c87a3966a349a798f224 and https://dexpaprika.com/base/uniswap_v3 (search snippets, pool created 2023-09-06); https://tradingstrategy.ai/trading-view/base/uniswap-v3/eth-usdc-fee-5 (search result for this address; URL slug = ETH-USDC 5 bps on Uniswap v3 Base)> — Could not refute, but confirmation rests on search-engine snippets only (basescan.org, dexpaprika.com, tradingstrategy.ai, coingecko.com and the explorer/aggregator APIs blockscout, sourcify, etherscan v2, routescan, dexscreener and geckoterminal are unverified), and no fetchable file was found that hardcodes this pool. All snippets agree: Uniswap v3, Base, WETH/USDC, 0.05% fee. Note that Uniswap's own v3-subgraph Base config (https://raw.githubusercontent.com/Uniswap/v3-subgraph/main/config/base/chain.ts) uses a different reference pool, STABLE_TOKEN_POOL = 0x4c36388be6f416a29c8d8eee81c771ce6be14b18 (the older WETH/USDbC pool), which does not contradict this pool's identity but is a reminder that WETH/USDbC pools also exist. token0/token1 ordering and fee=500/tickSpacing=10 should still be verified on-chain at first run as noted above.
@@ -970,6 +973,158 @@ Unresolved:
 
 ---
 
+## trade
+
+The routers and quoters of the dashboard's single-pool swap (`exactInputSingle`, recipient the
+connected account) and the token allowlist, in `addresses.ts` as `TRADE_ROUTES` and `TRADE_TOKENS`
+(subpath `@depthwatch/chain/addresses`). Each router is bound to one pool factory: a swap goes to
+the router whose `factory()` is the pool's own `factory()`. Every source below was read again on
+2026-11-03 at the commit named (the repository's remote HEAD that day, `git ls-remote`), and every
+address was read on Base mainnet through the public endpoint `https://mainnet.base.org` at block
+53,467,794 (2026-11-03T16:55:35Z; §2.10). The Aerodrome Slipstream factory 0x9592… (deprecated,
+`SLIPSTREAM_DEPRECATED_EARLY_DEPLOYMENT`) has no router or quoter in any source and gets no route.
+
+| key                                 | name                                                 | address                                      | source confidence | independent check |
+| ----------------------------------- | ---------------------------------------------------- | -------------------------------------------- | ----------------- | ----------------- |
+| `uniswap_v3_swap_router_02`         | Uniswap SwapRouter02 (v3 factory 0x3312…)            | `0x2626664c2603336E57B271c5C0b26F421741e481` | high              | confirmed         |
+| `uniswap_v3_quoter_v2`              | Uniswap QuoterV2 (v3 factory 0x3312…)                | `0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a` | high              | confirmed         |
+| `slipstream_swap_router`            | Slipstream SwapRouter (initial, factory 0x5e7B…)     | `0xBE6D8f0d05cC4be24d5167a3eF062215bE6D18a5` | high              | confirmed         |
+| `slipstream_quoter_v2`              | Slipstream QuoterV2 (initial, factory 0x5e7B…)       | `0x254cF9E1E6e233aa1AC962CB9B05b2cfeAaE15b0` | high              | confirmed         |
+| `slipstream_swap_router_gauge_caps` | Slipstream SwapRouter (gauge-caps, factory 0xaDe6…)  | `0xcbBb8035cAc7D4B3Ca7aBb74cF7BdF900215Ce0D` | medium            | confirmed         |
+| `slipstream_quoter_gauge_caps`      | Slipstream Quoter (gauge-caps, factory 0xaDe6…)      | `0x3d4C22254F86f64B7eC90ab8F7aeC1FBFD271c6C` | medium            | confirmed         |
+| `slipstream_swap_router_gauges_v3`  | Slipstream SwapRouter (gauges-v3, factory 0xf8f2…)   | `0x698Cb2b6dd822994581fEa6eA4Fc755d1363A92F` | medium            | confirmed         |
+| `slipstream_quoter_gauges_v3`       | Slipstream Quoter (gauges-v3, factory 0xf8f2…)       | `0x514c8B5f54112481E28028F1166Bd78501089259` | medium            | confirmed         |
+| `aero_cl_swap_router`               | Aero Slipstream SwapRouter (CLFactory 0x9CB2…)       | `0x9Ee35Bf1bd69a03c6F0393582030fCe8Bb93D418` | medium            | not confirmed     |
+| `aero_metaquoter`                   | Aero Metaquoter (FactoryRegistry 0x7b2A…, CL quotes) | `0x1dDfeC5058180C207F55BB77D95AcDd0d8227868` | medium            | not confirmed     |
+
+Sources and notes per item (verdict last):
+- `uniswap_v3_swap_router_02`: <https://raw.githubusercontent.com/Uniswap/docs/main/content/protocols/v3/deployments/v3-base-deployments.mdx>
+  (Uniswap/docs@1c7597d, row SwapRouter02; the page says these addresses were deployed from
+  `@uniswap/swap-router-contracts@1.1.0`) and
+  <https://raw.githubusercontent.com/Uniswap/contracts/main/deployments/json/8453.json>
+  (Uniswap/contracts@ac1f0be, `latest.SwapRouter02`, deployment tx 0x7b983c25…; the `history` entry
+  records constructor `factoryV3` 0x33128a8f…, `_positionManager` 0x03a520b3…, `_WETH9` 0x4200…0006,
+  `_factoryV2` 0). These replace the third-party verifier citations of the `## uniswap-v3` entry.
+  - Block 53,467,794: 24,497 bytes of code; `factory()` = the v3 factory 0x33128a8f…; `WETH9()` =
+    0x4200…0006.
+  - Verdict: confirmed; route `uniswap-v3`.
+- `uniswap_v3_quoter_v2`: the same docs page (row QuoterV2) and registry (`latest.QuoterV2`,
+  deployment tx 0x083ce62f…). The registry's `history` entry records constructor `_factory`
+  0x9DAaA9041E84025aF8b8d941B302B22204f0a267, which disagrees with the chain: that address has code
+  but answers neither `factory()` nor `WETH9()`, and the quoter's own `factory()` is the v3 factory.
+  The registry entry is taken as a data error; the reading wins.
+  - Block 53,467,794: 8,273 bytes; `factory()` = 0x33128a8f…; `WETH9()` = 0x4200…0006;
+    `quoteExactInputSingle` 0.001 WETH → USDC, fee 500 = 2.293248 USDC on 0xd0b53d92…, whose
+    `factory()` is 0x33128a8f….
+  - Verdict: confirmed (already in `addresses.ts` as `uniswapV3.quoterV2`).
+- `slipstream_swap_router`: <https://raw.githubusercontent.com/aerodrome-finance/slipstream/main/README.md>
+  (aerodrome-finance/slipstream@f8717fa, "Initial Deployment", row SwapRouter) and
+  <https://raw.githubusercontent.com/aerodrome-finance/docs/main/content/security.mdx>
+  (aerodrome-finance/docs@99680a7, Slipstream table, row SwapRouter, which lists only this
+  deployment's PoolFactory, Quoter and SwapRouter). Not in `DeployCL-Base.json` (deployed later).
+  - Block 53,467,794: 9,908 bytes; `factory()` = 0x5e7bb104… (initial); `WETH9()` = 0x4200…0006.
+  - Verdict: confirmed; answers item 8 of §3.
+- `slipstream_quoter_v2`: the same README (row QuoterV2) and docs page (row Quoter), and
+  <https://raw.githubusercontent.com/aerodrome-finance/slipstream/main/script/constants/output/DeployCL-Base.json>
+  (key `Quoter`, with `PoolFactory` 0x5e7B…).
+  - Block 53,467,794: 6,934 bytes; `factory()` = 0x5e7bb104…; `WETH9()` = 0x4200…0006;
+    `quoteExactInputSingle` 0.001 WETH → USDC, tick spacing 100 = 2.293781 USDC on 0xb2cc224c…,
+    whose `factory()` is 0x5e7bb104….
+  - Verdict: confirmed.
+- `slipstream_swap_router_gauge_caps` and `slipstream_quoter_gauge_caps`: the README ("Gauge Caps
+  Deployment", rows SwapRouter and Quoter) and
+  <https://raw.githubusercontent.com/aerodrome-finance/slipstream/main/script/constants/output/DeployCL-Base-Gauge-Caps.json>
+  (keys `SwapRouter`, `Quoter`, with `PoolFactory` 0xaDe6…). Aerodrome's docs page does not list
+  them, hence medium.
+  - Block 53,467,794: router 9,908 bytes, quoter 6,934 bytes; both `factory()` = 0xade65c38…
+    (gauge-caps) and `WETH9()` = 0x4200…0006; quote 0.001 WETH → USDC, tick spacing 50 = 2.294111
+    USDC on 0xc758d81b…, whose `factory()` is 0xade65c38….
+  - Verdict: confirmed.
+- `slipstream_swap_router_gauges_v3` and `slipstream_quoter_gauges_v3`: the README ("Gauges V3
+  Deployment", rows SwapRouter and Quoter) and
+  <https://raw.githubusercontent.com/aerodrome-finance/slipstream/main/script/constants/output/DeployCL-Base-MinUnstake.json>
+  (keys `SwapRouter`, `Quoter`, with `PoolFactory` 0xf8f2…). Not on Aerodrome's docs page.
+  - Block 53,467,794: router 9,908 bytes, quoter 6,934 bytes; both `factory()` = 0xf8f2eb49…
+    (gauges-v3) and `WETH9()` = 0x4200…0006; quote 0.001 WETH → USDC, tick spacing 50 = 2.293505
+    USDC on 0x3fe04a59…, whose `factory()` is 0xf8f2eb49….
+  - Verdict: confirmed.
+- `aero_cl_swap_router`: <https://raw.githubusercontent.com/dromos-labs/metadex-slipstream-public/f99f2095918cab69eafeffa2c3d0a8762de737b7/deployment-addresses/cl-base.json>
+  (dromos-labs/metadex-slipstream-public@f99f209, key `swapRouter`; constructor arguments the
+  CLFactory 0x9cb22058… and WETH 0x4200…0006).
+  - Block 53,467,794: 10,060 bytes; `factory()` = 0x9cb22058… (the Aero CLFactory); `WETH9()` =
+    0x4200…0006.
+  - Aero's own pages: app.aero.xyz did not resolve when first tried. On 2026-11-03 a
+    script fetched <https://app.aero.xyz/docs/security/> ("Security Overview | Aero Docs") as
+    static HTML: its "Aero Slipstream" table lists SwapRouter 0x9Ee35Bf1… under "All chains", its
+    "Chain-specific addresses", Base table lists CLFactory 0x9CB22058… and FactoryRegistry
+    0x7b2A2c12…, and it links "MetaDEX Slipstream Repository" to
+    github.com/dromos-labs/metadex-slipstream-public; <https://aero.xyz/> links
+    github.com/Dromos-Labs. That page was not opened in a browser, which is what the first item
+    of Unresolved below asks for.
+  - Verdict: not confirmed (Aero's contracts page not yet confirmed in a browser; the CL MEV-tax
+    threshold, Unresolved below, is unverified); the route is in `TRADE_ROUTES` with a `hold`, so
+    `tradeRouteFor` never returns it, and the `aero-slipstream` venue stays off.
+- `aero_metaquoter`: the same `cl-base.json` (key `metaquoter`; constructor argument the
+  FactoryRegistry 0x7b2a2c12…) and the same Aero docs table (row Metaquoter, "All chains"). Source:
+  `contracts/periphery/lens/Metaquoter.sol` at f99f209; it has no `factory()` and resolves each
+  pool's factory through `FactoryRegistry.targetToFactory(pool)`, so `factoryRegistry()` is its
+  binding.
+  - Block 53,467,794: 15,299 bytes; `factoryRegistry()` = 0x7b2a2c12… (`aeroV2.factoryRegistry`);
+    `factory()` reverts; `quoteExactInputSingleV3(0x2a430beb…, WETH, 0.001 WETH, 0)` = 2.292127
+    USDC, pool 0x2a430beb… (WETH/USDC tick spacing 100) `factory()` 0x9cb22058…; at 53,467,892 the
+    registry's `targetToFactory(0x2a430beb…)` is 0x9cb22058… and `isTargetFactoryApproved` of it is
+    true.
+  - Verdict: not confirmed, as the router above; venue off.
+
+Recorded for context only (not in `addresses.ts`): Paraswap's dex-lib pairs other routers and
+quoters with these factories (the `## aerodrome` notes). At block 53,467,794 each has code and is
+bound to the factory Paraswap names: router 0x1b2b6ce8… (12,190 bytes) and gauges-v3 router
+0x33a47a12… (9,908 bytes), quoters 0xfa2cb6d6… and 0x86d33dcb… (6,934 bytes), `factory()` 0x5e7b…,
+0xf8f2…, 0xade6… and 0xf8f2… respectively. More than one router serves a factory; the ones above
+are those of Aerodrome's own repository, and nothing else is used.
+
+ABI sources (the minimal ABIs in `packages/chain/src/abi/trade.ts`):
+Uniswap/swap-router-contracts@v1.1.0 `contracts/{SwapRouter02,V3SwapRouter}.sol`,
+`interfaces/{IV3SwapRouter,IMulticallExtended}.sol`; Uniswap/v3-periphery@24ccf01
+`contracts/interfaces/{IQuoterV2,IPeripheryPayments,IPeripheryImmutableState}.sol` and
+`contracts/lens/QuoterV2.sol`; Uniswap/v3-core@5ea68a7
+`contracts/interfaces/{IUniswapV3Factory,pool/IUniswapV3PoolImmutables}.sol` (both the repository's
+HEAD on 2026-11-03, `git ls-remote`: 24ccf014fe7f81d74a14c1689d6fdf123f280e45 and
+5ea68a77cb541c6b3812df783be71ba8c081e25f). Uniswap's Base deployments page names v3-periphery
+v1.0.0 for its deployments, but QuoterV2 is not in that tag (`contracts/lens/QuoterV2.sol` at
+`v1.0.0` answers 404), so the QuoterV2 ABI rests on HEAD and on its selector 0xc6a5026a in the
+deployed code (§2.10);
+aerodrome-finance/slipstream@f8717fa `contracts/periphery/{SwapRouter,lens/QuoterV2,base/Multicall,base/PeripheryPayments}.sol`,
+`contracts/periphery/interfaces/{ISwapRouter,IQuoterV2,IPeripheryPayments,IPeripheryImmutableState}.sol`,
+`contracts/core/interfaces/{ICLFactory,pool/ICLPoolConstants,pool/ICLPoolState}.sol`;
+dromos-labs/metadex-slipstream-public@f99f209 `contracts/periphery/{SwapRouter,lens/Metaquoter}.sol`,
+`contracts/periphery/interfaces/{ISwapRouter,IMetaquoter}.sol`. Facts the swap depends on:
+SwapRouter02's `ExactInputSingleParams` has no deadline (`multicall(uint256 deadline, bytes[])` adds
+it) and reads recipient `address(2)` (`Constants.ADDRESS_THIS`) as the router itself; every
+Slipstream router (Aerodrome's and Aero's) carries `deadline` inside the struct, keys pools by
+`int24 tickSpacing`, reads recipient `address(0)` as the router itself, has `multicall(bytes[])`
+and ends `exactInputSingle` with `refundETH()`; all of them have `unwrapWETH9(uint256
+amountMinimum, address recipient)`, so native ETH out is the swap to the router followed by
+`unwrapWETH9(minOut, account)` in one multicall. SwapRouter02's `exactInputSingle`
+(swap-router-contracts@v1.1.0 `V3SwapRouter.sol`) ends at the minimum-output check and refunds
+nothing: ETH a pool does not take stays in the router, where anyone's `refundETH()` takes it, so
+native ETH in on SwapRouter02 is the swap followed by `refundETH()` (v3-periphery
+`IPeripheryPayments.sol`) in the same multicall. No quoter signals a partial fill: QuoterV2
+(v3-periphery and Slipstream) returns the output of the input it used, so a quote whose
+`sqrtPriceX96After` is the open price limit is refused for every quoter.
+
+Unresolved:
+- Aero's contracts page: a maintainer opens <https://app.aero.xyz/docs/security/> in a browser
+  and confirms the two Aero rows; then the `hold` can be cleared in a change that cites this
+  section.
+- The Aero CL MEV-tax module 0x29F12cE5… (`## aero`) applies a tax above some priority fee; its
+  threshold for CL swaps was not read. A taxed swap fails the minimum-output check (gas lost, no
+  funds), but the panel sets the priority fee only once the threshold is known.
+- No runtime code was compared byte for byte with its source: the bindings above rest on the
+  views, on matching quotes and on the selectors found in the code (§2.10).
+
+---
+
 ## tokens-and-chain
 
 | key              | name                                                            | address                                      | source confidence | independent check |
@@ -1428,6 +1583,106 @@ scalingFactor 30,000,000) read `fee()` 2,055 at 53,211,635, 645 at 53,211,732, 7
 and 465 at 53,213,030: the fee is a reading of the block, not a tier. Its gauge 0x46a9dca7… held
 511 of the NFPM's tokens at 53,211,659.
 
+### 2.10 On-chain verification of the trade routes (2026-11-03)
+
+The routers and quoters of `## trade`, read through `https://mainnet.base.org` (public, no key) at
+block **53,467,794** (2026-11-03T16:55:35Z): `eth_getCode`, then the views through Multicall3, then
+one `eth_call` quote of 0.001 WETH → USDC per quoter on a WETH/USDC pool the venue's factory
+returns from `getPool` (about 30 requests in all). WETH9 is 0x4200…0006 everywhere.
+
+| `TRADE_ROUTES` entry              | address       | on-chain check (block 53,467,794)                                                                     | verdict           |
+| --------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------- | ----------------- |
+| `uniswap-v3` router               | `0x2626…e481` | 24,497 bytes; `factory()` 0x3312…fdfd (`uniswapV3.factory`); `WETH9()` WETH                           | verified on-chain |
+| `uniswap-v3` quoter               | `0x3d4e…b76a` | 8,273 bytes; `factory()` 0x3312…fdfd; `WETH9()` WETH; quote 2.293248 USDC (pool 0xd0b5…f224, fee 500) | verified on-chain |
+| `aerodrome-slipstream` initial    | `0xbe6d…18a5` | 9,908 bytes; `factory()` 0x5e7b…809a; `WETH9()` WETH                                                  | verified on-chain |
+| quoter                            | `0x254c…15b0` | 6,934 bytes; `factory()` 0x5e7b…809a; `WETH9()` WETH; quote 2.293781 USDC (0xb2cc…dc59, spacing 100)  | verified on-chain |
+| `aerodrome-slipstream` gauge-caps | `0xcbbb…ce0d` | 9,908 bytes; `factory()` 0xade6…716a; `WETH9()` WETH                                                  | verified on-chain |
+| quoter                            | `0x3d4c…1c6c` | 6,934 bytes; `factory()` 0xade6…716a; `WETH9()` WETH; quote 2.294111 USDC (0xc758…54e0, spacing 50)   | verified on-chain |
+| `aerodrome-slipstream` gauges-v3  | `0x698c…a92f` | 9,908 bytes; `factory()` 0xf8f2…61ef; `WETH9()` WETH                                                  | verified on-chain |
+| quoter                            | `0x514c…9259` | 6,934 bytes; `factory()` 0xf8f2…61ef; `WETH9()` WETH; quote 2.293505 USDC (0x3fe0…392a, spacing 50)   | verified on-chain |
+| `aero-slipstream` router          | `0x9ee3…d418` | 10,060 bytes; `factory()` 0x9cb2…7a76 (`aeroSlipstream[aero].factory`); `WETH9()` WETH                | on chain; held    |
+| Metaquoter                        | `0x1ddf…7868` | 15,299 bytes; `factoryRegistry()` 0x7b2a…8f3e; `factory()` reverts; quote 2.292127 USDC (0x2a43…bc24) | on chain; held    |
+
+Each quote pool's `token0()` is WETH, `token1()` USDC and `factory()` the route's factory; the
+five quotes lie within 0.09 % of one another. `fee()` at the block: 500, 150, 175, 375 and 818 pips.
+
+At block 53,468,151 every selector of `abi/trade.ts` appears as a PUSH4 in the runtime code of the
+contracts it is used with: SwapRouter02 `exactInputSingle` 0x04e45aaf, `multicall(uint256,bytes[])`
+0x5ae401dc; QuoterV2 `quoteExactInputSingle` 0xc6a5026a; the four Slipstream routers
+`exactInputSingle` 0xa026383e, `multicall(bytes[])` 0xac9650d8; the three Slipstream quoters
+`quoteExactInputSingle` 0x9e7defe6; the Metaquoter `quoteExactInputSingleV3` 0x0a674142,
+`factoryRegistry()` 0x3bf0c9fb; and on every router `unwrapWETH9(uint256,address)` 0x49404b7c,
+`factory()` 0xc45a0155, `WETH9()` 0x4aa4a4fc (`addresses.trade.test.ts` pins them). At block
+53,471,577 (2026-11-03T19:01:41Z) SwapRouter02's runtime code (24,497 bytes, one `eth_getCode`
+through `https://mainnet.base.org`) also holds `refundETH()` 0x12210e8a as a PUSH4.
+
+### 2.11 Token checks for the trade allowlist (2026-11-03)
+
+Every reference token of `addresses.ts` was read through `https://mainnet.base.org` at block
+**53,467,830** (2026-11-03T16:56:47Z), about 100 requests:
+- `decimals()`, `symbol()`, `name()`; the EIP-1967 implementation, admin and beacon slots and the
+  `org.zeppelinos.proxy.implementation` slot (Circle's proxies); identity views (`version()`,
+  `remoteToken()`, `bridge()`, `owner()`, `paused()`).
+- A scan of the runtime code (the implementation's, for a proxy) for the PUSH4 selectors of 38
+  rebasing, transfer-fee and freeze functions (`rebase`, `sharesOf`, `scaledBalanceOf`,
+  `isExcludedFromFee`, `taxFee`, `basisPointsRate`, `isBlacklisted`, `pause`, …). A heuristic: it
+  finds only the names it knows.
+- An `eth_simulateV1` transfer of 0.1 % of the largest WETH- or USDC-pool balance of the token
+  (Uniswap v3, Aerodrome v2 and Slipstream, Aero CL) from that pool to an empty address, then of
+  half of it back to the pool: the balances of both sides must move by exactly the amount and the
+  only log must be one `Transfer` of that amount. A fee-on-transfer token taxes exactly these
+  pool ↔ account transfers.
+- The verified source of each address and implementation on Sourcify
+  (`https://sourcify.dev/server/v2/contract/8453/<address>`), and for DEGEN, VIRTUAL, BRETT and
+  Aero's AERO the source itself.
+
+| token (`TOKENS.`) | decimals | contract (Sourcify)                                          | proxy                                   | transfer test | swap list |
+| ----------------- | -------- | ------------------------------------------------------------ | --------------------------------------- | ------------- | --------- |
+| `WETH`            | 18       | WETH9 (match)                                                | no                                      | exact         | allowed   |
+| `USDC`            | 6        | FiatTokenProxy → FiatTokenV2_2 0x2ce6…d779 (exact match)     | zeppelinos slot; pausable, blacklist    | exact         | allowed   |
+| `USDBC`           | 6        | Proxy → UpgradeableOptimismMintableERC20 0x1833…b463 (match) | EIP-1967, admin 0xd94e…f94f             | exact         | allowed   |
+| `CBBTC`           | 8        | FiatTokenProxy → FiatTokenV2_1 0x7458…aa72 (exact match)     | zeppelinos slot; pausable, blacklist    | exact         | allowed   |
+| `CBETH`           | 18       | Proxy → UpgradeableOptimismMintableERC20 0x07a7…4e1f (match) | EIP-1967, admin 0xd94e…f94f             | exact         | allowed   |
+| `WSTETH`          | 18       | OssifiableProxy → ERC20Bridged 0x69ce…3309 (exact match)     | EIP-1967, admin 0x0e37…eacf             | exact         | allowed   |
+| `DAI`             | 18       | OptimismMintableERC20 (match)                                | no                                      | exact         | allowed   |
+| `USDT` (bridged)  | 6        | `USDT` is L2StandardERC20 (exact match)                      | no                                      | exact         | allowed   |
+| `EURC`            | 6        | FiatTokenProxy → FiatTokenV2_2 0x2ce6…d779 (exact match)     | zeppelinos slot; pausable, blacklist    | exact         | allowed   |
+| `AERO_AERODROME`  | 18       | Aero (match)                                                 | no                                      | exact         | held back |
+| `DEGEN`           | 18       | DegenToken (exact match)                                     | no; owner can pause and mint ≤ 1 %/year | exact         | allowed   |
+| `VIRTUAL`         | 18       | OptimismMintableERC20 with LayerZero OFT (exact match)       | no; `owner()` 0                         | exact         | allowed   |
+| `BRETT`           | 18       | BrettToken (match)                                           | no; `owner()` 0; fee code inert (below) | exact         | allowed   |
+| `AERO`            | 18       | Token, Solady ERC20 (match)                                  | no                                      | exact         | allowed   |
+
+Every `decimals()`, `symbol()` and `name()` equals `addresses.ts`. Simulation holders (pools):
+WETH and USDC 0x6c561b44…, USDbC 0x98c7a233…, cbBTC 0x7aea2e8a…, cbETH 0x03bf2066…, wstETH
+0xa6385c73…, DAI 0xc18f50d6…, USDT 0x2dbe0e26…, EURC 0xe846373c…, Aerodrome's AERO 0x6cdcb1c4…,
+DEGEN 0xc9034c3e…, VIRTUAL 0x792f465e…, BRETT 0xba3f9458…, AERO 0xc85d5cb7…. Notes:
+- The selector scan hit only Circle's `isBlacklisted`, `blacklist`, `pause` and `paused` (USDC,
+  EURC, cbBTC) and DEGEN's `pause`/`paused`. A paused or blacklisted token makes the swap revert:
+  gas lost, no funds.
+- Rebasing: none of the sources is a rebasing token. wstETH is Lido's wrapped, non-rebasing
+  token (not stETH); cbETH on Base is a standard-bridge token whose balances change only by
+  transfer, mint and burn (`remoteToken()` is L1 cbETH 0xbe989514…); bridged USDT has no
+  `basisPointsRate` fee code (unlike Ethereum's USDT; `l1Token()` 0xdac17f95…).
+- BRETT's source has buy and sell fees with a swap-back, all owner-set: at block 53,467,875
+  `buyTotalFees()` and `sellTotalFees()` are 0, `limited()` false, `maxTransaction()` and
+  `maxWallet()` the whole supply and `owner()` address(0), so the `onlyOwner` setters can no
+  longer run; the swap-back returns early while its fee counters are 0, and the simulation logged
+  a single `Transfer` both ways.
+- Aerodrome's AERO passes the same checks but is held back: it shares the symbol
+  AERO with Aero's AERO, and Aero's `MIGRATION()` converts it one way.
+
+Swap allowlist (`TRADE_TOKENS`, 13 tokens): WETH (native ETH trades through it), USDC, cbBTC,
+cbETH, wstETH, AERO (Aero's), DAI, EURC, USDT (bridged), USDbC, DEGEN, VIRTUAL, BRETT.
+
+Not established read-only:
+- Upgrades: USDC, EURC, cbBTC, USDbC, cbETH and wstETH are proxies whose admins can replace the
+  implementation; the checks hold for the implementations read at the block.
+- `transferFrom` (how the routers pay a pool) was not simulated, only `transfer`; the fork test
+  (docs/DEPLOY.md, "Before switching on") asserts the balance difference of real swaps.
+- Rebasing over time was not measured (no balance was compared across blocks); the conclusion
+  rests on the verified sources.
+
 ## 3. Still unresolved (do not guess; resolve at first run)
 
 1. Chainlink proxies for **cbBTC/USD, VIRTUAL/USD, BRETT/USD, wstETH/USD, USDbC/USD** on Base (docs.chain.link, data.chain.link and reference-data-directory are unverified; the kukapay snapshot predates cbBTC). Verify the whole table on-chain via `description()`.
@@ -1437,4 +1692,4 @@ and 465 at 53,213,030: the fee is a reading of the block, not a tier. Its gauge 
 5. Identity of CL gauge factory 0x3e703fd2… (DefiLlama only): still unverified. NFPM 0xc741beb2… is resolved: on chain in 2.8 its `factory()` is the deprecated CLFactory 0x9592…, the pairing `addresses.ts` records.
 6. Which Slipstream tick spacings beyond the constructor's five are enabled on each of the three factories (read `tickSpacings()`; answered in 2.7), and whether the deprecated factory 0x9592… still has live liquidity (answered in 2.8: 2 of its 22 pools have in-range liquidity).
 7. The Graph subgraph IDs for Uniswap v3/v4 and Aerodrome on Base — Uniswap states public deployments are unofficial; only a substreams package "uniswap-v4-base-3" surfaced. Not required if Depthwatch reads chain directly.
-8. Slipstream `SwapRouter` 0xBE6D8f0d… remains README + Basescan-snippet only (not in deploy JSON); low importance for a read-only observatory.
+8. Slipstream `SwapRouter` 0xBE6D8f0d… remains README + Basescan-snippet only (not in deploy JSON); low importance for a read-only observatory. Answered in `## trade` and §2.10: Aerodrome's docs page lists it, and its `factory()` is the initial CLFactory.

@@ -1,3 +1,4 @@
+import type { TradeFlags } from '@depthwatch/core'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
@@ -51,6 +52,8 @@ export interface ProvidersProps {
   snapshot?: StaticSnapshot
   /** Booting on the pending client (`api/pending.ts`): the header reads "Connecting…". */
   connecting?: boolean
+  /** The static bundle's trade switch at load (`api/context.tsx`). */
+  trade?: TradeFlags | null
   queryClient?: QueryClient
   children: ReactNode
 }
@@ -63,6 +66,7 @@ export function Providers({
   staticBuild = false,
   snapshot,
   connecting = false,
+  trade,
   queryClient,
   children,
 }: ProvidersProps) {
@@ -77,6 +81,7 @@ export function Providers({
         staticBuild={staticBuild}
         snapshot={snapshot}
         connecting={connecting}
+        trade={trade}
       >
         {children}
       </ApiProvider>
@@ -119,6 +124,11 @@ export interface AppProps {
    * render on a pending client, and re-rendering with the real client keeps the query cache.
    */
   connecting?: boolean
+  /**
+   * The static bundle's trade switch (`features.trade` through core's `parseTradeFlags`): null
+   * when absent or malformed. Only the static build passes it.
+   */
+  trade?: TradeFlags | null
 }
 
 export function App({
@@ -129,6 +139,7 @@ export function App({
   staticBuild = false,
   snapshot,
   connecting = false,
+  trade,
 }: AppProps) {
   const Router = staticBuild ? HashRouter : BrowserRouter
   return (
@@ -140,6 +151,7 @@ export function App({
       staticBuild={staticBuild}
       snapshot={snapshot}
       connecting={connecting}
+      trade={trade}
     >
       <Router>
         <AppRoutes />

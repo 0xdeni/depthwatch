@@ -1,0 +1,12 @@
+# Response headers of the static site. Cloudflare Pages reads this file from the output directory
+# (apps/web/dist-static; docs/DEPLOY.md, "A free static copy"); `depthwatch serve` does not, and the
+# server build leaves it out. The script-src hash is that of the one inline script of index.html:
+# plugins/securityHeaders.ts fails the build when they differ.
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-+t75D1PcKfhe0LL2qhmuxA8LkyMeR1sdPObgo4Gr5rY='; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+# The trade switch: the dashboard reads it again before every signature request.
+/data/flags.json
+  Cache-Control: no-store

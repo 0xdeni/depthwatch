@@ -1,9 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs'
+import type { ServerResponse } from 'node:http'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import { agentDocs, staticSiteInfo } from './plugins/agentDocs.js'
+import { HEADERS_SOURCE, securityHeaders } from './plugins/securityHeaders.js'
+import { FLAGS_CACHE_CONTROL, readFlags, STATIC_FLAGS_PATH } from './plugins/staticFlags.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -14,6 +17,8 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const STATIC_BUNDLE_SOURCE = resolve(HERE, 'static-data/bundle.json')
 /** Where the static site reads it, relative to its index.html (`STATIC_BUNDLE_URL`). */
 const STATIC_BUNDLE_PATH = 'data/bundle.json'
+/** The trade switch `depthwatch export` writes next to the bundle (plugins/staticFlags.ts). */
+const STATIC_FLAGS_SOURCE = resolve(HERE, 'static-data/flags.json')
 
 /** The bundle's text after a sanity check of its envelope; throws a readable error otherwise. */
 function readBundle(source: string): string {
@@ -33,30 +38,38 @@ function readBundle(source: string): string {
 }
 
 /**
- * Static mode only: copies the exported bundle into the output as `data/bundle.json` (failing the
- * build when it is missing) and serves it at the same path from the dev server.
+ * Static mode only: copies the exported bundle into the output as `data/bundle.json` and the trade
+ * switch next to it as `data/flags.json` (failing the build when either is missing or they
+ * disagree), and serves both at the same paths from the dev server, the switch uncached.
  */
-function staticBundle(source: string): Plugin {
+function staticBundle(source: string, flagsSource: string): Plugin {
+  const serve = (path: string, read: () => string, cacheControl?: string) =>
+    [
+      `/${path}`,
+      (_req: unknown, res: ServerResponse) => {
+        res.setHeader('Content-Type', 'application/json')
+        if (cacheControl !== undefined) res.setHeader('Cache-Control', cacheControl)
+        try {
+          res.end(read())
+        } catch (error) {
+          res.statusCode = 404
+          res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
+        }
+      },
+    ] as const
+  const flags = () => readFlags(flagsSource, readBundle(source))
   return {
     name: 'depthwatch-static-bundle',
     configureServer(server) {
-      server.middlewares.use(`/${STATIC_BUNDLE_PATH}`, (_req, res) => {
-        try {
-          const text = readBundle(source)
-          res.setHeader('Content-Type', 'application/json')
-          res.end(text)
-        } catch (error) {
-          res.statusCode = 404
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
-        }
-      })
+      server.middlewares.use(...serve(STATIC_BUNDLE_PATH, () => readBundle(source)))
+      server.middlewares.use(...serve(STATIC_FLAGS_PATH, flags, FLAGS_CACHE_CONTROL))
     },
     buildStart() {
-      readBundle(source)
+      flags()
     },
     generateBundle() {
       this.emitFile({ type: 'asset', fileName: STATIC_BUNDLE_PATH, source: readBundle(source) })
+      this.emitFile({ type: 'asset', fileName: STATIC_FLAGS_PATH, source: flags() })
     },
   }
 }
@@ -67,16 +80,27 @@ function staticBundle(source: string): Plugin {
  * - static (`VITE_STATIC=1 vite build`, script `build:static`): `dist-static/`, relative base
  *   `./`, HashRouter and the client answering from `data/bundle.json`.
  * Both emit the agent documents (`AGENTS.md`, `llms.txt`, `openapi.json`, see
- * `plugins/agentDocs.ts`); the static copies carry a note generated from the shipped bundle.
+ * `plugins/agentDocs.ts`); the static copies carry a note generated from the shipped bundle. Both
+ * check `public/_headers` against the built `index.html`; only the static build keeps that file
+ * (`plugins/securityHeaders.ts`).
  */
 export default defineConfig(({ mode }) => {
   const isStatic = loadEnv(mode, HERE, 'VITE_').VITE_STATIC === '1'
   const staticSite = () => staticSiteInfo(readBundle(STATIC_BUNDLE_SOURCE))
+  const headers = securityHeaders({
+    readText: () => readFileSync(HEADERS_SOURCE, 'utf8'),
+    keepFile: isStatic,
+  })
   return {
     base: isStatic ? './' : '/',
     plugins: isStatic
-      ? [react(), staticBundle(STATIC_BUNDLE_SOURCE), agentDocs({ staticSite })]
-      : [react(), agentDocs()],
+      ? [
+          react(),
+          staticBundle(STATIC_BUNDLE_SOURCE, STATIC_FLAGS_SOURCE),
+          agentDocs({ staticSite }),
+          headers,
+        ]
+      : [react(), agentDocs(), headers],
     server: {
       port: 5173,
       proxy: {

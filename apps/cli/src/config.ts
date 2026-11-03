@@ -107,6 +107,7 @@ export interface CliFlags extends ScheduleFlags {
   out?: string
   demo?: boolean
   note?: string
+  bundle?: string
 }
 
 export interface CliArgs {
@@ -160,6 +161,10 @@ export interface Config {
   exportDemo: boolean
   /** `export --note`: the bundle's `note` (trimmed), shown with a live static snapshot. */
   exportNote: string | undefined
+  /** `export --bundle`: an exported bundle to write again with only its `features` replaced. */
+  exportBundle: string | undefined
+  /** DEPTHWATCH_TRADE as given (environment only); `export` alone parses it (tradeSwitch.ts). */
+  tradeSwitch: string | undefined
   /** `start`: the scheduler's cadences and budgets (start/settings.ts). */
   schedule: ScheduleSettings
 }
@@ -188,6 +193,7 @@ const PARSE_OPTIONS = {
   out: { type: 'string' },
   demo: { type: 'boolean' },
   note: { type: 'string' },
+  bundle: { type: 'string' },
   'snapshot-interval': { type: 'string' },
   'volume-interval': { type: 'string' },
   'positions-interval': { type: 'string' },
@@ -246,6 +252,13 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     throw new ConfigError('--note only applies to export')
   if (values.note !== undefined && values.note.trim() === '')
     throw new ConfigError('--note needs text')
+  if (values.bundle !== undefined && command !== undefined && command !== 'export')
+    throw new ConfigError('--bundle only applies to export')
+  if (values.bundle?.trim() === '') throw new ConfigError('--bundle needs a file path')
+  if (values.bundle !== undefined && (values.demo === true || values.note !== undefined))
+    throw new ConfigError(
+      '--bundle keeps the data and note of the bundle it reads: no --demo, --note',
+    )
   if (values.seed === true && command !== undefined && command !== 'discover' && command !== 'run')
     throw new ConfigError('--seed only applies to discover and run')
   if (values.seed === true && values['from-block'] !== undefined)
@@ -293,6 +306,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
       out: values.out,
       demo: values.demo,
       note: values.note,
+      bundle: values.bundle,
       snapshotInterval: values['snapshot-interval'],
       volumeInterval: values['volume-interval'],
       positionsInterval: values['positions-interval'],
@@ -358,6 +372,8 @@ export function loadConfig(env: Env, flags: CliFlags = {}): Config {
     outFile: flags.out,
     exportDemo: flags.demo === true,
     exportNote: flags.note?.trim(),
+    exportBundle: flags.bundle,
+    tradeSwitch: pick(undefined, env.DEPTHWATCH_TRADE),
     schedule: loadScheduleSettings(env, flags),
   }
 }

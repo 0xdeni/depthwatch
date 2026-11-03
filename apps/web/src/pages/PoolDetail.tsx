@@ -3,8 +3,9 @@
  * enough, and on which side is it thin?" The title section (back link, eyebrow, the pair and its
  * price line at left, the answer at right), then the band with the focal mirrored depth curve and
  * its Show data, the facts row as an ink block over the band's lower edge (with the gap callout),
- * the sections sheet in a fixed order (health, cost to trade, who provides it, over time with
- * `?window=7d`, mandates on this pool) and about this pool as a panel. Every number is read as the
+ * the sections sheet in a fixed order (health, cost to trade, trade in this pool when the trade
+ * switch allows it, who provides it, over time with `?window=7d`, mandates on this pool) and
+ * about this pool as a panel. Every number is read as the
  * API stored it and only formatted here.
  */
 import { isStaleQuote } from '@depthwatch/core'
@@ -28,6 +29,7 @@ import { CostSection, HealthSection, WhoSection } from './pool/PoolSections.js'
 import { PoolSkeleton } from './pool/PoolSkeleton.js'
 import { PoolTitle } from './pool/PoolTitle.js'
 import { poolAnswer } from './pool/poolText.js'
+import { TradeSection } from './pool/TradeSection.js'
 import './pool/pool.css'
 
 function decodePoolId(raw: string): string {
@@ -70,6 +72,8 @@ function PoolView({
         <SectionsSheet>
           <HealthSection detail={detail} />
           <CostSection detail={detail} />
+          {/* Keyed: another pool's page ends this one's swap and closes its panel. */}
+          <TradeSection key={pool.id} detail={detail} />
           <WhoSection detail={detail} />
           <OverTime detail={detail} window={win} onWindow={onWindow} />
           <PoolMandates pool={pool} />

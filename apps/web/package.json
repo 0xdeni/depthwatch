@@ -13,17 +13,20 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@depthwatch/chain": "workspace:*",
     "@depthwatch/core": "workspace:*",
     "@tanstack/react-query": "^5.90.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-router-dom": "^7.9.0"
+    "react-router-dom": "^7.9.0",
+    "viem": "2.57.10"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "ox": "0.14.57",
     "vite": "^7.1.0"
   }
 }

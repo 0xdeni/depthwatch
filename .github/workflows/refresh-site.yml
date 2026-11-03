@@ -150,10 +150,25 @@ jobs:
           path: .depthwatch
           key: depthwatch-db-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Export the bundle
-        run: >-
-          pnpm depthwatch export --out apps/web/static-data/bundle.json
-          --note "Read from Base mainnet by the Depthwatch pipeline, about every three hours, through a
-          free RPC plan. Each copy is a snapshot: it does not change until the next one replaces it."
+        id: export
+        # The trade switch (docs/DEPLOY.md, "Trade switch"), written into the bundle's
+        # features.trade and into data/flags.json next to it. Unset, empty or `off` means off; a
+        # comma-separated list of trade venues turns those on. An unknown or held venue fails
+        # closed: export writes the switch off and exits 3, this run publishes that, and the last
+        # step fails the run. A repository variable, not a secret, and only this step sees it.
+        env:
+          DEPTHWATCH_TRADE: ${{ vars.DEPTHWATCH_TRADE }}
+        run: |
+          code=0
+          pnpm depthwatch export --out apps/web/static-data/bundle.json \
+            --note "Read from Base mainnet by the Depthwatch pipeline, about every three hours, through a free RPC plan. Each copy is a snapshot: it does not change until the next one replaces it." \
+            || code=$?
+          if [ "$code" = 3 ]; then
+            echo "trade_refused=true" >> "$GITHUB_OUTPUT"
+            echo "::error::DEPTHWATCH_TRADE was refused (the line above says why): publishing with the trade switch off, then failing the run."
+          elif [ "$code" != 0 ]; then
+            exit "$code"
+          fi
       # Nothing seeded or snapshotted (every DEX failed on a first run): keep the published copy.
       - name: Check the bundle
         run: |
@@ -178,3 +193,9 @@ jobs:
             || echo "Pages project $PAGES_PROJECT exists or could not be created; deploying to it."
           wrangler pages deploy apps/web/dist-static \
             --project-name "$PAGES_PROJECT" --branch main --commit-dirty=true
+      # A refused DEPTHWATCH_TRADE was published as off above; the run still fails so it is seen.
+      - name: Fail on a refused trade switch
+        if: steps.export.outputs.trade_refused == 'true'
+        run: |
+          echo "::error::DEPTHWATCH_TRADE was refused, so the site now serves the trade switch off. Correct the variable (docs/DEPLOY.md, Trade switch)."
+          exit 1

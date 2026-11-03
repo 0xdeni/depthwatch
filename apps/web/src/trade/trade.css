@@ -1,0 +1,162 @@
+/* The swap panel (trade/TradePanel.tsx), loaded with its lazy chunk: a row of the Pool page's
+   sections sheet. v4 tokens only (docs/design/visual-v4.md §3): the field is the search field's
+   shape off the band, notes carry a 3 px rule, and the one filled button is the step's action. */
+
+.trade {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+.trade > div,
+.trade-form,
+.trade-review,
+.trade-working,
+.trade-done,
+.trade-failed {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+  justify-items: start;
+}
+.trade-h {
+  font-size: var(--t-lead);
+  font-weight: 750;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+.trade-conn {
+  color: var(--text-2);
+}
+.trade-linkbtn {
+  font-weight: 650;
+}
+.trade-say {
+  font-size: var(--t-lead);
+  line-height: 1.42;
+  max-width: 48ch;
+  text-wrap: pretty;
+}
+
+/* Notes: a sentence with a 3 px rule; warnings take the warn colour. */
+.trade-note,
+.trade-warn {
+  padding-left: var(--s3);
+  box-shadow: inset 3px 0 0 var(--line-2);
+  font-size: var(--t-data);
+  line-height: 1.45;
+  max-width: 60ch;
+}
+.trade-warn {
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+
+.trade-wallets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.trade-wallet img {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  flex: none;
+}
+
+/* The amount field: 48 px, radius 12, the unit inside at the right. */
+.trade-field {
+  display: grid;
+  gap: var(--s2);
+  width: 100%;
+  max-width: 420px;
+}
+.trade-label {
+  font-size: var(--t-small);
+  font-weight: 650;
+  color: var(--text-2);
+}
+/* The slippage control's visible label sits closer to its control than the form's 16 px rhythm. */
+.trade-form > .trade-label {
+  margin-bottom: calc(-1 * var(--s2));
+}
+.trade-input {
+  position: relative;
+}
+.trade-input input {
+  width: 100%;
+  height: 48px;
+  padding: 0 72px 0 16px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--surface);
+  color: var(--text-1);
+  font-size: var(--t-lead);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 0 0 1.5px var(--line-2);
+}
+.trade-input input[aria-invalid="true"] {
+  box-shadow: inset 0 0 0 1.5px var(--bad);
+}
+.trade-input input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.trade-unit {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  translate: 0 -50%;
+  font-size: var(--t-data);
+  font-weight: 650;
+  color: var(--text-2);
+  pointer-events: none;
+}
+
+/* The live quote and its figures. */
+.trade-quote {
+  display: grid;
+  gap: var(--s3);
+  width: 100%;
+  padding: var(--s4);
+  border-radius: var(--r-ctl);
+  background: var(--panel);
+  box-shadow: var(--panel-edge);
+  font-size: var(--t-data);
+  line-height: 1.45;
+}
+.trade-figs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--s3) var(--s5);
+  margin: 0;
+}
+.trade-figs dt {
+  font-size: var(--t-small);
+  color: var(--text-2);
+}
+.trade-figs dd {
+  margin: 0;
+  font-weight: 650;
+}
+.trade-facts {
+  width: 100%;
+}
+.trade-steps {
+  margin: 0;
+  padding-left: var(--s5);
+  list-style: decimal;
+  display: grid;
+  gap: var(--s1);
+}
+.trade-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+}
+.trade .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

@@ -3,9 +3,10 @@
 This page is the single definition of every number Depthwatch publishes. Each metric is
 implemented once, in `packages/core`, and `packages/core/src/metrics/workedExamples.test.ts` (the
 health score's in `workedExamples.health.test.ts`, the effective spread's in
-`workedExamples.spread.test.ts`) reproduces the worked examples below to the digit (raw amounts to
-the wei, USD and bps figures to the two decimals printed here). If the dashboard, the API and this
-page ever disagree, this page and the core tests are what gets fixed first.
+`workedExamples.spread.test.ts`, the swap checks' in
+`packages/core/src/trade/workedExamples.test.ts`) reproduces the worked examples below to the digit
+(raw amounts to the wei, USD and bps figures to the two decimals printed here). If the dashboard,
+the API and this page ever disagree, this page and the core tests are what gets fixed first.
 
 ## Conventions
 
@@ -719,6 +720,63 @@ pool is no route and BRETT is priced through WETH at $0.0047.
 
 This is a valuation convention for depth and volume, not an oracle.
 
+## Swap checks
+
+**Question.** Before a swap in the pool being viewed is signed: what is the least it can return,
+what does it cost against the pool's own price, and should it be sent at all?
+
+These figures belong to the dashboard's optional swap panel, a single-pool exact-input swap that
+stays switched off unless the site's `trade` flag turns it on. They come from a live quote read
+just before signing, never from the snapshot, which serves only as a wide sanity bound. Amounts are
+raw `bigint` units of each token, so 6-, 8- and 18-decimal tokens go through the same arithmetic;
+prices are exact fractions of raw token1 per raw token0 (for a concentrated pool,
+`sqrtPriceX96² / 2^192`), and every bound is compared exactly.
+- **Minimum received.** `minOut = floor(quote × (10 000 − s) / 10 000)`, with `s` the slippage
+  tolerance in whole bps: 50 by default, accepted from 1 to `min(maxSlippageBps, 300)`, where
+  `maxSlippageBps` comes from the trade flag and 300 is a ceiling no flag can raise. Rounded down,
+  so the bound is at most one raw unit below the exact tolerance. A `minOut` of 0 protects nothing
+  and is refused.
+- **Deadline.** The latest block's timestamp + 300 s, from the chain rather than the browser's
+  clock.
+- **Price impact**, fees included, is the effective spread's leg impact (see
+  [Effective spread](#effective-spread-at-n-usd)) applied to the live quote. With `avg` the trade's
+  average price (token1 per token0) and `mid` the pool's price just before the trade, read at the
+  quote's block: selling token0, `impact = 1 − avg / mid`; buying token0, `impact = avg / mid − 1`.
+  It is shown in whole bps rounded up, so the figure is above a threshold exactly when the impact
+  is. A warning above 100 bps (1 %), a refusal above 500 bps (5 %). A quote cannot beat its own
+  pool's mid at the same block (the fee is taken and every step rounds in the pool's favour), so an
+  impact below −500 bps means the quote and the mid come from different states, and is refused.
+- **Deviation** of the trade's average price `p` from a reference price `r` is
+  `max(p, r) / min(p, r) − 1`, which does not depend on which price is the reference or which token
+  is token0. Refused above 200 bps from another live pool of the same pair read at the same block,
+  and above 1,000 bps from the snapshot's price of this pool, which can be three hours old. A pool
+  without a snapshot price is refused.
+- **Size.** The input and the quoted output are valued at their tokens' snapshot USD prices (see
+  [USD prices](#usd-prices)) and the larger value counts, so a stale low price on one token cannot
+  slip a large trade under the cap. Refused above the flag's `maxUsd` ($1,000 at launch), and when
+  neither token has a USD price.
+- **Decision.** One of ok, warn with a reason, or refuse with a reason. The checks run in a fixed
+  order and the first refusal wins: flag limits, amount, slippage, quote, pool mid, size, price
+  impact, snapshot deviation, live-pool deviation. With no refusal, a price impact above 100 bps
+  gives a warning; otherwise the trade is ok. Every bound is "above": a value exactly at it passes.
+
+**Worked example.** The WETH/USDC pool of the depth and spread examples (1,000 WETH as token0,
+2,500,000 USDC as token1, 0.30 %), with the mid and the snapshot price at 2,500, `maxUsd` $1,000 and
+the default slippage.
+- Sell 0.4 WETH (`400000000000000000` wei, $1,000). The quote is `996602554`, 996.602554 USDC, so
+  `avg = 2,491.51` and the impact is `1 − 2,491.51 / 2,500 = 33.97` bps, shown as 34.
+  `minOut = floor(996,602,554 × 9,950 / 10,000) = 991,619,541` (991.619541 USDC). The size is
+  `max($1,000, $996.60) = $1,000`: at the cap, allowed. The deviation from the snapshot is 34.09
+  bps. Decision: ok. One wei more (`400000000000000001`) is above the cap and refused.
+- Buy with 1,000 USDC: 0.398641021960442175 WETH, `avg = 2,508.52`, an impact of 34.09 bps (shown
+  as 35), `minOut = 396647816850639964` wei. Decision: ok.
+- The same 0.4 WETH into a pool of 40 WETH and 100,000 USDC returns 987.158034 USDC: an impact of
+  128.42 bps, a warning. Into 8 WETH and 20,000 USDC it returns 949.659475 USDC: 503.41 bps,
+  refused.
+- If another live WETH/USDC pool reads 2,450, the sale is 169.41 bps from it and passes; at 2,440 it
+  is 211.09 bps away and refused. A snapshot price of 2,400 is 381.28 bps away and passes; one of
+  2,260 is 1,024.36 bps away and refused.
+
 ## Why these metrics
 
 For a **market maker**, the question is what it will be quoting into. Depth at a percentage move
@@ -755,6 +813,7 @@ reproduced by anyone with an RPC endpoint and this page.
 | 24 h volume              | `packages/core/src/metrics/volume.ts`               | `volumeWindow`, `scoringVolumeWindow`, `computeVolume24hUsd`                                                                                                                |
 | USD prices               | `packages/core/src/pricing.ts`                      | `derivePrices` (edge weights in USD at relaxation); edges in `apps/cli/src/pipeline/prices.ts` (`buildPriceEdges`)                                                          |
 | Stale quotes             | `packages/core/src/metrics/depth.ts`                | `priceDeviationBps`, `isStaleQuote`, `STALE_QUOTE_MIN_DEVIATION_BPS`                                                                                                        |
+| Swap checks              | `packages/core/src/trade/`                          | `checkTrade`, `minAmountOut`, `validateSlippageBps`, `tradeDeadline`, `tradePriceImpact`, `tradePriceDeviation`, `tradeSizeAboveUsd`                                        |
 | Swap simulation          | `packages/core/src/swap/`                           | `simulateSwapExactIn`, `simulateSwapToPrice`, `midPrice`, `swapFeePips`, `v4SwapFeePips`                                                                                    |
 | Dynamic fees             | `packages/core/src/dex.ts`                          | `hasDynamicFee`, `DYNAMIC_FEE_DEXES`                                                                                                                                        |
 | Token labels             | `packages/core/src/tokenLabel.ts`                   | `tokenLabel`, `buildSharedSymbols` (DESIGN.md, "Shared types")                                                                                                              |

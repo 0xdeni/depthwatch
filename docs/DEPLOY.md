@@ -308,6 +308,82 @@ Repository secrets reach workflow runs started from this repository's own branch
 request from a fork; only people with write access can start those, and this workflow publishes
 only from `main`.
 
+The build ships `apps/web/public/_headers`, the response headers Cloudflare Pages applies: no
+page may be framed (`X-Frame-Options: DENY`, `frame-ancestors 'none'`), no type sniffing, and a
+Content-Security-Policy that runs only the site's own scripts and the inline script of
+`index.html` by its hash and lets pages fetch from the site itself only. Every build fails when
+that hash and the inline script differ. `depthwatch serve` does not send these headers, and the
+server build leaves the file out. A Pages feature that adds a script to the pages, such as
+Cloudflare Web Analytics, would be blocked by this policy: leave it off, or add its host to the
+policy.
+
+## Trade switch
+
+The static copy's swap panel is off unless the repository variable `DEPTHWATCH_TRADE` turns it
+on. `depthwatch export` writes the switch twice: into the bundle (`features.trade`) and next to
+it as `data/flags.json`, which the site serves with `Cache-Control: no-store`. A page reads the
+first when it loads and fetches the second again when its swap panel connects and just before
+every signature request, and offers a swap only when both are on for the pool's DEX, so switching
+off also stops pages already open.
+A missing or unreadable switch counts as off.
+
+| `DEPTHWATCH_TRADE`                | Switch                                           |
+| --------------------------------- | ------------------------------------------------ |
+| unset, empty or `off`             | Off (the default)                                |
+| `uniswap-v3`                      | On for Uniswap v3 pools                          |
+| `uniswap-v3,aerodrome-slipstream` | On for Uniswap v3 and Aerodrome Slipstream pools |
+
+Any other value is refused, including `aero-slipstream` while its routes are on hold in
+`packages/chain/src/addresses.ts`. A refused value fails closed: `depthwatch export` writes the
+switch off and exits with code 3, the workflow publishes the site with trading off, and then the
+run fails, so a mistyped `off` still switches off and the failure is still seen. The limits,
+$1,000 per swap and at most 3 % slippage, are set in the code, not by the variable.
+
+### Before switching on
+
+Trading ships switched off. Until all three of these hold, the only values to use are unset (the
+default) or `off`:
+- The wording release is merged: the read-only promise (the dashboard footer, README.md,
+  AGENTS.md, DESIGN.md, the non-goals of docs/ROADMAP.md, the scope of SECURITY.md, the API's
+  agent document `apps/api/src/agentDocs/AGENTS.md`) and the "talks only to `/api`" descriptions
+  in AGENTS.md, README.md and docs/ARCHITECTURE.md say what the swap panel does, in the same
+  release that switches it on.
+- The fork test has passed for every venue to be listed: each venue and direction, ETH in and
+  out, against a local fork of Base, never in CI; it runs outside the repository.
+- The live test has passed: small swaps on Base mainnet from a Cloudflare Pages preview with
+  trading on (production off), in an extension wallet and a smart wallet, each checked on
+  Basescan (the router, the exact approval, the Builder Code at the end of the input or of the
+  user operation).
+
+Flipping the variable needs no code release, so nothing in the code enforces this list: whoever
+changes the variable checks it.
+
+### Changing the switch
+
+To change it from a phone, in a browser signed in to GitHub (these steps have not yet been tried
+on a phone):
+1. In the repository: Settings, Secrets and variables, Actions, the Variables tab.
+2. To switch off, delete `DEPTHWATCH_TRADE`, which needs no typing, or set it to `off`. To switch
+   on, once everything in [Before switching on](#before-switching-on) holds, set it to the
+   venues, for example `uniswap-v3`.
+3. Actions, Trade switch, Run workflow on `main`. The run downloads the published bundle, changes
+   only the switch, builds and publishes, and turns green only once
+   <https://depthwatch.pages.dev/data/flags.json> serves the new value (`"enabled":false` when
+   off). It uses the two Cloudflare secrets and no RPC endpoint. How long it takes has not been
+   measured.
+4. If the run fails, its log says why. A refused value has been published as off. A failure in
+   Check the published switch comes after the publish, so the new switch may already be served:
+   open <https://depthwatch.pages.dev/data/flags.json> before running again. A failure in any
+   earlier step published nothing. Correct the variable and run it again, or run Refresh site.
+
+Without step 3, the next Refresh site run, within about three hours, publishes the new value: both
+workflows read the same variable. Trade switch shares Refresh site's concurrency group, so it waits
+for a refresh in progress and then downloads that run's copy. If there is any doubt about what the
+site serves, run Refresh site instead, which rebuilds the bundle from the saved database rather
+than from the published copy. Should GitHub Actions be down, Cloudflare's dashboard can roll the
+Pages project back to an earlier deployment (Workers & Pages, the project, Deployments); this has
+not been tried.
+
 ## Upgrading
 
 A new build migrates the database when it first opens it, and an older build then refuses the

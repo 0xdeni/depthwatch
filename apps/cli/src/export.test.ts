@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createApp, SEED_NOW, type StaticBundle, seedDatabase } from '@depthwatch/api'
 import { SYNTHETIC_DEFAULTS } from '@depthwatch/chain'
+import { tradeOff } from '@depthwatch/core'
 import {
   type Database,
   FIXTURE_USDC,
@@ -177,8 +178,14 @@ describe('exportCommand', () => {
     expect(Object.hasOwn(written, 'note')).toBe(false)
     expect(written.pools).toHaveLength(8)
     expect(lines).toEqual([
-      `exported demo bundle to ${result.path}: 8 pools, 2 scorecards, ${result.bytes} bytes`,
+      `exported demo bundle to ${result.path}: 8 pools, 2 scorecards, ${result.bytes} bytes; ` +
+        'trade off',
     ])
+    // DEPTHWATCH_TRADE unset: the switch is off in the bundle and in flags.json next to it.
+    expect(written.features).toEqual({ trade: tradeOff() })
+    expect(readFileSync(join(dir, 'nested', 'flags.json'), 'utf8')).toBe(
+      JSON.stringify({ trade: tradeOff() }),
+    )
   }, 30_000)
 
   it('exports a live database file at the wall clock, with the --note text', async () => {

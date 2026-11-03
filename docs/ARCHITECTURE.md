@@ -23,14 +23,14 @@ this page explains it.
 
 ## Packages
 
-| Package             | Depends on                                | What it owns                                                                                                                                                                                                                                                                                                           |
-| ------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@depthwatch/core`  | nothing                                   | `types.ts` (shared types), tick math, sqrt-price math, swap simulation (concentrated, constant product, stable swap), metrics (depth, spread, concentration, persistence, health, gap, TVL), price graph, JSON bigint helpers, test builders; `mm/`: mandate parsing, attribution, KPI evaluation, scorecard summaries |
-| `@depthwatch/chain` | core, viem                                | Base addresses and ABIs, `ChainReader` (discovery, overview, state, positions, swaps, LP holdings and gauge-staked owners), fixture and recording transports                                                                                                                                                           |
-| `@depthwatch/db`    | core                                      | `openDatabase`, migrations, repositories (`pools`, `tokens`, `snapshots`, `volume`, `positions`, `prices`, `scores`, `syncState`, `mandates`, `mmSamples`, `mmAlerts`), fixture builders for other packages' tests                                                                                                     |
-| `@depthwatch/api`   | core, db, hono, zod                       | `createApp(db, { staticDir, adminToken })`: REST routes, validation, static SPA serving; `/api/mm` scorecards and badge                                                                                                                                                                                                |
-| `@depthwatch/web`   | core, react, tanstack-query, react-router | Dashboard (pools, gaps, tokens, scorecards); HTTP client and mock client behind one `ApiClient` interface                                                                                                                                                                                                              |
-| `@depthwatch/cli`   | everything                                | `depthwatch` commands (`mm …` included), the mandate sampling hook and alert delivery; the only place that wires chain → core → db → api                                                                                                                                                                               |
+| Package             | Depends on                                                                                         | What it owns                                                                                                                                                                                                                                                                                                           |
+| ------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@depthwatch/core`  | nothing                                                                                            | `types.ts` (shared types), tick math, sqrt-price math, swap simulation (concentrated, constant product, stable swap), metrics (depth, spread, concentration, persistence, health, gap, TVL), price graph, JSON bigint helpers, test builders; `mm/`: mandate parsing, attribution, KPI evaluation, scorecard summaries |
+| `@depthwatch/chain` | core, viem                                                                                         | Base addresses and ABIs, `ChainReader` (discovery, overview, state, positions, swaps, LP holdings and gauge-staked owners), fixture and recording transports                                                                                                                                                           |
+| `@depthwatch/db`    | core                                                                                               | `openDatabase`, migrations, repositories (`pools`, `tokens`, `snapshots`, `volume`, `positions`, `prices`, `scores`, `syncState`, `mandates`, `mmSamples`, `mmAlerts`), fixture builders for other packages' tests                                                                                                     |
+| `@depthwatch/api`   | core, db, hono, zod                                                                                | `createApp(db, { staticDir, adminToken })`: REST routes, validation, static SPA serving; `/api/mm` scorecards and badge                                                                                                                                                                                                |
+| `@depthwatch/web`   | core, chain (`./addresses` only), react, tanstack-query, react-router, viem (lazy swap panel only) | Dashboard (pools, gaps, tokens, scorecards); HTTP client and mock client behind one `ApiClient` interface; the lazy swap panel (`src/trade/`), off unless the trade switch is on                                                                                                                                       |
+| `@depthwatch/cli`   | everything                                                                                         | `depthwatch` commands (`mm …` included), the mandate sampling hook and alert delivery; the only place that wires chain → core → db → api                                                                                                                                                                               |
 
 There is no build step for Node packages. Package entry points are `src/index.ts`, `tsx` runs
 TypeScript directly, and workspace imports resolve through each package's `exports` map. Only the
@@ -131,6 +131,11 @@ Each step reads what the previous one stored, so any step can be rerun on its ow
 11. **web**. React dashboard. It talks only to `/api` through an `ApiClient` interface that has an
     HTTP implementation and a mock implementation (`VITE_MOCK=1`, or the dev server when the API
     is down; never a production build) backed by JSON in `apps/web/src/mock`. Bigint strings are formatted with BigInt arithmetic in `lib/format.ts`.
+    The static build reads the exported bundle instead and also serves `data/flags.json`, the trade
+    switch, with `public/_headers` (no framing, a Content-Security-Policy, that file uncached). The
+    lazy swap panel (`src/trade/`), shown only when the switch is on, is the one part that talks
+    to anything else: the reader's own wallet (EIP-1193), for its reads and the transactions the
+    reader signs (DESIGN.md, "Dashboard (apps/web)").
 
 `depthwatch positions` is a separate, less frequent step (`run` folds it into every pass for the
 concentrated pools of active mandates, `run --with-positions` for every tracked pool): it indexes
@@ -729,6 +734,9 @@ dashboard is a Vite + React 19 app with TanStack Query; the dev server proxies `
   `simulateSwapToPrice` with many tiny exact-in swaps (`bruteForceSwapToPrice`) and check
   rounding is in the pool's favour.
 - **chain:** fixture transport with hand-built responses; ABI round trips via viem encoders;
+  `addresses.trade.test.ts` pins the trade routes, the token allowlist and the trade ABIs' signatures
+  and selectors against their sources; `addressesExport.test.ts` walks the module graph of the
+  browser-safe `@depthwatch/chain/addresses` entry (no `node:` import, no viem client);
   `createFakeRpcFetch` serves a fixture over viem's real `http()` transport and replays providers'
   HTTP errors (Alchemy's free-tier 400, Base's public 429) for the rate- and range-limit paths;
   seeded discovery against `registerSeedWorld`, its PoolMeta compared with log discovery of the
@@ -736,6 +744,13 @@ dashboard is a Vite + React 19 app with TanStack Query; the dev server proxies `
 - **db / api:** in-memory SQLite; API tests through `app.request()`.
 - **cli:** `demo` end to end against fixtures (both demo mandates produce samples, one `ok` and
   one `breached`); webhook delivery against a local HTTP server on `127.0.0.1`.
-- **web:** component and client tests under jsdom against the mock client.
+- **web:** component and client tests under jsdom against the mock client. The swap panel's
+  tests run against a fake EIP-1193 wallet behind viem's `custom()` transport
+  (`src/testing/fakeWallet.ts`, driven by `src/testing/tradeHarness.tsx`): it answers the pool,
+  quoter, balance and allowance reads, mines what is sent (an ERC-4337 bundle for
+  `wallet_sendCalls`) and records every request, so the tests assert the `to`, the calldata, the
+  Builder Code suffix and the order of the switch's re-read and the signature request.
+  `src/tradeBundle.test.ts` builds the site twice in memory and fails when wallet code reaches a
+  boot chunk or the boot chunks pass their byte budget.
 
 `pnpm test` runs all of it in a minute or two and needs no network.

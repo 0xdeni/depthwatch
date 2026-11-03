@@ -72,8 +72,9 @@ static copy at <https://depthwatch.pages.dev> about every three hours from `main
    `createFixtureTransport`, or `createFakeRpcFetch` behind viem's `http()` when the HTTP error
    path matters (it replays Alchemy's free-tier 400, Base's public 429 and the -32602 answers of
    Tenderly's public gateway and Pocket, reason in `data`, verbatim); db and API
-   tests use `openDatabase(':memory:')` and `app.request()`; the web uses the mock client. A test
-   that needs the network is a bug.
+   tests use `openDatabase(':memory:')` and `app.request()`; the web uses the mock client, and the
+   swap panel a fake EIP-1193 wallet behind viem's `custom()` (`apps/web/src/testing/fakeWallet.ts`,
+   `tradeHarness.tsx`). A test that needs the network is a bug.
 4. **Metrics are defined once, in [docs/METRICS.md](docs/METRICS.md), and implemented once, in
    `packages/core`.** CLI, API and dashboard call core; they never re-derive a number. A new
    metric is written down in METRICS.md (formula, units, null semantics, worked example) first.
@@ -97,7 +98,9 @@ static copy at <https://depthwatch.pages.dev> about every three hours from `main
 ## Base contract addresses
 
 Every address Depthwatch reads (factories, pool managers, position managers, StateView, quoters,
-Multicall3, reference tokens) is in `packages/chain/src/addresses.ts`, taken from
+Multicall3, reference tokens), and every router and token the dashboard's swap panel may send to
+(`TRADE_ROUTES`, `TRADE_TOKENS`, browser-safe through `@depthwatch/chain/addresses`), is in
+`packages/chain/src/addresses.ts`, taken from
 [docs/research/base-contracts.md](docs/research/base-contracts.md), which records the sources and
 an independent-verification verdict per address; items marked unconfirmed must be checked on the
 first live run, where the factory logs read by `depthwatch discover` are the ground truth. DEX and

@@ -3,7 +3,8 @@
  * - its dependency on `@depthwatch/core` is a runtime one (`DEXES`, `healthGrade`,
  *   `computeHealthScore`, …), not a type-only one, and the packages tables in docs/ARCHITECTURE.md
  *   and DESIGN.md say so;
- * - the v4 build (docs/design/visual-v4.md §7) adds no dependency and no chart library, has the
+ * - the v4 build (docs/design/visual-v4.md §7) adds no dependency and no chart library (the swap
+ *   panel later added `chain`'s browser-safe entry and viem, lazily loaded), has the
  *   parts of its file map, plays the first view from one module, and carries its amendments into
  *   principles.md, ia-v3.md, DESIGN.md and visual-v3.md (§1.8, §7.7).
  */
@@ -75,17 +76,39 @@ function appSources(): string[] {
 }
 
 describe('the v4 build (docs/design/visual-v4.md §7)', () => {
-  it('adds no dependency and no chart library (§7.1)', () => {
+  it('adds no dependency and no chart library (§7.1); the swap panel later added chain and viem', () => {
     const pkg = JSON.parse(readFileSync(join(SRC, '..', 'package.json'), 'utf8')) as {
       dependencies: Record<string, string>
     }
     expect(Object.keys(pkg.dependencies).sort()).toEqual([
+      '@depthwatch/chain',
       '@depthwatch/core',
       '@tanstack/react-query',
       'react',
       'react-dom',
       'react-router-dom',
+      'viem',
     ])
+  })
+
+  it('imports chain only through its browser-safe entry, and viem only in the lazy swap panel', () => {
+    const importers = (pattern: RegExp) =>
+      appSources()
+        .filter((f) => pattern.test(readFileSync(join(SRC, f), 'utf8')))
+        .sort()
+    expect(importers(/from '@depthwatch\/chain(?!\/addresses')/)).toEqual([])
+    const viem = importers(/from 'viem(?:\/[\w-]+)?'/)
+    expect(viem.length).toBeGreaterThan(0)
+    expect(viem.filter((f) => !f.startsWith('trade/'))).toEqual([])
+    // The panel is reached only through the lazy import of pages/pool/TradeSection.tsx.
+    const panelImporters = appSources().filter(
+      (f) =>
+        !f.startsWith('trade/') && /trade\/[\w]+\.js'/.test(readFileSync(join(SRC, f), 'utf8')),
+    )
+    expect(panelImporters).toEqual(['pages/pool/TradeSection.tsx'])
+    const section = readFileSync(join(SRC, 'pages', 'pool', 'TradeSection.tsx'), 'utf8')
+    expect(section).toMatch(/lazy\(\(\) => import\('\.\.\/\.\.\/trade\/TradePanel\.js'\)\)/)
+    expect(section).not.toMatch(/^import [^\n]*trade\//m)
   })
 
   it('has the new parts of the file map, and the session first view replaces the Home intro', () => {

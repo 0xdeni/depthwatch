@@ -92,6 +92,7 @@ interface StaticBundle {
   generatedAt: number // unix seconds
   source: 'demo' | 'live'
   note?: string // depthwatch export --note; absent without the flag (demo exports)
+  features?: { trade: TradeFlags } // the trade switch (DEPTHWATCH_TRADE); absent = off
   health: HealthResponse
   stats: StatsResponse
   pools: PoolSummary[] // every scored pool (all pages of /api/pools)
@@ -119,6 +120,9 @@ what the server would.
 - `--note <text>` (export only, not empty, trimmed) sets the bundle's `note`: what the exporter
   wants a reader to know about the data (coverage, how it was read, caveats). Blank lines split
   it into paragraphs. Without the flag the key is absent, so a demo export is unchanged.
+- Every export writes the trade switch, `DEPTHWATCH_TRADE`, as the bundle's `features.trade` and
+  as `flags.json` next to the bundle (`{ "trade": … }`); `--bundle <file>` writes an exported
+  bundle again with only `features` changed (docs/DEPLOY.md, "Trade switch").
 
 ### Web build modes
 
@@ -132,7 +136,9 @@ what the server would.
   (the loading shell is skipped while it waits). Static and demo modes are unchanged.
 - **Static** (`VITE_STATIC=1`, script `build:static` in apps/web, output `apps/web/dist-static`):
   `base: './'`, HashRouter, client = `createStaticClient(bundle)` loading `./data/bundle.json`
-  at startup. The static client implements the whole `ApiClient` with the API's semantics
+  at startup. The build ships the trade switch as `./data/flags.json` next to the bundle (it
+  fails when the file is missing or differs from `features.trade`) and `public/_headers` for
+  Cloudflare Pages (`plugins/securityHeaders.ts`). The static client implements the whole `ApiClient` with the API's semantics
   (pools: sort health|depth|volume|gap|tvl, dir, dex, q over token symbols/addresses, pool
   address and v4 pool id, minVolume, limit default 50 max 200, offset; gaps: limit/offset/
   minVolume; token: sort/dir/limit/offset; scorecards: pool/active; samples: window/limit;

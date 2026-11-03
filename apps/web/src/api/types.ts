@@ -16,6 +16,7 @@ import type {
   DepthLevelUsd,
   Dex,
   Excursion,
+  FeatureFlags,
   GapMetrics,
   HealthGrade,
   HealthScore,
@@ -447,6 +448,12 @@ export interface StaticBundle {
    * popover of a `live` bundle; absent when no note was given (demo exports carry none).
    */
   note?: string
+  /**
+   * The trade switch (`depthwatch export` from DEPTHWATCH_TRADE), also served as
+   * `./data/flags.json`. Absent from older bundles, which read as off; read it with
+   * `parseTradeFlags` from `@depthwatch/core`, which fails closed.
+   */
+  features?: FeatureFlags
   health: HealthResponse
   stats: StatsResponse
   /** Every scored pool (all pages of `/api/pools`, default order: health desc). */

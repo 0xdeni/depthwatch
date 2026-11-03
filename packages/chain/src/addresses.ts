@@ -1,10 +1,10 @@
 /**
  * Verified Base mainnet (chainId 8453) addresses. Source: docs/research/base-contracts.md (every
- * entry below carries an "independent check: confirmed" verdict there; §2.8 records the on-chain
- * check of each, §2.9 that of the Aero entries). All lowercase. Token names are each token's own
- * `name()` on chain.
+ * entry below carries an "independent check: confirmed" verdict there, except the Aero trade
+ * route, which is held; §2.8 records the on-chain check of each, §2.9 that of the Aero entries,
+ * §2.10 that of the trade routes). All lowercase. Token names are each token's own `name()`.
  */
-import { type Address, NATIVE_ETH, type TokenInfo } from '@depthwatch/core'
+import { type Address, type Dex, NATIVE_ETH, type TokenInfo } from '@depthwatch/core'
 
 export interface SlipstreamDeployment {
   /** Human label (Aerodrome: from the aerodrome-finance/slipstream README). */
@@ -285,4 +285,114 @@ export function resolveAddresses(overrides?: Partial<ChainAddresses>): ChainAddr
       ]),
     ),
   }
+}
+
+/** DEXes of the swap panel: `exactInputSingle` in one pool, in two encodings. */
+export type TradeVenue = Extract<Dex, 'uniswap-v3' | 'aerodrome-slipstream' | 'aero-slipstream'>
+
+/**
+ * A router and quoter bound to one pool factory: `router.factory()` and the quoter's `factory()`
+ * (the Metaquoter's `factoryRegistry()`) as read on chain (docs/research/base-contracts.md
+ * `## trade`, §2.10). A swap goes to `router` only for a pool whose own `factory()` is `factory`.
+ * Compiled in on purpose: `resolveAddresses` overrides never reach it, and data never supplies it.
+ */
+export interface TradeRoute {
+  venue: TradeVenue
+  /** `uniswap-v3`, or the `name` of the Slipstream deployment of `factory`. */
+  deployment: string
+  factory: Address
+  router: Address
+  quoter: Address
+  /** `swap-router-02`: `multicall(deadline, [exactInputSingle])`; `slipstream`: deadline inside. */
+  routerAbi: 'swap-router-02' | 'slipstream'
+  quoterAbi: 'quoter-v2' | 'slipstream-quoter-v2' | 'metaquoter'
+  /** Why the route must not be used, whatever the trade flags say; null once cleared. */
+  hold: string | null
+}
+
+const slipstream = (name: string, router: Address, quoter: Address) =>
+  Object.freeze<TradeRoute>({
+    venue: 'aerodrome-slipstream',
+    deployment: name,
+    factory: BASE_ADDRESSES.aerodromeSlipstream.find((d) => d.name === name)!.factory,
+    router,
+    quoter,
+    routerAbi: 'slipstream',
+    quoterAbi: 'slipstream-quoter-v2',
+    hold: null,
+  })
+
+/** Every route, held ones included. The deprecated Slipstream factory 0x9592… has none. */
+export const TRADE_ROUTES: readonly TradeRoute[] = Object.freeze([
+  Object.freeze<TradeRoute>({
+    venue: 'uniswap-v3',
+    deployment: 'uniswap-v3',
+    factory: BASE_ADDRESSES.uniswapV3.factory,
+    router: '0x2626664c2603336e57b271c5c0b26f421741e481',
+    quoter: BASE_ADDRESSES.uniswapV3.quoterV2,
+    routerAbi: 'swap-router-02',
+    quoterAbi: 'quoter-v2',
+    hold: null,
+  }),
+  slipstream(
+    'initial',
+    '0xbe6d8f0d05cc4be24d5167a3ef062215be6d18a5',
+    '0x254cf9e1e6e233aa1ac962cb9b05b2cfeaae15b0',
+  ),
+  slipstream(
+    'gauge-caps',
+    '0xcbbb8035cac7d4b3ca7abb74cf7bdf900215ce0d',
+    '0x3d4c22254f86f64b7ec90ab8f7aec1fbfd271c6c',
+  ),
+  slipstream(
+    'gauges-v3',
+    '0x698cb2b6dd822994581fea6ea4fc755d1363a92f',
+    '0x514c8b5f54112481e28028f1166bd78501089259',
+  ),
+  Object.freeze<TradeRoute>({
+    venue: 'aero-slipstream',
+    deployment: 'aero',
+    factory: BASE_ADDRESSES.aeroSlipstream[0]!.factory,
+    router: '0x9ee35bf1bd69a03c6f0393582030fce8bb93d418',
+    quoter: '0x1ddfec5058180c207f55bb77d95acdd0d8227868',
+    routerAbi: 'slipstream',
+    quoterAbi: 'metaquoter',
+    hold: "Aero's contracts page not yet confirmed in a browser; CL MEV-tax threshold unverified (base-contracts.md, ## trade)",
+  }),
+])
+
+/** The route for a pool of `factory` on `venue`, or undefined (no such route, or held). */
+export function tradeRouteFor(venue: Dex, factory: string): TradeRoute | undefined {
+  const key = factory.toLowerCase()
+  return TRADE_ROUTES.find((r) => r.venue === venue && r.factory === key && r.hold === null)
+}
+
+/**
+ * The swap panel's token allowlist (base-contracts.md §2.11): reference tokens whose simulated transfers
+ * moved exactly the amount sent, pool → account and back, and whose verified source has no
+ * rebasing and no live transfer fee. Aerodrome's AERO is left out: it shares the symbol AERO with
+ * Aero's, and Aero's `MIGRATION()` converts it one way. Native ETH trades as WETH.
+ */
+export const TRADE_TOKENS: readonly TokenInfo[] = Object.freeze(
+  [
+    TOKENS.WETH,
+    TOKENS.USDC,
+    TOKENS.CBBTC,
+    TOKENS.CBETH,
+    TOKENS.WSTETH,
+    TOKENS.AERO,
+    TOKENS.DAI,
+    TOKENS.EURC,
+    TOKENS.USDT,
+    TOKENS.USDBC,
+    TOKENS.DEGEN,
+    TOKENS.VIRTUAL,
+    TOKENS.BRETT,
+  ].map((t) => Object.freeze({ ...t })),
+)
+
+/** Whether `address` (any case) is on the trade allowlist. */
+export function isTradeToken(address: string): boolean {
+  const key = address.toLowerCase()
+  return TRADE_TOKENS.some((t) => t.address === key)
 }

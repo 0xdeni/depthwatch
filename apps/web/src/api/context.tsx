@@ -1,3 +1,4 @@
+import type { TradeFlags } from '@depthwatch/core'
 import type { ReactNode } from 'react'
 import { createContext, useContext } from 'react'
 import { SNAPSHOT_CLOCK } from '../lib/format.js'
@@ -35,6 +36,13 @@ export interface ApiContextValue {
    * show is not known yet, and the header's freshness slot reads "Connecting…".
    */
   connecting?: boolean
+  /**
+   * The trade switch as the static bundle carried it at load (`features.trade`, read with core's
+   * `parseTradeFlags`): null when absent or malformed, undefined outside the static build. Only a
+   * block that is on shows the swap panel; the panel reads `data/flags.json` again before every
+   * signature request (`trade/liveFlags.ts`).
+   */
+  trade?: TradeFlags | null
 }
 
 const ApiContext = createContext<ApiContextValue | null>(null)
@@ -47,10 +55,13 @@ export function ApiProvider({
   staticBuild = false,
   snapshot,
   connecting = false,
+  trade,
   children,
 }: ApiContextValue & { children: ReactNode }) {
   return (
-    <ApiContext.Provider value={{ client, mock, demo, dataNow, staticBuild, snapshot, connecting }}>
+    <ApiContext.Provider
+      value={{ client, mock, demo, dataNow, staticBuild, snapshot, connecting, trade }}
+    >
       {children}
     </ApiContext.Provider>
   )
@@ -81,6 +92,11 @@ export function useIsStatic(): boolean {
 /** The published live snapshot of the static build, or undefined (server, mock or demo data). */
 export function useSnapshot(): StaticSnapshot | undefined {
   return useContext(ApiContext)?.snapshot
+}
+
+/** The trade switch read at load, or null (off, absent, malformed, or not a static build). */
+export function useTradeFlagsAtLoad(): TradeFlags | null {
+  return useContext(ApiContext)?.trade ?? null
 }
 
 export function useIsConnecting(): boolean {

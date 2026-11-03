@@ -12,6 +12,8 @@ coverage/
 *.log
 .vite/
 
-# Static demo build (pnpm build:static): the exported bundle and the static web output
+# Static demo build (pnpm build:static): the exported bundle, the trade switch written next to it
+# and the static web output
 apps/web/static-data/bundle.json
+apps/web/static-data/flags.json
 dist-static/

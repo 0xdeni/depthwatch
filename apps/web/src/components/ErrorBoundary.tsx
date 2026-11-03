@@ -68,6 +68,20 @@ export function RouteErrorBoundary({
   )
 }
 
+/**
+ * One part of a page that fails to load or draw (the lazy swap panel): its own fallback in place,
+ * the rest of the page untouched.
+ */
+export function PartErrorBoundary({
+  fallback,
+  children,
+}: {
+  fallback: ReactNode
+  children: ReactNode
+}) {
+  return <Boundary fallback={fallback}>{children}</Boundary>
+}
+
 /** The whole app failed: the wordmark, the sentence and Reload, with no router or provider. */
 function AppError() {
   return (

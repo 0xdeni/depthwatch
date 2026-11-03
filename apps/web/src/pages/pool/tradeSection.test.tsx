@@ -1,0 +1,207 @@
+/**
+ * "trade in this pool": shown under cost to trade only when the static bundle's switch is on for
+ * the pool's venue and the pool is one the panel can check (`tradeGate`); never in demo, mock or
+ * connecting mode. Before the click it shows the snapshot's figure with its time and no wallet
+ * code; the click loads the lazy panel.
+ */
+import type { TradeFlags } from '@depthwatch/core'
+import { QueryClient } from '@tanstack/react-query'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter, type NavigateFunction, useNavigate } from 'react-router-dom'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { AppRoutes, Providers } from '../../App.js'
+import { createMockClient } from '../../api/mock.js'
+import type { ApiClient, PoolDetail, PoolMetaDto } from '../../api/types.js'
+import { full } from '../../lib/format.js'
+import { tradeTakeaway } from './TradeSection.js'
+import { tradeGate } from './tradeGate.js'
+
+const NOW = 1_760_000_000
+const V3 = 'uniswap-v3:0xd0b53d9277642d899df5c87a3966a349a798f224'
+const SLIPSTREAM = 'aerodrome-slipstream:0xb2cc224c1c9fee385f8ad6a55b4d94e92359dc59'
+/** Another tradeable pool of the same venue: cbETH/WETH. */
+const OTHER_V3 = 'uniswap-v3:0x10648ba41b8565907cfa1496765fa4d95390aa0d'
+const ON: TradeFlags = { enabled: true, venues: ['uniswap-v3'], maxUsd: 1000, maxSlippageBps: 300 }
+const base = createMockClient({ now: NOW })
+const v3 = await base.pool(V3)
+
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
+
+describe('tradeGate', () => {
+  const env = { mock: false, trade: ON }
+  const at = (patch: Partial<PoolDetail>, meta: Partial<PoolMetaDto> = {}) => ({
+    ...v3,
+    ...patch,
+    pool: { ...v3.pool, ...meta },
+  })
+
+  it('opens for a rated, fresh, unhooked pool of an enabled venue with allowlisted tokens', () => {
+    expect(tradeGate(v3, env)).toEqual({ venue: 'uniswap-v3', flags: ON })
+  })
+
+  it('stays shut in demo, mock and connecting mode, and without a switch that is on', () => {
+    expect(tradeGate(v3, { ...env, demo: true })).toBeNull()
+    expect(tradeGate(v3, { ...env, mock: true })).toBeNull()
+    expect(tradeGate(v3, { ...env, connecting: true })).toBeNull()
+    expect(tradeGate(v3, { mock: false })).toBeNull()
+    expect(tradeGate(v3, { mock: false, trade: null })).toBeNull()
+    expect(tradeGate(v3, { mock: false, trade: { ...ON, enabled: false } })).toBeNull()
+    expect(
+      tradeGate(v3, { mock: false, trade: { ...ON, venues: ['aerodrome-slipstream'] } }),
+    ).toBeNull()
+  })
+
+  it('stays shut for a held venue, whatever the switch says', () => {
+    const aero = at({}, { dex: 'aero-slipstream' })
+    expect(
+      tradeGate(aero, { mock: false, trade: { ...ON, venues: ['aero-slipstream'] } }),
+    ).toBeNull()
+  })
+
+  it('stays shut for a hooked, unrated, unsnapshotted or stale pool, or a token off the list', () => {
+    const hooks = '0x1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c40'
+    expect(tradeGate(at({}, { hooks }), env)).toBeNull()
+    expect(tradeGate(at({ score: v3.score && { ...v3.score, rated: false } }), env)).toBeNull()
+    expect(tradeGate(at({ latest: null }), env)).toBeNull()
+    expect(
+      tradeGate(at({ latest: v3.latest && { ...v3.latest, priceDeviationBps: 900 } }), env),
+    ).toBeNull()
+    const other = {
+      ...v3.pool.token1,
+      address: '0x000000000000000000000000000000000000beef' as const,
+    }
+    expect(tradeGate(at({}, { token1: other }), env)).toBeNull()
+    expect(tradeGate(at({}, { kind: 'constant-product' }), env)).toBeNull()
+  })
+})
+
+describe('tradeTakeaway', () => {
+  const withSpread = (spreadBps: number, feasible = true) => ({
+    ...v3,
+    latest: v3.latest && {
+      ...v3.latest,
+      spreads: v3.latest.spreads.map((s) =>
+        s.notionalUsd === 10_000 ? { ...s, spreadBps, feasible } : s,
+      ),
+    },
+  })
+  const text = (detail: PoolDetail) => tradeTakeaway(detail).replace(/\u00a0/g, ' ')
+
+  it('gives the $10K round trip in percent, as the panel does, with its bps', () => {
+    expect(text(withSpread(14.8))).toMatch(/round trip here cost 0\.15 % \(14\.8 bps\)\.$/)
+    expect(text(withSpread(2.4))).toMatch(/cost 0\.024 % \(2\.4 bps\)\.$/)
+    expect(text(withSpread(123))).toMatch(/cost 1\.2 % \(123 bps\)\.$/)
+  })
+
+  it('says no round trip was measured rather than repeat the body’s first sentence', () => {
+    expect(text(withSpread(14.8, false))).toBe(
+      'The latest snapshot measured no $10K round trip here.',
+    )
+  })
+})
+
+function renderPage(
+  id: string,
+  flags: TradeFlags | null,
+  opts: { mock?: boolean; demo?: boolean } = {},
+) {
+  const client: ApiClient = base
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <Providers
+      client={client}
+      mock={opts.mock ?? false}
+      demo={opts.demo}
+      trade={flags}
+      queryClient={queryClient}
+    >
+      <MemoryRouter initialEntries={[`/pools/${encodeURIComponent(id)}`]}>
+        <AppRoutes />
+      </MemoryRouter>
+    </Providers>,
+  )
+  return screen.findByRole('heading', { level: 1 })
+}
+
+let navigate: NavigateFunction = () => undefined
+/** Hands the test the router's `navigate`. */
+function Probe() {
+  navigate = useNavigate()
+  return null
+}
+
+const headings = () => screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
+
+describe('the pool page', () => {
+  it('shows the section under cost to trade, with the snapshot’s figure and its time', async () => {
+    await renderPage(V3, ON)
+    const list = headings()
+    expect(list.indexOf('trade in this pool')).toBe(list.indexOf('cost to trade') + 1)
+    const section = screen.getByRole('region', { name: 'trade in this pool' })
+    const text = (section.textContent ?? '').replace(/ /g, ' ')
+    expect(text).toContain(
+      `At ${full(v3.latest?.timestamp).replace(/ /g, ' ')} a $10K round trip here cost`,
+    )
+    expect(within(section).getByRole('button', { name: 'Swap in this pool' })).toBeTruthy()
+  })
+
+  it('has no section when the switch is off, the venue is not on, or in mock and demo mode', async () => {
+    for (const [id, flags, opts] of [
+      [V3, null, {}],
+      [V3, { ...ON, enabled: false }, {}],
+      [SLIPSTREAM, ON, {}],
+      [V3, ON, { mock: true }],
+      [V3, ON, { demo: true }],
+    ] as const) {
+      await renderPage(id, flags, opts)
+      expect(headings(), JSON.stringify([id, flags, opts])).not.toContain('trade in this pool')
+      cleanup()
+    }
+  })
+
+  it('loads the panel only on the click, which then looks for wallets', async () => {
+    await renderPage(V3, ON)
+    expect(screen.queryByRole('heading', { name: 'Connect a wallet' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Swap in this pool' }))
+    expect(screen.getByRole('status').textContent).toBe('Loading the swap panel…')
+    // The button that had focus is gone: the loading line takes it.
+    expect(document.activeElement).toBe(screen.getByRole('status'))
+    // The first import of the chunk is transformed on the fly here, hence the longer wait.
+    const heading = await screen.findByRole(
+      'heading',
+      { name: 'Connect a wallet' },
+      { timeout: 10_000 },
+    )
+    expect(document.activeElement).toBe(heading)
+    expect(await screen.findByText(/No wallet was found in this browser/)).toBeTruthy()
+  })
+
+  it('closes the panel when the page moves to another pool, which ends its run', async () => {
+    // jsdom has no scrolling; the router scrolls to the top on each page.
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <Providers client={base} mock={false} trade={ON} queryClient={queryClient}>
+        <MemoryRouter initialEntries={[`/pools/${encodeURIComponent(OTHER_V3)}`]}>
+          <AppRoutes />
+          <Probe />
+        </MemoryRouter>
+      </Providers>,
+    )
+    const title = async (text: RegExp) =>
+      waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toMatch(text))
+    await title(/cbETH/)
+    act(() => navigate(`/pools/${encodeURIComponent(V3)}`))
+    await title(/USDC/)
+    fireEvent.click(screen.getByRole('button', { name: 'Swap in this pool' }))
+    await screen.findByRole('heading', { name: 'Connect a wallet' }, { timeout: 10_000 })
+    // Back to the first pool, still in the cache: its page draws at once, with the panel closed.
+    act(() => navigate(-1))
+    await title(/cbETH/)
+    expect(screen.queryByRole('heading', { name: 'Connect a wallet' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Swap in this pool' })).toBeTruthy()
+  })
+})

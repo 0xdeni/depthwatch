@@ -9,6 +9,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./addresses": {
+      "types": "./src/addressesExport.ts",
+      "default": "./src/addressesExport.ts"
     }
   },
   "scripts": {

@@ -4,7 +4,8 @@
  *
  * Exit codes: 0 ok, 1 runtime error (one line on stderr; this includes a live command started
  * without an RPC endpoint, a pass that stored nothing because every item failed, a `run --once`
- * with a failed step and a `run` loop stalled for three passes), 2 usage error (one line + hint).
+ * with a failed step and a `run` loop stalled for three passes), 2 usage error (one line + hint),
+ * 3 `export` refused DEPTHWATCH_TRADE and wrote everything with the trade switch off.
  * Logs go to stderr; stdout carries only program output: the `--help`/`--version` text, the
  * server URL line of `serve`/`demo`, the summary line of `export`, and the scorecard URL, listing
  * and JSON of `mm register`, `mm list` and `mm show`.
@@ -51,10 +52,13 @@ import { serveUntilAborted } from './serve.js'
 import { formatSeconds } from './start/scheduler.js'
 import { SCHEDULE_DEFAULTS } from './start/settings.js'
 import { startCommand } from './start/start.js'
+import { TradeSwitchRefusedError } from './tradeSwitch.js'
 
 export const EXIT_OK = 0
 export const EXIT_ERROR = 1
 export const EXIT_USAGE = 2
+/** `export` refused DEPTHWATCH_TRADE, after writing the bundle and flags.json with trading off. */
+export const EXIT_TRADE_REFUSED = 3
 
 const require = createRequire(import.meta.url)
 
@@ -97,10 +101,12 @@ Commands
   serve       REST API + dashboard (apps/web/dist when built)   [--port N] [--host H]
   demo        offline: synthetic Base world, 7 days of history → in-memory DB → serve
                                                      [--port N] [--db <new file>]
-  export      static dashboard bundle (JSON) of the database, read through the API
-                                                     --out <file> [--demo] [--note <text>]
+  export      static dashboard bundle (JSON) of the database, read through the API, and
+              flags.json next to it        --out <file> [--demo] [--note <text>] [--bundle <file>]
                 --demo                   bundle the offline demo instead (runs it in memory)
                 --note <text>            the bundle's note, shown by a live static snapshot
+                --bundle <file>          write that exported bundle again, only the trade
+                                         switch changed (no database read)
   mm          market-maker scorecards (docs/SCORECARDS.md):
                 register --file <json>   validate and store a mandate, print its scorecard URL
                 list                     every mandate with its status
@@ -128,9 +134,11 @@ Options
 Environment only: DEPTHWATCH_ADMIN_TOKEN, the bearer token (at least 32 characters) serve, start
 and demo require for POST /api/mm and DELETE /api/mm/:id (unset: those routes answer 403
 "registration disabled"); DEPTHWATCH_SHUTDOWN_GRACE, how long start waits for the step in flight
-on SIGTERM (${d.shutdownGraceSeconds}).
+on SIGTERM (${d.shutdownGraceSeconds}); DEPTHWATCH_TRADE, the trade switch export writes into the bundle and
+flags.json: off (the default) or a comma-separated list of trade venues (docs/DEPLOY.md).
 
-Exit codes: 0 ok, 1 error, 2 usage. A pass that stored nothing because every item failed
+Exit codes: 0 ok, 1 error, 2 usage, 3 export wrote the trade switch off because DEPTHWATCH_TRADE
+was refused. A pass that stored nothing because every item failed
 (snapshot, positions, mm sample) and a run --once with a failed step exit 1; the run loop goes
 on past a failed step and exits 1 after three passes in a row whose every chain step failed.`
 }
@@ -339,6 +347,7 @@ export async function main(argv: readonly string[], opts: MainOptions = {}): Pro
     return EXIT_OK
   } catch (error) {
     stderr(`error: ${describeError(error)}`)
+    if (error instanceof TradeSwitchRefusedError) return EXIT_TRADE_REFUSED
     return error instanceof ConfigError ? EXIT_USAGE : EXIT_ERROR
   } finally {
     handlers?.dispose()

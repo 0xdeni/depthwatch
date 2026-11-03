@@ -393,6 +393,28 @@ export interface DerivedPrice {
   weight: number
 }
 
+/** The per-swap limits of the trade switch (`maxUsd` in USD, `maxSlippageBps` in whole bps). */
+export interface TradeLimits {
+  maxUsd: number
+  maxSlippageBps: number
+}
+
+/**
+ * The trade switch (core `trade/flags.ts`): `features.trade` of the static bundle and `trade` of
+ * `data/flags.json`. A block that is missing or not exactly this shape reads as off.
+ */
+export interface TradeFlags extends TradeLimits {
+  /** False keeps the swap off on every venue, whatever `venues` lists. */
+  enabled: boolean
+  /** DEX ids the swap is on for, without repeats; empty when off. */
+  venues: Dex[]
+}
+
+/** The optional `features` block of the static bundle; `data/flags.json` is exactly this. */
+export interface FeatureFlags {
+  trade: TradeFlags
+}
+
 /** Price levels (percent) and spread notionals (USD) computed for every snapshot. */
 export const DEPTH_LEVELS_PCT: readonly number[] = [1, 2, 5]
 export const SPREAD_NOTIONALS_USD: readonly number[] = [1_000, 10_000, 100_000, 1_000_000]

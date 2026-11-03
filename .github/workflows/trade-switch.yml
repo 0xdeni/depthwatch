@@ -1,0 +1,123 @@
+name: Trade switch
+
+# Republishes the static copy with only the trade switch changed (docs/DEPLOY.md, "Trade switch"),
+# without waiting for the next Refresh site run: it downloads the published data/bundle.json,
+# writes it again with `depthwatch export --bundle`, taking features.trade and data/flags.json from
+# the repository variable DEPTHWATCH_TRADE, builds the static site from this branch and uploads
+# it. Nothing reads the chain and no database is restored. Refresh site reads the same variable, so
+# its next run publishes the same switch. It needs the repository secrets CLOUDFLARE_API_TOKEN and
+# CLOUDFLARE_ACCOUNT_ID, and runs only by hand.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# The same group as Refresh site: the two never publish at once, and a switch started during a
+# refresh waits for it, so it downloads the copy that refresh published.
+concurrency:
+  group: refresh-site
+  cancel-in-progress: false
+
+jobs:
+  switch:
+    name: switch
+    # Only the default branch publishes, as in Refresh site.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # The Cloudflare Pages project and its address (Refresh site publishes the same one).
+      PAGES_PROJECT: depthwatch
+      SITE_URL: https://depthwatch.pages.dev
+    steps:
+      - name: Check settings
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=""
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing (docs/DEPLOY.md, A free static copy)"
+            exit 1
+          fi
+      # Actions are pinned to commit SHAs, the same as in Refresh site.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+      - name: Install pnpm
+        run: npm install --global pnpm@10.28.0
+      - name: Cache pnpm store
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      # A copy with no bundle (none published yet) stops here: run Refresh site instead.
+      - name: Download the published bundle
+        run: |
+          curl --fail --silent --show-error --location --retry 3 --max-time 120 \
+            --header "Cache-Control: no-cache" \
+            --output "$RUNNER_TEMP/published.json" "$SITE_URL/data/bundle.json"
+      # Unset, empty or `off` is off. An unknown or held venue fails closed: export writes the
+      # switch off and exits 3, the run publishes that, and the last step fails the run. Only this
+      # step sees the variable.
+      - name: Set the trade switch
+        id: export
+        env:
+          DEPTHWATCH_TRADE: ${{ vars.DEPTHWATCH_TRADE }}
+        run: |
+          code=0
+          pnpm depthwatch export --bundle "$RUNNER_TEMP/published.json" \
+            --out apps/web/static-data/bundle.json || code=$?
+          if [ "$code" = 3 ]; then
+            echo "trade_refused=true" >> "$GITHUB_OUTPUT"
+            echo "::error::DEPTHWATCH_TRADE was refused (the line above says why): publishing with the trade switch off, then failing the run."
+          elif [ "$code" != 0 ]; then
+            exit "$code"
+          fi
+      - name: Check the bundle
+        run: |
+          node -e 'const b = JSON.parse(require("node:fs").readFileSync("apps/web/static-data/bundle.json", "utf8")); if (b.pools.length === 0) { console.log("::error::The bundle holds no pools; the published copy is kept."); process.exit(1) }'
+      - name: Build the static site
+        run: |
+          pnpm --filter @depthwatch/web build:static
+          # As in Refresh site: unknown paths answer 404, not index.html.
+          printf '%s\n' '<!doctype html><meta charset="utf-8"><title>Not found</title><p>Not found. This static copy of Depthwatch has no API; the dashboard is at <a href="/">/</a>.</p>' > apps/web/dist-static/404.html
+      - name: Install wrangler
+        run: npm install --global --ignore-scripts --no-audit wrangler@4.150.0
+      - name: Publish to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          wrangler pages deploy apps/web/dist-static \
+            --project-name "$PAGES_PROJECT" --branch main --commit-dirty=true
+      # The run is green only once the site serves the new switch.
+      - name: Check the published switch
+        run: |
+          want=$(cat apps/web/dist-static/data/flags.json)
+          echo "Switch built: $want"
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            got=$(curl --fail --silent --show-error --max-time 30 \
+              --header "Cache-Control: no-cache" "$SITE_URL/data/flags.json" || true)
+            if [ "$got" = "$want" ]; then
+              echo "$SITE_URL/data/flags.json serves the new switch."
+              exit 0
+            fi
+            echo "Attempt $attempt: the site still serves ${got:-nothing}; trying again in 10 s."
+            sleep 10
+          done
+          echo "::error::$SITE_URL/data/flags.json does not serve the new switch after 2 minutes."
+          exit 1
+      # A refused DEPTHWATCH_TRADE was published as off above; the run still fails so it is seen.
+      - name: Fail on a refused trade switch
+        if: steps.export.outputs.trade_refused == 'true'
+        run: |
+          echo "::error::DEPTHWATCH_TRADE was refused, so the site now serves the trade switch off. Correct the variable (docs/DEPLOY.md, Trade switch)."
+          exit 1

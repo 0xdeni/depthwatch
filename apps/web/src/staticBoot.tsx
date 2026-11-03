@@ -8,6 +8,7 @@
  * A bundle that takes longer than 300 ms gets the shell and the route's skeleton meanwhile, on a
  * pending client (ST1); a bundle that fails replaces the page with the reason.
  */
+import { parseTradeFlags } from '@depthwatch/core'
 import { StrictMode } from 'react'
 import type { Root } from 'react-dom/client'
 import { App } from './App.js'
@@ -77,6 +78,8 @@ export async function startStatic(
           // times are absolute, since how long after the export the page is read is unknown.
           dataNow={demo ? bundle.generatedAt : undefined}
           snapshot={snapshotOf(bundle)}
+          // The trade switch at load, failing closed: a missing or malformed block is off.
+          trade={parseTradeFlags(bundle.features?.trade)}
           staticBuild
         />
       </RootErrorBoundary>

@@ -9,8 +9,14 @@
  *   in-memory database, then its bundle (`source: 'demo'`, the synthetic world's clock).
  * - `--note <text>` adds the bundle's `note`, which the static site shows as "About this snapshot"
  *   for a live bundle. Without it the bundle has no `note` key at all.
+ * - `depthwatch export --bundle <file> --out <file>`: an exported bundle written again with only
+ *   its `features` replaced, no database read (the Trade switch workflow).
+ *
+ * Every export writes the trade switch (DEPTHWATCH_TRADE, tradeSwitch.ts) twice: as the bundle's
+ * `features.trade` and as `flags.json` next to the bundle. An invalid value writes the switch off,
+ * then fails the export with TradeSwitchRefusedError (exit code 3): off is published, loudly.
  */
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import {
   createApp,
@@ -28,10 +34,18 @@ import {
   type StatsResponse,
   type TokenDetail,
 } from '@depthwatch/api'
+import { type TradeFlags, tradeOff } from '@depthwatch/core'
 import { type Database, IN_MEMORY, openDatabase } from '@depthwatch/db'
 import type { Config } from './config.js'
 import { runDemoPipeline } from './demo.js'
 import { errorMessage, type Logger } from './log.js'
+import {
+  checkBundlePath,
+  describeTrade,
+  exportedTradeSwitch,
+  TradeSwitchRefusedError,
+  writeFlagsFile,
+} from './tradeSwitch.js'
 
 export interface BuildStaticBundleOptions {
   /** Unix seconds: the API's clock, and the bundle's `generatedAt`. */
@@ -39,6 +53,8 @@ export interface BuildStaticBundleOptions {
   source: StaticBundle['source']
   /** The bundle's `note`; undefined leaves the key out. */
   note?: string
+  /** The bundle's `features.trade`; undefined writes the switch off (`tradeOff()`). */
+  trade?: TradeFlags
 }
 
 type App = ReturnType<typeof createApp>
@@ -161,6 +177,7 @@ export async function buildStaticBundle(
       generatedAt: opts.now,
       source: opts.source,
       ...(opts.note === undefined ? {} : { note: opts.note }),
+      features: { trade: opts.trade ?? tradeOff() },
       health: await getJson<HealthResponse>(app, '/api/health'),
       stats: await getJson<StatsResponse>(app, '/api/stats'),
       pools,
@@ -207,11 +224,62 @@ function openExportDatabase(config: Config): Database {
   return openDatabase(config.dbPath)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** `export --bundle`: a bundle file, after a check of its v1 envelope. */
+function readBundleFile(file: string): StaticBundle {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(file, 'utf8'))
+  } catch (error) {
+    throw new ExportError(`export: cannot read the bundle ${file}: ${errorMessage(error)}`)
+  }
+  if (
+    !isRecord(parsed) ||
+    parsed.v !== 1 ||
+    (parsed.source !== 'demo' && parsed.source !== 'live') ||
+    typeof parsed.generatedAt !== 'number' ||
+    !Array.isArray(parsed.pools)
+  )
+    throw new ExportError(`export: ${file} is not a v1 Depthwatch static bundle`)
+  return parsed as unknown as StaticBundle
+}
+
+/** Writes the bundle, then `flags.json` next to it; returns the bundle's size in bytes. */
+function writeExport(path: string, bundle: StaticBundle, trade: TradeFlags): number {
+  const text = JSON.stringify(bundle)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, text)
+  writeFlagsFile(path, trade)
+  return Buffer.byteLength(text)
+}
+
 export async function exportCommand(opts: ExportOptions): Promise<ExportResult> {
   const { config, log } = opts
   if (config.outFile === undefined) throw new ExportError('export needs --out <file>')
   const path = resolve(config.outFile)
+  checkBundlePath(path)
+  const { trade, refused } = exportedTradeSwitch(config.tradeSwitch)
   const stdout = opts.stdout ?? ((line: string) => process.stdout.write(`${line}\n`))
+  const switchText = `${describeTrade(trade)}${refused === null ? '' : ' (DEPTHWATCH_TRADE refused)'}`
+  /** Returns the result, or throws the switch's refusal once everything is written. */
+  const done = (result: ExportResult): ExportResult => {
+    if (refused !== null)
+      throw new TradeSwitchRefusedError(`${refused}; wrote the trade switch off instead`)
+    return result
+  }
+  if (config.exportBundle !== undefined) {
+    const from = resolve(config.exportBundle)
+    const bundle: StaticBundle = { ...readBundleFile(from), features: { trade } }
+    const bytes = writeExport(path, bundle, trade)
+    stdout(
+      `exported ${bundle.source} bundle to ${path} from ${from}, features only: ` +
+        `${bundle.pools.length} pools, ${bytes} bytes; ${switchText}`,
+    )
+    return done({ path, bytes, bundle })
+  }
   const db = openExportDatabase(config)
   try {
     let now: number
@@ -230,18 +298,15 @@ export async function exportCommand(opts: ExportOptions): Promise<ExportResult> 
     const source: StaticBundle['source'] = config.exportDemo ? 'demo' : 'live'
     const bundle = await log.timed(
       'export',
-      () => buildStaticBundle(db, { now, source, note: config.exportNote }),
+      () => buildStaticBundle(db, { now, source, note: config.exportNote, trade }),
       (b) => ({ pools: b.pools.length, scorecards: b.scorecards.length, gaps: b.gaps.length }),
     )
-    const text = JSON.stringify(bundle)
-    mkdirSync(dirname(path), { recursive: true })
-    writeFileSync(path, text)
-    const bytes = Buffer.byteLength(text)
+    const bytes = writeExport(path, bundle, trade)
     stdout(
       `exported ${source} bundle to ${path}: ${bundle.pools.length} pools, ` +
-        `${bundle.scorecards.length} scorecards, ${bytes} bytes`,
+        `${bundle.scorecards.length} scorecards, ${bytes} bytes; ${switchText}`,
     )
-    return { path, bytes, bundle }
+    return done({ path, bytes, bundle })
   } finally {
     db.close()
   }

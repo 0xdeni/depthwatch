@@ -9,6 +9,7 @@ import type {
   ConcentrationBasis,
   Dex,
   Excursion,
+  FeatureFlags,
   GapMetrics,
   HealthGrade,
   HealthScore,
@@ -326,6 +327,12 @@ export interface StaticBundle {
    * when no note was given (demo exports carry none).
    */
   note?: string
+  /**
+   * The trade switch (`depthwatch export` from DEPTHWATCH_TRADE, docs/DEPLOY.md "Trade switch"),
+   * also written next to the bundle as `flags.json`. Absent from bundles exported before it, which
+   * read as off; `parseTradeFlags` reads it, failing closed.
+   */
+  features?: FeatureFlags
   health: HealthResponse
   stats: StatsResponse
   /** Every scored pool (all pages of `/api/pools`, default order: health desc). */

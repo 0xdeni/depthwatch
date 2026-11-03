@@ -16,22 +16,32 @@ No trading capital, no token, no custody. It is indexing, analytics and a dashbo
 
 ## Repository layout (pnpm workspace, TypeScript, ESM, Node ≥ 22.13)
 
-| Path             | Package             | Responsibility                                                                 | May import                                                      |
-| ---------------- | ------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| `packages/core`  | `@depthwatch/core`  | Pure math and scoring. **Zero I/O, zero runtime deps.**                        | nothing                                                         |
-| `packages/chain` | `@depthwatch/chain` | viem adapters for Base: discovery, state, positions, swaps, fixture transport. | core, viem                                                      |
-| `packages/db`    | `@depthwatch/db`    | `node:sqlite` schema, migrations, repositories.                                | core                                                            |
-| `apps/api`       | `@depthwatch/api`   | Hono REST API + static serving of the built dashboard.                         | core, db, hono, @hono/node-server, zod                          |
-| `apps/web`       | `@depthwatch/web`   | Vite + React 19 dashboard. Talks only to `/api`.                               | core, react, react-dom, react-router-dom, @tanstack/react-query |
-| `apps/cli`       | `@depthwatch/cli`   | `depthwatch` CLI: the pipeline (discover → snapshot → volume → score → serve). | every workspace package, viem, tsx                              |
+| Path             | Package             | Responsibility                                                                 | May import                                                                   |
+| ---------------- | ------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `packages/core`  | `@depthwatch/core`  | Pure math and scoring. **Zero I/O, zero runtime deps.**                        | nothing                                                                      |
+| `packages/chain` | `@depthwatch/chain` | viem adapters for Base: discovery, state, positions, swaps, fixture transport. | core, viem                                                                   |
+| `packages/db`    | `@depthwatch/db`    | `node:sqlite` schema, migrations, repositories.                                | core                                                                         |
+| `apps/api`       | `@depthwatch/api`   | Hono REST API + static serving of the built dashboard.                         | core, db, hono, @hono/node-server, zod                                       |
+| `apps/web`       | `@depthwatch/web`   | Vite + React 19 dashboard. Talks only to `/api`.                               | core, chain, react, react-dom, react-router-dom, @tanstack/react-query, viem |
+| `apps/cli`       | `@depthwatch/cli`   | `depthwatch` CLI: the pipeline (discover → snapshot → volume → score → serve). | every workspace package, viem, tsx                                           |
 
 "May import" lists each package's `dependencies` in its `package.json`: workspace packages by their
 short name, others by their npm name; build and test tools (Vite, Vitest, Biome, TypeScript, jsdom,
 Testing Library, `@types/*`) are `devDependencies`, used to build and test, never by the code that
 runs. `apps/api/src/routes/docs.test.ts` fails when a dependency is missing from its row.
+`apps/web` imports `chain` only through its browser-safe `@depthwatch/chain/addresses` entry (below),
+and `viem` only in the lazy swap panel (`src/trade/`): the panel reads the chain and sends
+transactions through the reader's own wallet (EIP-1193), and ABI encoding, the wallet's JSON-RPC
+and EIP-5792 calls are what viem does and the standard library does not; viem was already in the
+lockfile for `chain`. `ox` is a `devDependency` of `apps/web` only, pinned to 0.14.57, for the test
+that checks the Builder Code suffix against `Attribution.toDataSuffix`.
 
 Package entry points are `src/index.ts` (no build step for Node packages; `tsx` runs TypeScript
 directly, a dependency of `apps/cli` so that the server image runs the sources the same way).
+`@depthwatch/chain` has a second, browser-safe entry, `@depthwatch/chain/addresses`
+(`src/addressesExport.ts`): the addresses, the trade routes and token allowlist and the trade ABIs,
+with no viem client, transport or `node:` import (the package barrel pulls `node:crypto`);
+`addressesExport.test.ts` walks its module graph.
 Lint/format: Biome (`pnpm lint`). Types: `pnpm typecheck`. Tests: Vitest (`pnpm test`). All three must pass.
 
 Rules for contributors (human or agent):
@@ -76,6 +86,11 @@ Key conventions it encodes:
   a hooked pool (`isHookedPool`), whose `PoolSnapshot` holds no depth levels, spread points or concentration.
 - `PoolSnapshot.priceDeviationBps` is the stale-quote measure (docs/METRICS.md, Stale quotes): `null` when a token has
   no USD price, and in snapshots stored before the field existed.
+- `FeatureFlags` is the static bundle's optional `features` block and, exactly, `data/flags.json`: `{ trade: TradeFlags }`
+  with `TradeFlags = { enabled: boolean, venues: Dex[], maxUsd: number, maxSlippageBps: number }` (`TradeLimits` holds the
+  two limits). Written by `depthwatch export` from `DEPTHWATCH_TRADE`, read by the dashboard; every reader fails closed
+  (core `parseTradeFlags`, `parseFlagsFile`): a block that is missing or not exactly this shape is off, and a swap needs
+  both reads on for its venue (`combineTradeFlags`, `tradeOnFor`).
 
 ## Core math (packages/core)
 
@@ -134,6 +149,25 @@ hasDynamicFee(pool: { dex: string }): boolean // dex in DYNAMIC_FEE_DEXES: 'aero
 buildSharedSymbols(tokens: Pick<TokenInfo, 'address' | 'symbol' | 'name'>[]): SharedSymbols // symbolKey / symbolNameKey → addresses
 tokenLabel(token: Pick<TokenInfo, 'address' | 'symbol' | 'name'>, shared: SharedSymbols): string
 withTokens(shared: SharedSymbols, tokens: Pick<TokenInfo, 'address' | 'symbol' | 'name'>[]): SharedSymbols // a copy with tokens added
+
+// swap checks of the dashboard's single-pool exact-input swap (trade/; docs/METRICS.md, "Swap checks")
+checkTrade(input: TradeCheckInput): TradeDecision // ok | warn (price-impact-high) | refuse with the first failed check
+minAmountOut(quotedAmountOut: bigint, slippageBps: number): bigint // floor(quote × (10 000 − s) / 10 000)
+tradeDeadline(latestBlockTimestamp: bigint, windowSeconds?: bigint): bigint // + TRADE_DEADLINE_SECONDS (300)
+validateSlippageBps(value: number | undefined, flagMaxBps: number): SlippageCheck // default 50, ceiling min(flag, 300)
+effectiveMaxSlippageBps(flagMaxBps: number): number | null
+tradePriceImpact(direction, amountIn, amountOut, mid: Fraction): Fraction | null
+tradeEffectivePrice(direction, amountIn, amountOut): Fraction | null // raw token1 per token0, fee and impact included
+tradePriceDeviation(price: Fraction, reference: Fraction): Fraction | null
+sqrtPriceX96ToRawPrice(sqrtPriceX96: bigint): Fraction | null
+humanPriceToRawPrice(price: number, decimals0: number, decimals1: number): Fraction | null
+tradeSizeUsd(amounts: readonly UsdPricedAmount[]): number | null
+tradeSizeAboveUsd(amounts: readonly UsdPricedAmount[], maxUsd: number): boolean | null
+parseTradeFlags(value: unknown): TradeFlags | null // exactly the exported shape, else null (off)
+parseFlagsFile(value: unknown): TradeFlags | null // data/flags.json: exactly { trade }, else null
+combineTradeFlags(atLoad: TradeFlags | null, live: TradeFlags | null): TradeFlags // on only when both are
+tradeOnFor(flags: TradeFlags, venue: Dex): boolean
+tradeOff(): TradeFlags // off, with the launch limits
 
 // test helpers (exported from core for other packages' tests)
 buildConcentratedState(opts: { positions: Array<{tickLower, tickUpper, liquidity}>; tick; feePips; tickSpacing; blockNumber?; timestamp? }): ConcentratedState
@@ -392,7 +426,7 @@ it, and `apps/api/src/routes/webhookSecret.test.ts` fails when any part of it sh
 - `start [--snapshot-interval 30m] [--volume-interval 1h] [--positions-interval 6h] [--positions-budget 10m] [--discover-budget 15m]` — the server: `serve`'s API and dashboard, listening at once (after a write probe: an unwritable database is exit code 1), plus a scheduler over the same database. A pass every snapshot interval runs [seed until one succeeds] → snapshot → [volume when due] → score → [positions when due or while an active mandate's concentrated pool has no published positions, budgeted] → [log discovery, budgeted] → [prune once a day], both budgets cut to the time left before the next pass; steps never overlap, a failing step is logged and retried at its next slot, a volume or positions run that found no tracked pool is due again at the next pass, every step logs its requests and estimated Alchemy compute units and each UTC day a total. SIGTERM aborts the chain reader and the pipeline (`PipelineContext.signal`: no further pool read, nothing stored by the step in flight), waits `DEPTHWATCH_SHUTDOWN_GRACE` (8 s) at most, closes server and database, exit 0.
 - `serve` — API + dashboard (`apps/web/dist` if built).
 - `demo` — seed an in-memory DB (or an empty / demo-seeded `--db` file; `DEPTHWATCH_DB` is ignored so the live DB is never touched) from the synthetic fixture set and `serve`. Must work with no network.
-- `export --out <file> [--demo] [--note <text>]` — the static dashboard bundle (`StaticBundle`, JSON) of the database, read route by route through `createApp(db).request()` so it holds what the server would answer; `--demo` bundles the offline demo world instead (in memory), `--note` sets the bundle's `note`.
+- `export --out <file> [--demo] [--note <text>] [--bundle <file>]` — the static dashboard bundle (`StaticBundle`, JSON) of the database, read route by route through `createApp(db).request()` so it holds what the server would answer; `--demo` bundles the offline demo world instead (in memory), `--note` sets the bundle's `note`. Every export writes the trade switch from `DEPTHWATCH_TRADE` (environment only, `apps/cli/src/tradeSwitch.ts`) twice: the bundle's `features.trade` and `flags.json` next to the bundle, exactly `{ "trade": … }`. Unset, empty or `off` is off; otherwise a comma-separated list of trade venues with a route in `TRADE_ROUTES` that is not on hold, with the launch limits of core (`TRADE_LAUNCH_MAX_USD`, `TRADE_MAX_SLIPPAGE_BPS`); an unknown or held venue fails closed: everything is written with the switch off, then the export fails with exit code 3, so a workflow publishes off and still fails. `--bundle <file>` writes an exported bundle again with only `features` replaced and reads no database (docs/DEPLOY.md, "Trade switch").
 - `mm register --file <json>` — validate a registration (docs/SCORECARDS.md), store the mandate (an existing id is replaced, keeping its registration time, samples and alerts) and print its scorecard URL; `mm list` — every mandate with its status; `mm show <id>` — the scorecard summary as JSON (the webhook URL masked to scheme and host); `mm deactivate <id>` — stop sampling, the scorecard stays served as `inactive`; `mm sample` — sample every active mandate now against the latest block (the one live `mm` command). The other `mm` commands only touch the database.
 
 ## Dashboard (apps/web)
@@ -408,7 +442,58 @@ via TanStack Query against `/api`; the static build (`pnpm build:static`) reads 
 in-repo mock JSON so the UI runs without a backend (the dev server also falls back to it when the API is down); a production
 build contains no mock data and, when `/api/health` does not answer, shows "The data service is not answering." with a
 "Try again" button instead of made-up pools (docs/design/web-v2.md §4). The bundle (`StaticBundle` in `apps/api/src/dto.ts`, mirrored in
-`apps/web/src/api/types.ts`) carries an optional `note` from `depthwatch export --note <text>`. A static build of a
+`apps/web/src/api/types.ts`) carries an optional `note` from `depthwatch export --note <text>` and an optional
+`features.trade`, the trade switch; the static build ships it again as `data/flags.json` and fails when the two differ
+(`plugins/staticFlags.ts`). Core's `parseTradeFlags`, `parseFlagsFile` and `combineTradeFlags` read them failing
+closed: a missing or malformed block is off, and a swap needs both on for its venue. The static build also ships
+`public/_headers` for Cloudflare Pages (no framing, `nosniff`, a Content-Security-Policy with `connect-src 'self'` and
+the inline script of `index.html` by hash, `data/flags.json` uncached); every build fails when that hash and the inline
+script differ, and the server build leaves the file out (`plugins/securityHeaders.ts`).
+
+The swap panel (`src/trade/`: an exact-input swap in the one pool the page shows, nothing
+else). The Pool page gains "trade in this pool" under cost to trade only when `pages/pool/tradeGate.ts`
+allows it: the bundle's switch on for the pool's DEX, a route in `TRADE_ROUTES` that is not on hold,
+a concentrated pool with an address, no hook, rated, not a stale quote, both tokens in `TRADE_TOKENS`;
+never in demo, mock or connecting mode, and never in the server build, which carries no switch (it still
+ships the section, the gate and the lazy panel's chunks, unreachable there: about 10 kB of its boot script). Until
+the reader clicks "Swap in this pool" the row shows the snapshot's $10K round trip with its time and
+loads no wallet code: the panel is a lazy chunk in Suspense and an error boundary ("Reload the page to
+trade"), and `src/tradeBundle.test.ts` fails when the ERC-8021 marker, `eip6963:requestProvider` or
+viem reach a boot chunk, or the boot chunks pass their byte budget. The panel finds wallets by EIP-6963
+(`window.ethereum` when none announces itself), asks for Base (0x2105) when the wallet is elsewhere,
+and reads everything through the wallet's own provider: before any quote it checks the pool on chain
+(`pool.factory()` names the route, the router's `factory()` is that factory, the factory's `getPool`
+is this pool, the tokens are the page's); quotes are `eth_call`s to the route's quoter at one block
+with the pool's `slot0()` and that of the deepest other rated pool of the pair (a bound for core's
+`checkTrade`, never shown as a suggestion); a quote that stopped at the price limit (part of the input
+unused) is refused whatever the quoter. Amounts, minimum, impact, size cap and deviations are
+core's (docs/METRICS.md, "Swap checks"). The review names each token by symbol, name and address on
+Base, linked to Basescan. Approval is exact and skipped when the allowance covers the input; the
+panel reads `data/flags.json` again with `cache: 'no-store'` when it connects and before each
+signature request, and before each one it also re-quotes (a lower minimum goes back to the review)
+and simulates the exact transaction from the account. A started approve-then-swap asks the wallet for
+nothing more once the panel has moved on (another account, network or wallet, or another page). ETH
+in is `value` with WETH as `tokenIn` (on SwapRouter02, whose swap refunds nothing, followed by
+`refundETH()`); ETH out is the router's `unwrapWETH9(minOut, account)` in the same multicall, with
+WETH out offered when only the unwrap fails its simulation. The Builder Code `bc_j6obesn8` goes on
+every transaction as its ERC-8021 suffix (`trade/builderCode.ts`, 29 bytes): an EOA is asked once,
+after a check that it is on Base, for `eth_sendTransaction` of our calldata with the suffix appended,
+the bytes simulated (viem's `sendTransaction` is not used: it can ask again as
+`wallet_sendTransaction`); a wallet whose `wallet_getCapabilities` reports `dataSuffix` on 0x2105 gets
+`wallet_sendCalls` with `capabilities.dataSuffix = { value, optional: false }` and plain calldata, so it
+is never appended twice and never dropped by a fallback, and its outcome is the wallet's EIP-5792
+status and receipts (an ERC-4337 bundle succeeds when the user operation inside it reverts). An
+account with contract code that is not an EIP-7702 delegation and does not report the capability
+signs on the EOA path, and the review says its code may not be recorded. After the receipt the
+panel reads the codes back where ERC-8021 puts them, the end of the account's user operation when
+the transaction is a `handleOps` bundle, else the end of the transaction's input
+(`trade/readBack.ts`), and shows them under Details; a missing code never blocks. A swap whose
+receipt shows no payment to the account is not reported as done, an approval that went through
+before a swap that was not made is shown with its fee, its link and the allowance it leaves, and a
+request the wallet took whose outcome could not be read is reported as unknown, never as not sent;
+one taken before the panel moved on stays linked in the panel.
+
+A static build of a
 `live` bundle is a dated snapshot that does not update: the top line names Base mainnet and the snapshot's UTC time,
 "About this snapshot" shows the note, and freshness and every other time are absolute, never "… ago"
 (docs/design/web-v2.md §4).

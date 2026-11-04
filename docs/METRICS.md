@@ -746,11 +746,14 @@ prices are exact fractions of raw token1 per raw token0 (for a concentrated pool
   is. A warning above 100 bps (1 %), a refusal above 500 bps (5 %). A quote cannot beat its own
   pool's mid at the same block (the fee is taken and every step rounds in the pool's favour), so an
   impact below −500 bps means the quote and the mid come from different states, and is refused.
-- **Deviation** of the trade's average price `p` from a reference price `r` is
-  `max(p, r) / min(p, r) − 1`, which does not depend on which price is the reference or which token
-  is token0. Refused above 200 bps from another live pool of the same pair read at the same block,
-  and above 1,000 bps from the snapshot's price of this pool, which can be three hours old. A pool
-  without a snapshot price is refused.
+- **Deviation** of the pool's mid `m` (its price before the trade, read at the quote's block) from a
+  reference price `r` is `max(m, r) / min(m, r) − 1`, which does not depend on which price is the
+  reference or which token is token0. Refused above 200 bps from the mid of another live pool of
+  the same pair read at the same block, and above 1,000 bps from the snapshot's price of this pool,
+  which can be three hours old. A pool without a snapshot price is refused. Both compare prices
+  before the trade, so they are the same at any amount and in both directions: they catch a pool
+  whose own price is wrong or has been pushed away from the market, while the fee and the trade's
+  own impact are bounded by the price impact, which includes them.
 - **Size.** The input and the quoted output are valued at their tokens' snapshot USD prices (see
   [USD prices](#usd-prices)) and the larger value counts, so a stale low price on one token cannot
   slip a large trade under the cap. Refused above the flag's `maxUsd` ($1,000 at launch), and when
@@ -766,16 +769,21 @@ the default slippage.
 - Sell 0.4 WETH (`400000000000000000` wei, $1,000). The quote is `996602554`, 996.602554 USDC, so
   `avg = 2,491.51` and the impact is `1 − 2,491.51 / 2,500 = 33.97` bps, shown as 34.
   `minOut = floor(996,602,554 × 9,950 / 10,000) = 991,619,541` (991.619541 USDC). The size is
-  `max($1,000, $996.60) = $1,000`: at the cap, allowed. The deviation from the snapshot is 34.09
-  bps. Decision: ok. One wei more (`400000000000000001`) is above the cap and refused.
+  `max($1,000, $996.60) = $1,000`: at the cap, allowed. The pool's mid equals the snapshot price,
+  so the deviation from the snapshot is 0 bps. Decision: ok. One wei more (`400000000000000001`) is
+  above the cap and refused.
 - Buy with 1,000 USDC: 0.398641021960442175 WETH, `avg = 2,508.52`, an impact of 34.09 bps (shown
   as 35), `minOut = 396647816850639964` wei. Decision: ok.
 - The same 0.4 WETH into a pool of 40 WETH and 100,000 USDC returns 987.158034 USDC: an impact of
   128.42 bps, a warning. Into 8 WETH and 20,000 USDC it returns 949.659475 USDC: 503.41 bps,
   refused.
-- If another live WETH/USDC pool reads 2,450, the sale is 169.41 bps from it and passes; at 2,440 it
-  is 211.09 bps away and refused. A snapshot price of 2,400 is 381.28 bps away and passes; one of
-  2,260 is 1,024.36 bps away and refused.
+- If another live WETH/USDC pool reads 2,451, the pool's mid of 2,500 is 199.92 bps from it and
+  both trades pass; at 2,450 it is 204.08 bps away (shown as 205) and both are refused. A snapshot
+  price of 2,273 is 998.68 bps away and passes; one of 2,272 is 1,003.52 bps away and refused.
+- The same reserves with a 2 % fee: selling 0.1 WETH returns 244.975992 USDC, an impact of
+  200.96 bps, and buying with 250 USDC returns 0.097990396941099772 WETH, 205.08 bps: warnings.
+  With another live pool at 2,530, 120 bps from the mid, both are allowed, though the sale's
+  average price is 327.54 bps from 2,530.
 
 ## Why these metrics
 

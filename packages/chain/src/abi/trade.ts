@@ -19,7 +19,10 @@
  *   directly and authenticated through the FactoryRegistry). No quoter signals a partial fill, so
  *   the panel compares `sqrtPriceX96After` with the price limit for every quoter.
  * - Pools: v3-core `IUniswapV3PoolImmutables.sol`, Slipstream `ICLPoolConstants.sol` and
- *   `ICLPoolState.sol` (`fee()` is the live fee on Slipstream): the same five signatures.
+ *   `ICLPoolState.sol`: the same five signatures. `fee()` is the fee a `swap()` at that block
+ *   charges: the fixed tier on Uniswap v3; on Slipstream `CLPool.sol` it is
+ *   `ICLFactory(factory).getSwapFee(pool)`, which `swap()` reads when it starts, so the panel reads
+ *   it at the quote's block; it can change by the block the swap lands in.
  * - Factories: v3-core `IUniswapV3Factory.getPool(address,address,uint24)`, Slipstream and Aero
  *   `ICLFactory.getPool(address,address,int24)`.
  */
@@ -234,7 +237,10 @@ export const metaquoterAbi = [
   viewAddress('factoryRegistry'),
 ] as const
 
-/** The pool identity reads of Uniswap v3 and Slipstream (Aerodrome and Aero) pools. */
+/**
+ * The pool identity reads of Uniswap v3 and Slipstream (Aerodrome and Aero) pools, and `fee()`,
+ * the fee a swap in the pool pays at the block it is read at.
+ */
 export const tradePoolAbi = [
   viewAddress('factory'),
   viewAddress('token0'),

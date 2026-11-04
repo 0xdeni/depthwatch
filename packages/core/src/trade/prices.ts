@@ -1,6 +1,7 @@
 /**
  * Exact price ratios for the swap checks (docs/METRICS.md, "Swap checks"): the trade's effective
- * price, its price impact and its deviation from a reference price.
+ * price, its price impact and the deviation of one price from another (the swap checks compare the
+ * pool's mid with another live pool's and with the snapshot's).
  *
  * A price here is a `Fraction` of raw token1 units per raw token0 unit (the pool's orientation,
  * before any decimal adjustment), with both terms positive. Ratios stay exact bigint fractions;

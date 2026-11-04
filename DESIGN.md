@@ -465,8 +465,11 @@ and reads everything through the wallet's own provider: before any quote it chec
 (`pool.factory()` names the route, the router's `factory()` is that factory, the factory's `getPool`
 is this pool, the tokens are the page's); quotes are `eth_call`s to the route's quoter at one block
 with the pool's `slot0()` and that of the deepest other rated pool of the pair (a bound for core's
-`checkTrade`, never shown as a suggestion); a quote that stopped at the price limit (part of the input
-unused) is refused whatever the quoter. Amounts, minimum, impact, size cap and deviations are
+`checkTrade`, never shown as a suggestion), and the pool's `fee()` at that block, the fee a swap at
+that block pays (it can change by the block the swap lands in), shown as the live pool fee (on
+Slipstream it is the factory's `getSwapFee(pool)`, which can be far from the snapshot's; a quote
+whose fee cannot be read gives no price); a quote that stopped at the price limit (part of the
+input unused) is refused whatever the quoter. Amounts, minimum, impact, size cap and deviations are
 core's (docs/METRICS.md, "Swap checks"). The review names each token by symbol, name and address on
 Base, linked to Basescan. Approval is exact and skipped when the allowance covers the input; the
 panel reads `data/flags.json` again with `cache: 'no-store'` when it connects and before each
@@ -478,10 +481,12 @@ in is `value` with WETH as `tokenIn` (on SwapRouter02, whose swap refunds nothin
 WETH out offered when only the unwrap fails its simulation. The Builder Code `bc_j6obesn8` goes on
 every transaction as its ERC-8021 suffix (`trade/builderCode.ts`, 29 bytes): an EOA is asked once,
 after a check that it is on Base, for `eth_sendTransaction` of our calldata with the suffix appended,
-the bytes simulated (viem's `sendTransaction` is not used: it can ask again as
-`wallet_sendTransaction`); a wallet whose `wallet_getCapabilities` reports `dataSuffix` on 0x2105 gets
-`wallet_sendCalls` with `capabilities.dataSuffix = { value, optional: false }` and plain calldata, so it
-is never appended twice and never dropped by a fallback, and its outcome is the wallet's EIP-5792
+the bytes simulated, and `gas` the wallet's `eth_estimateGas` of those bytes × 125 / 100, rounded
+up: an estimate that reverts sends nothing, and a wallet that cannot estimate sets the limit itself
+(viem's `sendTransaction` is not used: it can ask again as `wallet_sendTransaction`); a wallet
+whose `wallet_getCapabilities` reports `dataSuffix` on 0x2105 gets `wallet_sendCalls` with
+`capabilities.dataSuffix = { value, optional: false }` and plain calldata, so it is never appended
+twice and never dropped by a fallback, and its outcome is the wallet's EIP-5792
 status and receipts (an ERC-4337 bundle succeeds when the user operation inside it reverts). An
 account with contract code that is not an EIP-7702 delegation and does not report the capability
 signs on the EOA path, and the review says its code may not be recorded. After the receipt the

@@ -269,6 +269,19 @@ describe('trade ABIs: the signatures of their sources', () => {
     expect(selectors(metaquoterAbi)).toEqual(['0x0a674142', '0x3bf0c9fb'])
   })
 
+  it('read the pool with the selectors of v3-core and Slipstream, fee() the live fee', () => {
+    const selectors = signatures(tradePoolAbi).map((s) => toFunctionSelector(`function ${s}`))
+    // factory(), token0(), token1(), fee() and tickSpacing(): on a Slipstream pool fee() is
+    // ICLFactory(factory).getSwapFee(pool), the fee swap() charges at that block.
+    expect(selectors).toEqual([
+      '0xc45a0155',
+      '0x0dfe1681',
+      '0xd21220a7',
+      '0xddca3f43',
+      '0xd0c93a7c',
+    ])
+  })
+
   it('type the struct args by field name, so a misspelt field does not compile', () => {
     const account = TOKENS.USDC.address
     const params = {

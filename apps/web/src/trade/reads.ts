@@ -154,6 +154,11 @@ export interface LiveQuote {
   poolMid: Fraction | null
   /** Raw prices of the reference pools of the same pair, at the same block. */
   otherMids: Fraction[]
+  /**
+   * The pool's `fee()` at the same block, in pips (`feeOf`): the fee a swap at that block pays; it
+   * can change by the block the swap lands in.
+   */
+  feePips: number
 }
 
 async function midOf(client: Client, pool: Address, blockNumber: bigint): Promise<Fraction | null> {
@@ -162,9 +167,22 @@ async function midOf(client: Client, pool: Address, blockNumber: bigint): Promis
 }
 
 /**
- * Quotes `amountIn` of `tokenIn` on the checked pool and reads the pool's price and those of
- * `references`, all at the latest block. A reference that cannot be read is left out; a quote
- * that fails, or that fills only part of the input, throws `TradeStop`.
+ * The fee a swap in `pool` pays at `blockNumber`, in pips: the pool's `fee()`, which is what
+ * `swap()` reads when it starts. On Uniswap v3 it is the pool's fixed tier. On a Slipstream pool
+ * (aerodrome-finance/slipstream `CLPool.sol`) `swap()` sets its fee to `fee()`, and `fee()` is
+ * `ICLFactory(factory).getSwapFee(address(this))`, the deployment's swap fee module, which can
+ * change from one block to the next; `unstakedFee()` only splits that fee between the pool's
+ * unstaked liquidity and its gauge, and costs the trader nothing more.
+ */
+async function feeOf(client: Client, pool: Address, blockNumber: bigint): Promise<number> {
+  return Number(await read(client, pool, tradePoolAbi, 'fee', [], blockNumber))
+}
+
+/**
+ * Quotes `amountIn` of `tokenIn` on the checked pool and reads the pool's price and fee and the
+ * prices of `references`, all at the latest block. A reference that cannot be read is left out; a
+ * quote that fails, that fills only part of the input, or whose fee cannot be read, throws
+ * `TradeStop`.
  */
 export async function readQuote(
   client: Client,
@@ -182,12 +200,14 @@ export async function readQuote(
     if (!r.data) throw new TradeStop('quote-failed')
     return decodeQuote(checked.route, r.data, zeroForOne)
   })
-  const [quote, poolMid, others] = await Promise.all([
-    quoted.catch((error: unknown) => {
-      throw error instanceof TradeStop ? error : new TradeStop('quote-failed')
-    }),
+  const failed = (error: unknown): never => {
+    throw error instanceof TradeStop ? error : new TradeStop('quote-failed')
+  }
+  const [quote, poolMid, others, feePips] = await Promise.all([
+    quoted.catch(failed),
     midOf(client, checked.key.address, blockNumber).catch(() => null),
     Promise.all(references.map((ref) => midOf(client, ref, blockNumber).catch(() => null))),
+    feeOf(client, checked.key.address, blockNumber).catch(failed),
   ])
   if (quote.partial) throw new TradeStop('partial-fill')
   return {
@@ -196,6 +216,7 @@ export async function readQuote(
     amountOut: quote.amountOut,
     poolMid,
     otherMids: others.filter((mid): mid is Fraction => mid !== null),
+    feePips,
   }
 }
 

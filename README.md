@@ -22,8 +22,10 @@ what a trade of a given size costs, and publishes the numbers through a dashboar
 a command-line pipeline. A pool's size (its TVL) answers neither question; the liquidity close to
 the current price does.
 
-Depthwatch is independent: it is not affiliated with or endorsed by Base, it deploys nothing on
-Base and sends no transactions; it only reads Base mainnet over JSON-RPC.
+Depthwatch is independent: it is not affiliated with or endorsed by Base. It deploys nothing on
+Base and sends no transactions of its own: the pipeline only reads Base mainnet over JSON-RPC, and
+the dashboard's optional swap panel ([below](#the-dashboard)) hands a visitor's swap to the
+visitor's own wallet.
 
 **Live copy.** <https://depthwatch.pages.dev> is a static copy of the dashboard. This repository's
 Refresh site workflow reads Base mainnet and publishes a new copy about every three hours; each
@@ -65,8 +67,9 @@ Liquidity Health Score, graded A–F for the pools deep enough to be rated (both
 depth known, the thinner holding at least $5,000; the others show "not rated" and why). A "liquidity
 gaps" feed lists pools that have real trading volume but thin depth. Price trackers show price and
 pool TVL; Depthwatch measures executable depth, which is what market makers quote against and what
-protocol teams need when they evaluate one. There is no token, no custody and no trading capital: it
-is indexing, analytics and a dashboard, released under MIT.
+protocol teams need when they evaluate one. Depthwatch measures and does not trade on its own
+account: there is no token, no custody, no trading capital and no fee added to swaps. It is
+indexing, analytics and a dashboard, released under MIT.
 
 The same snapshots feed **market-maker scorecards**: a project registers a mandate (one pool,
 the market maker's addresses, the depth and spread KPIs from its agreement) and gets a public
@@ -114,6 +117,13 @@ from the synthetic fixture set with no RPC endpoint. `depthwatch export` and
 the block it was read at and says that it does not update. The live copy at
 <https://depthwatch.pages.dev> is such a build, replaced by a new one about every three hours
 ([A free static copy](docs/DEPLOY.md#a-free-static-copy)).
+
+**Swap panel.** A static copy has an optional swap panel, off unless the site's operator switches
+it on ([Trade switch](docs/DEPLOY.md#trade-switch)); the footer of every page says which. When on,
+it lets a visitor swap in the pool they are viewing, from their own wallet, straight to that pool's
+router; it never routes or recommends a pool, never holds the visitor's funds and adds no fee. Each
+swap carries Depthwatch's Builder Code (ERC-8021), which lets Base attribute the transaction
+onchain; the code adds no fee, only 29 bytes of calldata (a negligible amount of gas).
 
 ## Quick start
 
@@ -399,7 +409,7 @@ A pnpm workspace with three library packages and three apps. The dependency dire
 | `packages/chain` | `@depthwatch/chain` | viem adapters for Base: discovery, overview, tick-bitmap state walks, positions, swaps; fixture and recording transports. |
 | `packages/db`    | `@depthwatch/db`    | `node:sqlite` schema, migrations and typed repositories.                                                                  |
 | `apps/api`       | `@depthwatch/api`   | Hono REST API with zod validation; serves the built dashboard.                                                            |
-| `apps/web`       | `@depthwatch/web`   | Vite + React dashboard; talks only to `/api`.                                                                             |
+| `apps/web`       | `@depthwatch/web`   | Vite + React dashboard; reads `/api` (or the static bundle); the swap panel, when on, also talks to the visitor's wallet. |
 | `apps/cli`       | `@depthwatch/cli`   | The `depthwatch` command: the pipeline above.                                                                             |
 
 Data flows discover → overview → prices → rank → state → metrics → snapshots → volume → scores →

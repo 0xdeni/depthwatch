@@ -128,14 +128,14 @@ Each step reads what the previous one stored, so any step can be rerun on its ow
 10. **API** (`depthwatch serve`). Hono routes over the repositories. Every query is validated with
     zod; every response is JSON with bigints as decimal strings (`toJsonSafe`). When
     `apps/web/dist` exists it is served with an SPA fallback to `index.html`.
-11. **web**. React dashboard. It talks only to `/api` through an `ApiClient` interface that has an
+11. **web**. React dashboard. It reads `/api` through an `ApiClient` interface that has an
     HTTP implementation and a mock implementation (`VITE_MOCK=1`, or the dev server when the API
     is down; never a production build) backed by JSON in `apps/web/src/mock`. Bigint strings are formatted with BigInt arithmetic in `lib/format.ts`.
     The static build reads the exported bundle instead and also serves `data/flags.json`, the trade
     switch, with `public/_headers` (no framing, a Content-Security-Policy, that file uncached). The
-    lazy swap panel (`src/trade/`), shown only when the switch is on, is the one part that talks
-    to anything else: the reader's own wallet (EIP-1193), for its reads and the transactions the
-    reader signs (DESIGN.md, "Dashboard (apps/web)").
+    optional swap panel (`src/trade/`, lazy), off unless the switch is on, is the one part that
+    talks to anything else: the reader's own wallet (EIP-1193), for its reads and the transactions
+    the reader signs (DESIGN.md, "Dashboard (apps/web)").
 
 `depthwatch positions` is a separate, less frequent step (`run` folds it into every pass for the
 concentrated pools of active mandates, `run --with-positions` for every tracked pool): it indexes

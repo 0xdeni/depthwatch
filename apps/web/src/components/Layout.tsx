@@ -16,9 +16,10 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useRef, ViewTransition } from 'react'
 import { Outlet, useLocation, useNavigationType } from 'react-router-dom'
-import { useApi, useIsDemo, useIsMock, useSnapshot } from '../api/context.js'
+import { useApi, useApiContext, useIsDemo, useIsMock, useSnapshot } from '../api/context.js'
 import { useFirstView } from '../lib/firstView.js'
 import { isKeyboardClick, prefersReducedMotion } from '../lib/motion.js'
+import { tradeSwitchOn } from '../lib/tradeSwitch.js'
 import { useMediaQuery } from '../lib/useMediaQuery.js'
 import { RouteErrorBoundary } from './ErrorBoundary.js'
 import { type ClickHold, createClickHold, linkOf, prefetchRoute } from './routeIntent.js'
@@ -107,6 +108,7 @@ export function Layout() {
   const mock = useIsMock()
   const snapshot = useSnapshot()
   const source: DataSourceKind = demo ? 'demo' : mock ? 'mock' : snapshot ? 'snapshot' : 'live'
+  const trade = tradeSwitchOn(useApiContext()) !== null
   const location = useLocation()
   const navType = useNavigationType()
   const intent = useRef<RouteIntent>(null)
@@ -185,7 +187,7 @@ export function Layout() {
           </RouteErrorBoundary>
         </main>
       </ViewTransition>
-      <Footer source={source} />
+      <Footer source={source} trade={trade} />
       {docked ? <Dock /> : null}
     </>
   )

@@ -410,8 +410,8 @@ export interface SamplesQuery {
 
 /**
  * Everything the UI needs from the backend. Implemented by the HTTP client and the mock client.
- * The dashboard is read-only: the admin routes (`POST /api/mm`, `DELETE /api/mm/:id`) are not
- * part of it.
+ * The dashboard never writes through the API: the admin routes (`POST /api/mm`,
+ * `DELETE /api/mm/:id`) are not part of it.
  */
 export interface ApiClient {
   health(): Promise<HealthResponse>

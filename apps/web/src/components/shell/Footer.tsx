@@ -3,6 +3,11 @@
  * three columns: the wordmark at 28 px; the promise, the independence line in plain text and the data
  * source named once (D7), in `--on-ink-2`; the links Methodology, API and GitHub as 44 px targets
  * (44 × 44 on a coarse pointer). Phones stack them in that order.
+ *
+ * The promise follows the trade switch the page loaded with (`tradeSwitchOn`): the panel's own
+ * promise (non-custodial, no fee) while the switch is on for a venue whose route is not on hold,
+ * read-only otherwise, so switching the panel on needs no new release of this text. A page already
+ * open keeps its promise until it reloads.
  */
 import { Link } from 'react-router-dom'
 import { Wordmark } from './Logo.js'
@@ -25,10 +30,15 @@ const DATA_LINE: Readonly<Record<DataSourceKind, string>> = {
   snapshot: 'Data: a Base mainnet snapshot',
 }
 
+/** The promise while the swap panel is off. */
 export const FOOTER_PROMISE =
   'Open source and read-only. No token, no custody. It indexes Uniswap, Aerodrome and Aero pools on Base mainnet. Independent: not affiliated with or endorsed by Base.'
 
-export function Footer({ source }: { source: DataSourceKind }) {
+/** The promise while the trade switch is on for a venue whose route is not on hold. */
+export const FOOTER_PROMISE_TRADE =
+  'Open source. No token, no custody, no fee added to swaps. It indexes Uniswap, Aerodrome and Aero pools on Base mainnet. The swap panel is on and non-custodial: a swap goes from your own wallet straight to the pool’s router. Independent: not affiliated with or endorsed by Base.'
+
+export function Footer({ source, trade = false }: { source: DataSourceKind; trade?: boolean }) {
   return (
     <footer className="foot">
       <div className="wrap foot-inner">
@@ -36,7 +46,8 @@ export function Footer({ source }: { source: DataSourceKind }) {
           <Wordmark size={28} />
         </Link>
         <p className="foot-say">
-          {FOOTER_PROMISE} <span className="foot-data">{DATA_LINE[source]}</span>.
+          {trade ? FOOTER_PROMISE_TRADE : FOOTER_PROMISE}{' '}
+          <span className="foot-data">{DATA_LINE[source]}</span>.
         </p>
         <ul className="foot-links">
           <li>

@@ -12,7 +12,13 @@ with log discovery (`discover`), or the pools between the reference tokens (and 
 - A **Liquidity Health Score** (0–100; a grade A–F for _rated_ pools, those whose thinner ±2 % side holds at least
   $5,000) and a **liquidity gaps feed** (real volume, thin depth).
 
-No trading capital, no token, no custody. It is indexing, analytics and a dashboard.
+Depthwatch measures and does not trade on its own account: no trading capital, no token, no
+custody, no fee added to swaps. It is indexing, analytics and a dashboard. The dashboard's optional
+swap panel, off unless the site's operator switches it on (`features.trade`, "Dashboard
+(apps/web)"), lets a visitor swap in the pool they are viewing, from their own wallet, straight to
+that pool's router; it never routes or recommends a pool. Each swap carries Depthwatch's Builder
+Code (ERC-8021), which lets Base attribute the transaction onchain; the code adds no fee, only 29
+bytes of calldata (a negligible amount of gas).
 
 ## Repository layout (pnpm workspace, TypeScript, ESM, Node ≥ 22.13)
 
@@ -22,7 +28,7 @@ No trading capital, no token, no custody. It is indexing, analytics and a dashbo
 | `packages/chain` | `@depthwatch/chain` | viem adapters for Base: discovery, state, positions, swaps, fixture transport. | core, viem                                                                   |
 | `packages/db`    | `@depthwatch/db`    | `node:sqlite` schema, migrations, repositories.                                | core                                                                         |
 | `apps/api`       | `@depthwatch/api`   | Hono REST API + static serving of the built dashboard.                         | core, db, hono, @hono/node-server, zod                                       |
-| `apps/web`       | `@depthwatch/web`   | Vite + React 19 dashboard. Talks only to `/api`.                               | core, chain, react, react-dom, react-router-dom, @tanstack/react-query, viem |
+| `apps/web`       | `@depthwatch/web`   | Vite + React 19 dashboard. Reads `/api` or the bundle; swaps use the wallet.   | core, chain, react, react-dom, react-router-dom, @tanstack/react-query, viem |
 | `apps/cli`       | `@depthwatch/cli`   | `depthwatch` CLI: the pipeline (discover → snapshot → volume → score → serve). | every workspace package, viem, tsx                                           |
 
 "May import" lists each package's `dependencies` in its `package.json`: workspace packages by their
@@ -491,7 +497,11 @@ the transaction is a `handleOps` bundle, else the end of the transaction's input
 receipt shows no payment to the account is not reported as done, an approval that went through
 before a swap that was not made is shown with its fee, its link and the allowance it leaves, and a
 request the wallet took whose outcome could not be read is reported as unknown, never as not sent;
-one taken before the panel moved on stays linked in the panel.
+one taken before the panel moved on stays linked in the panel. The footer's promise follows the
+switch the page loaded with (`lib/tradeSwitch.ts`, `tradeSwitchOn`, which the gate also uses): on
+for a venue whose route is not on hold, it says the swap panel is on and non-custodial with no fee
+added to swaps, otherwise that the site is read-only (visual-v4.md §5.1); a page already open keeps
+its footer until it reloads.
 
 A static build of a
 `live` bundle is a dated snapshot that does not update: the top line names Base mainnet and the snapshot's UTC time,

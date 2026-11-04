@@ -172,10 +172,16 @@ one project and one market maker have asked for it.
 ## Non-goals
 
 These are deliberate and will be declined as feature requests:
-- **No trading, routing or aggregation.** Depthwatch simulates swaps to measure depth; it never
-  executes one and does not recommend routes.
-- **No custody, no token, no trading capital.** Layer 3 escrow holds a fee, not inventory, and is
-  non-custodial with respect to the market maker's assets.
+- **No trading on its own account, no routing, no aggregation.** Depthwatch simulates swaps to
+  measure depth and never trades for itself. The dashboard's optional swap panel, off unless the
+  site's operator switches it on, lets a visitor swap in the pool they are viewing, from their own
+  wallet, straight to that pool's router; it never routes, splits a swap across pools or
+  recommends a pool.
+- **No custody, no token, no trading capital, no fee added to swaps.** The swap panel never holds a
+  visitor's funds; each swap carries Depthwatch's Builder Code (ERC-8021), which lets Base
+  attribute the transaction onchain; the code adds no fee, only 29 bytes of calldata (a negligible
+  amount of gas). Layer 3 escrow holds a fee, not inventory, and is non-custodial with respect to
+  the market maker's assets.
 - **No chains other than Base.** No multi-chain abstraction, no bridges.
 - **No price oracle.** USD prices are derived from pool prices for display and for valuing depth;
   they carry no guarantee and must not be consumed as an oracle.

@@ -3,6 +3,7 @@
  * - its dependency on `@depthwatch/core` is a runtime one (`DEXES`, `healthGrade`,
  *   `computeHealthScore`, …), not a type-only one, and the packages tables in docs/ARCHITECTURE.md
  *   and DESIGN.md say so;
+ * - `components/` and `lib/`, shared by every page, import nothing from `pages/`;
  * - the v4 build (docs/design/visual-v4.md §7) adds no dependency and no chart library (the swap
  *   panel later added `chain`'s browser-safe entry and viem, lazily loaded), has the
  *   parts of its file map, plays the first view from one module, and carries its amendments into
@@ -74,6 +75,17 @@ function appSources(): string[] {
     (f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f) && !/(^|\/)testing/.test(f),
   )
 }
+
+describe('module layers', () => {
+  it('components and lib, which every page shares, import nothing from pages', () => {
+    const fromPages = appSources().filter(
+      (f) =>
+        /^(components|lib)\//.test(f) &&
+        /from '(?:\.\.?\/)+pages\//.test(readFileSync(join(SRC, f), 'utf8')),
+    )
+    expect(fromPages).toEqual([])
+  })
+})
 
 describe('the v4 build (docs/design/visual-v4.md §7)', () => {
   it('adds no dependency and no chart library (§7.1); the swap panel later added chain and viem', () => {

@@ -2,7 +2,7 @@
 
 > Depthwatch is an open-source liquidity observatory for Base mainnet (chain id 8453). Its read-only JSON API reports, for each tracked Uniswap v3, Uniswap v4, Aerodrome v2, Aerodrome Slipstream, Aero v2 and Aero Slipstream pool, the capital needed to move the price by 1, 2 and 5 % on each side, the round-trip cost of $1k / $10k / $100k / $1M trades with fees included, LP concentration, liquidity persistence over 24 h and 7 d, a 0–100 Liquidity Health Score (graded A–F only for pools with at least $5,000 on the thinner ±2 % side; the rest are marked unrated), and a feed of pools whose volume outruns their depth.
 
-Links below are relative to this file. On a Depthwatch server they resolve to `/AGENTS.md`, `/openapi.json` and the `/api/...` routes. Call `GET /api/health` first: `source: "demo"` means synthetic data that must not be traded on. Tokens are identified by address: symbols repeat (Aerodrome's and Aero's AERO are both `AERO`), and every token object carries a display `label`. Slipstream pool fees can change every block. Depthwatch does not execute or route trades, and its USD prices are not an oracle.
+Links below are relative to this file. On a Depthwatch server they resolve to `/AGENTS.md`, `/openapi.json` and the `/api/...` routes. Call `GET /api/health` first: `source: "demo"` means synthetic data that must not be traded on. Tokens are identified by address: symbols repeat (Aerodrome's and Aero's AERO are both `AERO`), and every token object carries a display `label`. Slipstream pool fees can change every block. This API does not execute or route trades, and its USD prices are not an oracle.
 
 ## Docs
 

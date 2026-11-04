@@ -356,7 +356,8 @@ default) or `off`:
 - The live test has passed: small swaps on Base mainnet from a Cloudflare Pages preview with
   trading on (production off), in an extension wallet and a smart wallet, each checked on
   Basescan (the router, the exact approval, the Builder Code at the end of the input or of the
-  user operation).
+  user operation); the steps and the checklist are in
+  [Trade preview (the live test)](#trade-preview-the-live-test).
 
 Flipping the variable needs no code release, so nothing in the code enforces this list: whoever
 changes the variable checks it.
@@ -386,6 +387,106 @@ site serves, run Refresh site instead, which rebuilds the bundle from the saved 
 than from the published copy. Should GitHub Actions be down, Cloudflare's dashboard can roll the
 Pages project back to an earlier deployment (Workers & Pages, the project, Deployments); this has
 not been tried.
+
+### Trade preview (the live test)
+
+The Trade preview workflow (`.github/workflows/trade-preview.yml`) publishes the static copy to a
+Cloudflare Pages preview of the same project, <https://trade-preview.depthwatch.pages.dev>, with
+the trade switch taken from the run's `venues` input: `off`, `uniswap-v3`, `aerodrome-slipstream`
+or `uniswap-v3,aerodrome-slipstream`. It never reads the repository variable `DEPTHWATCH_TRADE`.
+Like Trade switch, it downloads the published `data/bundle.json`, changes only the switch, builds
+and uploads, but always with `--branch trade-preview`: the production site,
+<https://depthwatch.pages.dev>, is untouched, and Refresh site and Trade switch publish only
+`--branch main`, so they never change the preview. Wrangler publishes the production site when the
+branch it is given is the project's production branch, so before uploading the run reads that
+branch through Cloudflare's API and stops unless it is `main`; after uploading, it fails if
+Cloudflare made anything but a preview deployment, or if
+<https://depthwatch.pages.dev/data/flags.json> does not serve `"enabled":false`, whatever the
+input: it is a test for while the production switch is off. A refused value publishes nothing.
+The preview adds `X-Robots-Tag: noindex, nofollow` on every path; every other header, the
+Content-Security-Policy included, is the production site's. It has its own concurrency group, so
+it does not wait for Refresh site, and two previews never publish at once.
+
+Each deployment also has an address of its own, `https://<id>.depthwatch.pages.dev` (in the run's
+summary and in the public log of its publish step), which keeps the switch it was built with until
+the deployment is deleted. So once the preview serves the run's build (its `index.html` and
+`data/flags.json`), the run deletes every earlier `trade-preview` deployment through Cloudflare's
+API and fails if one is left; its own deployment, which the preview address points to, stays.
+
+Steps 1, 2 and 4 work from a phone, in a browser signed in to GitHub; the extension-wallet half of
+step 3 needs a computer:
+1. Actions, Trade preview, Run workflow on `main`; under "Trade switch of the preview; off
+   switches it off again", pick the venues to test, for example `uniswap-v3`, and Run workflow.
+2. The run turns green once <https://trade-preview.depthwatch.pages.dev> serves its build and
+   switch, the earlier deployments are deleted and the production site still serves the switch
+   off. Its summary gives the preview's address, the switch, the run's own deployment address and
+   the number of earlier deployments deleted.
+3. Open <https://trade-preview.depthwatch.pages.dev> in each wallet's browser and go through the
+   checklist below.
+4. Right after the test, run Trade preview again with `off`: while the preview is on, anyone with
+   its address can use its swap panel, within the limits set in the code. That run serves the
+   switch off and deletes the deployment that had it on; its summary says none is left.
+5. If the run fails, its log says why, and the step that failed says what was published:
+   - **Check settings** to **Build the static site** (the secrets, the published bundle, a refused
+     value, a bundle with no pools, the build): nothing was published. Correct it and run again.
+   - **Check the production branch**: nothing was published. If the log names a branch other than
+     `main`, set the project's production branch back to `main`: a Direct Upload project changes
+     it only through Cloudflare's API (a `PATCH` of the project with
+     `{"production_branch": "main"}`, as Cloudflare's Direct Upload page shows), from a computer.
+   - **Publish to the preview**: the upload may or may not have reached Cloudflare; read the
+     production check below, then run again.
+   - **Check it is a preview**: if Cloudflare made a production deployment, the production site
+     may serve this build with trading on. Run Trade switch at once with `DEPTHWATCH_TRADE` unset,
+     until <https://depthwatch.pages.dev/data/flags.json> serves `"enabled":false`, then set the
+     production branch back to `main` as above. For any other failure here, see the next item.
+   - **Check the preview's switch**: the run could not show that the preview address serves this
+     build (Pages may not serve the alias for this project, or gave another, which the log names),
+     and nothing was deleted. The run's own deployment address, in its summary, serves the build;
+     a run with `off` then fails the same way, so delete the deployments by hand, as in the next
+     item.
+   - **Delete the earlier previews**: an earlier deployment is still there, with the switch it
+     was built with. Delete it in Cloudflare's dashboard (Workers & Pages, the project,
+     Deployments) or, from a computer, with
+     `wrangler pages deployment delete <id> --project-name depthwatch`, which asks first. Keep the
+     latest `trade-preview` deployment, which the preview address points to; `--force` would
+     delete that one too.
+   - **Check the production switch is off**: open <https://depthwatch.pages.dev/data/flags.json>.
+     If it does not serve `"enabled":false` while `DEPTHWATCH_TRADE` is unset or `off`, run Trade
+     switch now and check that the project's production branch is `main`.
+
+The live test, for each venue to be listed, with small amounts, from a browser-extension wallet
+and from a smart wallet (Base App):
+- a swap with ETH in and a swap with ETH out, the two directions of one pool;
+- an ERC-20 approve path: a swap whose input is an ERC-20 the wallet has not approved for the
+  router, so the panel asks for an approval first (the ETH-out swap is one when its token has no
+  allowance).
+
+Each transaction is checked on Basescan:
+- **Router.** The swap goes to the router that `TRADE_ROUTES` (`packages/chain/src/addresses.ts`)
+  gives the pool's venue and factory: the transaction's `To` for an extension wallet. For a smart
+  wallet the transaction is a bundle (`handleOps`) sent to the EntryPoint, with the user operation
+  inside it: on the transaction's page, More details, Input Data, Decode Input Data; in `ops`, the
+  fourth field of the user operation, after `sender`, `nonce` and `initCode`, is its `callData`:
+  the account's own call (such as `execute`), which holds the router's address (without `0x`).
+- **Approval.** The approval names that router as spender for exactly the swap's input amount.
+- **Builder Code.** The transaction's input, or for a smart wallet the `callData` of its user
+  operation, ends with `0x62635f6a366f6265736e380b0080218021802180218021802180218021`, the ERC-8021
+  suffix of `bc_j6obesn8` (`apps/web/src/trade/builderCode.ts`): its last 58 hex digits. The
+  approval carries it too.
+
+Unverified until a first run: whether Pages serves the alias `trade-preview.depthwatch.pages.dev`
+for this project (Cloudflare documents an alias for every branch of a Direct Upload project;
+without one the run fails at Check the preview's switch); the answers the run's checks read, none
+of which has yet come from Cloudflare itself: the project's `result.production_branch`, the
+`environment` and `alias` wrangler records for the deployment, and the listing and deletion of
+deployments (their pages, and the refusal to delete the deployment an alias points to); whether a
+preview serves `index.html` as built (the production site did on 4 November 2026); the header
+served: Cloudflare documents that `_headers` overrides what it ordinarily sends, so the preview
+should send `X-Robots-Tag: noindex, nofollow` in place of the `noindex` it adds to previews, but
+that has not been seen; how long a run takes; how Basescan shows a user operation; and these steps
+on a phone. Cloudflare can also limit previews to the account (the project's Settings, General,
+Enable access policy); whether that covers the alias and works in a wallet's browser is unverified
+too.
 
 ## Upgrading
 

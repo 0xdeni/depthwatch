@@ -1,0 +1,310 @@
+name: Trade preview
+
+# The live test of the swap panel (docs/DEPLOY.md, "Trade preview (the live test)"): publishes the
+# static copy to a Cloudflare Pages preview of the same project, at
+# https://trade-preview.depthwatch.pages.dev, with the trade switch taken from the `venues` input,
+# never from the repository variable DEPTHWATCH_TRADE. As in Trade switch, it downloads the
+# published data/bundle.json, writes it again with `depthwatch export --bundle`, builds the static
+# site from this branch and uploads it, but only to the branch trade-preview: the production site
+# is never published from here, and it must still serve the switch off when the run ends. Once the
+# preview serves the new build, the earlier trade-preview deployments are deleted. It needs the
+# repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, and runs only by hand.
+
+run-name: Trade preview (${{ inputs.venues }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      venues:
+        description: Trade switch of the preview; off switches it off again
+        type: choice
+        required: true
+        # Quoted: a bare off is a boolean to some YAML readers.
+        options:
+          - "off"
+          - "uniswap-v3"
+          - "aerodrome-slipstream"
+          - "uniswap-v3,aerodrome-slipstream"
+        default: "off"
+
+permissions:
+  contents: read
+
+# Its own group: two previews never publish at once. It never publishes the production site, so
+# it does not wait for Refresh site or Trade switch.
+concurrency:
+  group: trade-preview
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    name: preview
+    # Only the default branch publishes, as in Refresh site and Trade switch.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # The Cloudflare Pages project and its production address, whose published bundle this
+      # preview shows and whose switch must stay off.
+      PAGES_PROJECT: depthwatch
+      SITE_URL: https://depthwatch.pages.dev
+      # The alias Pages gives the branch trade-preview. Refresh site and Trade switch publish only
+      # the branch main.
+      PREVIEW_URL: https://trade-preview.depthwatch.pages.dev
+    steps:
+      - name: Check settings
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=""
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing (docs/DEPLOY.md, A free static copy)"
+            exit 1
+          fi
+      # Actions are pinned to commit SHAs, the same as in Trade switch.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+      - name: Install pnpm
+        run: npm install --global pnpm@10.28.0
+      - name: Cache pnpm store
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      # The production site's data: a copy with no bundle (none published yet) stops here.
+      - name: Download the published bundle
+        run: |
+          curl --fail --silent --show-error --location --retry 3 --max-time 120 \
+            --header "Cache-Control: no-cache" \
+            --output "$RUNNER_TEMP/published.json" "$SITE_URL/data/bundle.json"
+      # The input reaches export through the environment only. A refused value (a venue now held
+      # in the code) stops the run here: a preview has no published switch to turn off, so
+      # nothing is published.
+      - name: Set the trade switch
+        env:
+          DEPTHWATCH_TRADE: ${{ inputs.venues }}
+        run: |
+          code=0
+          pnpm depthwatch export --bundle "$RUNNER_TEMP/published.json" \
+            --out apps/web/static-data/bundle.json || code=$?
+          if [ "$code" = 3 ]; then
+            echo "::error::The trade switch \"$DEPTHWATCH_TRADE\" was refused (the line above says why); nothing was published."
+          fi
+          exit "$code"
+      - name: Check the bundle
+        run: |
+          node -e 'const b = JSON.parse(require("node:fs").readFileSync("apps/web/static-data/bundle.json", "utf8")); if (b.pools.length === 0) { console.log("::error::The bundle holds no pools; nothing was published."); process.exit(1) }'
+      - name: Build the static site
+        run: |
+          pnpm --filter @depthwatch/web build:static
+          # As in Refresh site: unknown paths answer 404, not index.html.
+          printf '%s\n' '<!doctype html><meta charset="utf-8"><title>Not found</title><p>Not found. This static copy of Depthwatch has no API; the dashboard is at <a href="/">/</a>.</p>' > apps/web/dist-static/404.html
+          # Preview only: keep it out of search results. Pages gives a path the headers of every
+          # rule that matches it, so the other headers, the Content-Security-Policy included, are
+          # the production site's.
+          printf '\n%s\n%s\n' '/*' '  X-Robots-Tag: noindex, nofollow' >> apps/web/dist-static/_headers
+      - name: Install wrangler
+        run: npm install --global --ignore-scripts --no-audit wrangler@4.150.0
+      # wrangler publishes the production site when --branch names the project's production
+      # branch, so the upload goes ahead only while that branch is main.
+      - name: Check the production branch
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node -e '
+            const { CLOUDFLARE_ACCOUNT_ID: account, CLOUDFLARE_API_TOKEN: token, PAGES_PROJECT: project } = process.env
+            const url = "https://api.cloudflare.com/client/v4/accounts/" + account + "/pages/projects/" + project
+            fetch(url, { headers: { authorization: "Bearer " + token } }).then(async (response) => {
+              const body = await response.json().catch(() => null)
+              const branch = body?.result?.production_branch
+              if (!response.ok || typeof branch !== "string") {
+                console.log("::error::Could not read the production branch of the Pages project " + project + " (HTTP " + response.status + "); nothing was published.")
+                process.exit(1)
+              }
+              if (branch !== "main") {
+                console.log("::error::The Pages project " + project + " publishes the branch " + branch + " as its production site, not main; nothing was published.")
+                process.exit(1)
+              }
+              console.log("The production branch of " + project + " is main; trade-preview is a preview.")
+            })
+          '
+      - name: Publish to the preview
+        id: publish
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # The output file records the deployment Cloudflare made, for the next step.
+          WRANGLER_OUTPUT_FILE_PATH="$RUNNER_TEMP/wrangler-output.json" \
+            wrangler pages deploy apps/web/dist-static \
+            --project-name "$PAGES_PROJECT" --branch trade-preview --commit-dirty=true
+      - name: Check it is a preview
+        id: deployment
+        run: |
+          node -e '
+            const fs = require("node:fs")
+            const lines = fs.readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean)
+            const deploy = lines.map((line) => JSON.parse(line)).find((entry) => entry.type === "pages-deploy-detailed")
+            if (deploy === undefined) {
+              console.log("::error::wrangler recorded no deployment, so this run cannot tell whether it was a preview; the production switch is checked below.")
+              process.exit(1)
+            }
+            console.log("Deployment " + deploy.deployment_id + ": " + deploy.environment + ", " + deploy.url + ", alias " + (deploy.alias ?? "none"))
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "url=" + deploy.url + "\nid=" + deploy.deployment_id + "\n")
+            if (deploy.environment !== "preview") {
+              console.log("::error::Cloudflare made a " + deploy.environment + " deployment, not a preview: the production site may now serve this build. Run Trade switch now (docs/DEPLOY.md, Trade preview (the live test)).")
+              process.exit(1)
+            }
+            // The alias must be the address checked below; wrangler records none when it could not
+            // read the deployment back, and the check below then still compares the build.
+            const host = (url) => String(url).replace(/^https?:\/\//, "").replace(/\/+$/, "")
+            if (typeof deploy.alias !== "string") {
+              console.log("::warning::wrangler recorded no alias for this deployment; the next step checks that " + process.env.PREVIEW_URL + " serves this build.")
+            } else if (host(deploy.alias) !== host(process.env.PREVIEW_URL)) {
+              console.log("::error::Cloudflare gave this deployment the alias " + deploy.alias + ", not " + process.env.PREVIEW_URL + ", so this run cannot check the preview (docs/DEPLOY.md, Trade preview (the live test)).")
+              process.exit(1)
+            }
+          ' "$RUNNER_TEMP/wrangler-output.json"
+      # The run goes on only once the preview serves this build: the new switch, and this build's
+      # index.html, which names its hashed assets (an earlier build may have had the same switch).
+      - name: Check the preview's switch
+        id: preview
+        run: |
+          want=$(cat apps/web/dist-static/data/flags.json)
+          echo "Switch built: $want"
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            got=$(curl --fail --silent --show-error --max-time 30 \
+              --header "Cache-Control: no-cache" "$PREVIEW_URL/data/flags.json" || true)
+            page="this build's"
+            curl --fail --silent --show-error --max-time 30 --header "Cache-Control: no-cache" \
+              --output "$RUNNER_TEMP/preview-index.html" "$PREVIEW_URL/" &&
+              cmp --silent "$RUNNER_TEMP/preview-index.html" apps/web/dist-static/index.html ||
+              page="another"
+            if [ "$got" = "$want" ] && [ "$page" = "this build's" ]; then
+              echo "$PREVIEW_URL serves this build's index.html and the new switch."
+              robots=$(curl --silent --show-error --max-time 30 --head "$PREVIEW_URL/" | grep -i '^x-robots-tag:' || true)
+              echo "Served: ${robots:-no X-Robots-Tag}"
+              case "$robots" in
+                *noindex*) ;;
+                *) echo "::warning::$PREVIEW_URL/ was served without X-Robots-Tag noindex." ;;
+              esac
+              exit 0
+            fi
+            echo "Attempt $attempt: the preview serves ${got:-nothing} and $page index.html; trying again in 10 s."
+            sleep 10
+          done
+          echo "::error::$PREVIEW_URL does not serve this build and its switch after 2 minutes."
+          exit 1
+      # Each deployment also keeps its own address (https://<id>.depthwatch.pages.dev), with the
+      # switch it was built with, until it is deleted. Once the preview serves this build, every
+      # earlier deployment of the branch trade-preview is deleted, this run's own excepted. Without
+      # force, Cloudflare refuses to delete a deployment an alias still points to.
+      - name: Delete the earlier previews
+        id: cleanup
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DEPLOYMENT_ID: ${{ steps.deployment.outputs.id }}
+        run: |
+          node -e '
+            const fs = require("node:fs")
+            const { CLOUDFLARE_ACCOUNT_ID: account, CLOUDFLARE_API_TOKEN: token, PAGES_PROJECT: project, DEPLOYMENT_ID: own } = process.env
+            const api = "https://api.cloudflare.com/client/v4/accounts/" + account + "/pages/projects/" + project + "/deployments"
+            const headers = { authorization: "Bearer " + token }
+            const fail = (message) => {
+              console.log("::error::" + message + " (docs/DEPLOY.md, Trade preview (the live test)).")
+              process.exit(1)
+            }
+            // The ids of the preview deployments of trade-preview, but for this run, on every page.
+            const earlier = async () => {
+              const ids = []
+              for (let page = 1; page <= 100; page++) {
+                const response = await fetch(api + "?env=preview&per_page=25&page=" + page, { headers })
+                const body = await response.json().catch(() => null)
+                if (!response.ok || !Array.isArray(body?.result)) {
+                  fail("Could not list the preview deployments of " + project + " (HTTP " + response.status + ")")
+                }
+                for (const deployment of body.result) {
+                  const branch = deployment.deployment_trigger?.metadata?.branch
+                  if (deployment.environment === "preview" && branch === "trade-preview" && deployment.id !== own) ids.push(deployment.id)
+                }
+                // Without a page count, the list ends at the first empty page.
+                const pages = body.result_info?.total_pages
+                if (typeof pages === "number" ? page >= pages : body.result.length === 0) return ids
+              }
+              fail("The preview deployments of " + project + " fill more than 100 pages; nothing more was deleted")
+            }
+            ;(async () => {
+              if (!/^[0-9a-f-]{36}$/.test(own ?? "")) {
+                fail("This run has no deployment id to keep; nothing was deleted")
+              }
+              const ids = await earlier()
+              for (const id of ids) {
+                const response = await fetch(api + "/" + id, { method: "DELETE", headers })
+                if (!response.ok) {
+                  fail("Could not delete the earlier preview deployment " + id + " (HTTP " + response.status + ")")
+                }
+                console.log("Deleted the earlier preview deployment " + id + ".")
+              }
+              // A deletion may take a moment to leave the list.
+              let left = await earlier()
+              for (let attempt = 1; left.length > 0 && attempt <= 3; attempt++) {
+                await new Promise((resolve) => setTimeout(resolve, 10000))
+                left = await earlier()
+              }
+              if (left.length > 0) {
+                fail("Earlier trade-preview deployments are still there: " + left.join(", "))
+              }
+              console.log("No earlier trade-preview deployment is left; " + ids.length + " deleted.")
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, "deleted=" + ids.length + "\n")
+            })()
+          '
+      # Whatever the input, the production site must still serve the switch off: anything else
+      # means it was switched on elsewhere, or this run's build reached it.
+      - name: Check the production switch is off
+        id: production
+        if: always() && steps.publish.outcome != 'skipped'
+        run: |
+          got=$(curl --fail --silent --show-error --max-time 30 \
+            --header "Cache-Control: no-cache" "$SITE_URL/data/flags.json") || {
+            echo "::error::Could not read $SITE_URL/data/flags.json, so the production switch is unknown."
+            exit 1
+          }
+          echo "The production site serves: $got"
+          if ! printf '%s' "$got" | node -e 'const f = JSON.parse(require("node:fs").readFileSync(0, "utf8")); process.exit(f?.trade?.enabled === false ? 0 : 1)'; then
+            echo "::error::$SITE_URL/data/flags.json does not serve the trade switch off. If DEPTHWATCH_TRADE is unset or off, run Trade switch now and check that the production branch of the Pages project is main (docs/DEPLOY.md, Trade preview (the live test))."
+            exit 1
+          fi
+      - name: Write the summary
+        if: always() && steps.publish.outcome == 'success'
+        env:
+          DEPLOYMENT_URL: ${{ steps.deployment.outputs.url }}
+          PREVIEW_CHECK: ${{ steps.preview.outcome }}
+          CLEANUP: ${{ steps.cleanup.outcome }}
+          DELETED: ${{ steps.cleanup.outputs.deleted }}
+          PRODUCTION_CHECK: ${{ steps.production.outcome }}
+        run: |
+          switch=$(node -e 'const { trade } = JSON.parse(require("node:fs").readFileSync("apps/web/dist-static/data/flags.json", "utf8")); console.log(trade.enabled ? "on for " + trade.venues.join(", ") : "off")')
+          {
+            echo "## Trade preview: $switch"
+            echo
+            echo "- Preview: $PREVIEW_URL, trade switch $switch (check that it serves this build: $PREVIEW_CHECK)."
+            echo "- This run's own deployment: ${DEPLOYMENT_URL:-see Publish to the preview}. It keeps this switch until a later Trade preview run deletes it."
+            if [ "$CLEANUP" = success ]; then
+              echo "- Earlier trade-preview deployments: none is left ($DELETED deleted)."
+            else
+              echo "- Earlier trade-preview deployments: not deleted ($CLEANUP); their own addresses may still serve the switch they were built with (docs/DEPLOY.md, Trade preview (the live test))."
+            fi
+            echo "- Production: $SITE_URL (check that its switch is off: $PRODUCTION_CHECK)."
+            if [ "$switch" != off ]; then
+              echo "- Anyone with the address can swap on the preview: run Trade preview again with off right after the test, which deletes this deployment."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

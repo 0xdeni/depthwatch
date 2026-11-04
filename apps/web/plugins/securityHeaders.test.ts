@@ -89,6 +89,41 @@ describe('public/_headers', () => {
   })
 })
 
+describe('the preview rule (.github/workflows/trade-preview.yml)', () => {
+  const workflow = readFileSync(
+    resolve(HEADERS_SOURCE, '..', '..', '..', '..', '.github', 'workflows', 'trade-preview.yml'),
+    'utf8',
+  )
+  // What the workflow's printf appends to the built file.
+  const previewText = `${headersText}\n/*\n  X-Robots-Tag: noindex, nofollow\n`
+  const preview = parseHeadersFile(previewText)
+
+  it('is the rule the workflow appends after the build', () => {
+    expect(workflow).toContain(
+      "printf '\\n%s\\n%s\\n' '/*' '  X-Robots-Tag: noindex, nofollow' >> apps/web/dist-static/_headers",
+    )
+  })
+
+  it('adds noindex, nofollow on every path and changes no other header', () => {
+    for (const path of [
+      '/',
+      '/index.html',
+      '/assets/index-abc.js',
+      '/data/flags.json',
+      '/404.html',
+    ]) {
+      const before = headersFor(rules, path)
+      const after = headersFor(preview, path)
+      expect(before.has('x-robots-tag')).toBe(false)
+      expect(after.get('x-robots-tag')).toBe('noindex, nofollow')
+      after.delete('x-robots-tag')
+      expect(after).toEqual(before)
+    }
+    expect(headersFor(preview, '/').get('content-security-policy')).toBe(policy)
+    expect(() => checkInlineScripts(indexHtml, previewText)).not.toThrow()
+  })
+})
+
 describe('the helpers', () => {
   it('hash a script exactly as browsers do, skipping external and data scripts', () => {
     // The SHA-256 of the empty string, base64.

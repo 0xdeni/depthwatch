@@ -10,7 +10,7 @@
  * - `--note <text>` adds the bundle's `note`, which the static site shows as "About this snapshot"
  *   for a live bundle. Without it the bundle has no `note` key at all.
  * - `depthwatch export --bundle <file> --out <file>`: an exported bundle written again with only
- *   its `features` replaced, no database read (the Trade switch workflow).
+ *   its `features` replaced, no database read (the Trade switch and Trade preview workflows).
  *
  * Every export writes the trade switch (DEPTHWATCH_TRADE, tradeSwitch.ts) twice: as the bundle's
  * `features.trade` and as `flags.json` next to the bundle. An invalid value writes the switch off,

@@ -2,7 +2,8 @@
  * Sending, with the Builder Code on every transaction (DESIGN.md, "Dashboard (apps/web)"):
  * - an EOA (a wallet that does not report the `dataSuffix` capability on Base) is asked, once it
  *   has said it is on Base, for `eth_sendTransaction` of our calldata with `BUILDER_SUFFIX`
- *   appended: the exact bytes `simulate` ran. One request per signature: viem's `sendTransaction`
+ *   appended: the exact bytes `simulate` ran, with a gas limit 25 % above the wallet's
+ *   `eth_estimateGas` of them (`gasLimit`). One request per signature: viem's `sendTransaction`
  *   is not used, since after some errors it asks again as `wallet_sendTransaction`, a second wallet
  *   prompt behind the back of the trade switch's re-read;
  * - a wallet whose `wallet_getCapabilities` reports `dataSuffix.supported` for 0x2105 (a smart
@@ -17,7 +18,7 @@
  * ERC-4337 bundle succeeds even when the user operation inside it reverts).
  */
 import type { Address } from '@depthwatch/core'
-import { type Client, type Hex, numberToHex } from 'viem'
+import { type Client, type Hex, hexToBigInt, numberToHex } from 'viem'
 import {
   call,
   getCallsStatus,
@@ -82,14 +83,82 @@ export async function simulate(
   await call(clients.plain, { account, to: tx.to, data, value: tx.value })
 }
 
+/** The gas limit over the wallet's estimate: × 125 / 100, rounded up. */
+export const GAS_MARGIN = { num: 125n, den: 100n } as const
+
+/** `estimate` with GAS_MARGIN, rounded up: 100,001 → 125,002. */
+export function paddedGas(estimate: bigint): bigint {
+  return (estimate * GAS_MARGIN.num + GAS_MARGIN.den - 1n) / GAS_MARGIN.den
+}
+
+/**
+ * The gas limit to sign a transaction with: a padded estimate, null to leave it to the wallet, or
+ * `reverts` when the estimate says the transaction would fail (nothing is sent).
+ */
+export type GasLimit = bigint | null | 'reverts'
+
+/** True for a JSON-RPC error that says the call reverted (code 3, or "revert" in a message). */
+export function isRevertError(error: unknown): boolean {
+  const seen = new Set<unknown>()
+  const queue: unknown[] = [error]
+  while (queue.length > 0 && seen.size < 16) {
+    const e = queue.shift()
+    if (!e || typeof e !== 'object' || seen.has(e)) continue
+    seen.add(e)
+    const { code, message, cause, data } = e as Record<string, unknown>
+    if (code === 3 || (typeof message === 'string' && /revert/i.test(message))) return true
+    queue.push(cause, data)
+  }
+  return false
+}
+
+/**
+ * The gas limit of `tx` on the EOA path: the wallet's `eth_estimateGas` of exactly the transaction
+ * `send` asks it to sign (from the account, suffix appended), with GAS_MARGIN. An estimate is the
+ * least gas that succeeded against the state it was made on; the transaction runs later, in another
+ * block, and can need more. A call passes on at most 63/64 of the gas it has left, so a limit at the
+ * bare estimate can leave the innermost call of the router short: the swap reverts and its gas is
+ * spent. An estimate that reverts is a failed simulation (nothing is sent); a wallet that cannot
+ * estimate (the method unsupported, or any other error) is left to set the limit itself. The
+ * capability path sets no gas: the wallet builds that transaction itself.
+ */
+export async function gasLimit(
+  clients: WalletClients,
+  path: SendPath,
+  account: Address,
+  tx: TxRequest,
+): Promise<GasLimit> {
+  if (path !== 'eoa') return null
+  const request = {
+    from: account,
+    to: tx.to,
+    data: withBuilderSuffix(tx.data),
+    value: numberToHex(tx.value),
+  }
+  try {
+    const estimate = await clients.plain.request(
+      { method: 'eth_estimateGas', params: [request] },
+      { retryCount: 0 },
+    )
+    const gas = typeof estimate === 'string' ? hexToBigInt(estimate as Hex) : 0n
+    return gas > 0n ? paddedGas(gas) : null
+  } catch (error) {
+    return isRevertError(error) ? 'reverts' : null
+  }
+}
+
 export type Sent = { kind: 'tx'; hash: Hex } | { kind: 'calls'; id: string }
 
-/** Asks the wallet to sign and send `tx`: the one wallet prompt of a step, never repeated. */
+/**
+ * Asks the wallet to sign and send `tx`: the one wallet prompt of a step, never repeated. `gas`:
+ * the EOA path's limit (`gasLimit`), null to leave it to the wallet; the capability path has none.
+ */
 export async function send(
   clients: WalletClients,
   path: SendPath,
   account: Address,
   tx: TxRequest,
+  gas: bigint | null,
 ): Promise<Sent> {
   if (path === 'eoa') {
     if ((await getChainId(clients.plain)) !== base.id)
@@ -100,6 +169,7 @@ export async function send(
       data: withBuilderSuffix(tx.data),
       value: numberToHex(tx.value),
       chainId: numberToHex(base.id),
+      ...(gas === null ? {} : { gas: numberToHex(gas) }),
     }
     const hash = await clients.plain.request(
       { method: 'eth_sendTransaction', params: [request] },

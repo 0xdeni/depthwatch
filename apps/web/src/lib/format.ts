@@ -219,8 +219,9 @@ export function fee(feePips: number): string {
 
 /**
  * A pool's fee where it names the pool: "0.3 %", or "0.0465 % dynamic" for a DEX whose fee can
- * change every block (core `hasDynamicFee`: both Slipstreams), where it is the latest snapshot's
- * (the reading at discovery for a pool never snapshotted).
+ * change every block (core `hasDynamicFee`: both Slipstreams). The fee is the one passed in: the
+ * latest snapshot's (the reading at discovery for a pool never snapshotted), or the swap panel's
+ * live reading at its quote's block.
  */
 export function feeText(pool: { dex: string; feePips: number }): string {
   return `${fee(pool.feePips)}${hasDynamicFee(pool) ? ' dynamic' : ''}`

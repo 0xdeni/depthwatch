@@ -1111,7 +1111,16 @@ nothing: ETH a pool does not take stays in the router, where anyone's `refundETH
 native ETH in on SwapRouter02 is the swap followed by `refundETH()` (v3-periphery
 `IPeripheryPayments.sol`) in the same multicall. No quoter signals a partial fill: QuoterV2
 (v3-periphery and Slipstream) returns the output of the input it used, so a quote whose
-`sqrtPriceX96After` is the open price limit is refused for every quoter.
+`sqrtPriceX96After` is the open price limit is refused for every quoter. The fee a swap pays is the
+pool's `fee()` as `swap()` starts: Uniswap v3's fixed tier; in Slipstream's `CLPool.sol`
+(aerodrome-finance/slipstream@f8717fa; velodrome-finance/slipstream@193a6b8 reads the same) `swap()`
+sets its fee to `fee()`, which is `ICLFactory(factory).getSwapFee(address(this))` (the factory's
+swap fee module, else `tickSpacingToFee`), and `unstakedFee()` only splits that fee between
+unstaked liquidity and the gauge. The panel reads `fee()` at the quote's block. Read through
+`https://mainnet.base.org` on 2026-11-04: `fee()` of 0xb2cc224c… (initial) and the initial factory's
+`getSwapFee` of it were both 609 pips at block 53,479,694 and both 150 at 53,479,700, while the
+gauge-caps 0x56aeaf4a…, gauges-v3 0x3fe04a59… and initial 0x47ca96ea… pools each matched their
+factory's `getSwapFee` at 53,479,700 (20,000, 250 and 60 pips).
 
 Unresolved:
 - Aero's contracts page: a maintainer opens <https://app.aero.xyz/docs/security/> in a browser

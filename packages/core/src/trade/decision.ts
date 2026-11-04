@@ -11,7 +11,6 @@ import {
   isPositiveRatio,
   ratioAboveBps,
   ratioToBpsCeil,
-  tradeEffectivePrice,
   tradePriceDeviation,
   tradePriceImpact,
 } from './prices.js'
@@ -24,14 +23,14 @@ export const TRADE_PRICE_IMPACT_WARN_BPS = 100
 export const TRADE_PRICE_IMPACT_MAX_BPS = 500
 
 /**
- * Largest deviation of the effective price from another live pool of the same pair, read at the
- * quote's block: 200 bps (2 %).
+ * Largest deviation of the pool's mid from the mid of another live pool of the same pair, both
+ * read at the quote's block: 200 bps (2 %).
  */
 export const TRADE_MAX_LIVE_DEVIATION_BPS = 200
 
 /**
- * Largest deviation of the effective price from the snapshot's price of the pool: 1,000 bps
- * (10 %), wide because the snapshot can be three hours old.
+ * Largest deviation of the pool's mid at the quote's block from the snapshot's price of the pool:
+ * 1,000 bps (10 %), wide because the snapshot can be three hours old.
  */
 export const TRADE_MAX_SNAPSHOT_DEVIATION_BPS = 1_000
 
@@ -129,10 +128,14 @@ function refuse(reason: TradeRefuseReason, value?: number, limit?: number): Trad
  * 8. `price-impact-above-max`: impact above TRADE_PRICE_IMPACT_MAX_BPS;
  * 9. `quote-inconsistent`: the quote beats the pool's own mid by more than that same bound, which
  *    only a quote and a mid read from different states can do;
- * 10. `snapshot-price-missing` or `snapshot-deviation-above-max`
- *    (TRADE_MAX_SNAPSHOT_DEVIATION_BPS);
- * 11. `reference-price-invalid` or `live-deviation-above-max` (TRADE_MAX_LIVE_DEVIATION_BPS), for
- *    each other live pool given.
+ * 10. `snapshot-price-missing` or `snapshot-deviation-above-max`: the pool's mid against the
+ *    snapshot's price (TRADE_MAX_SNAPSHOT_DEVIATION_BPS);
+ * 11. `reference-price-invalid` or `live-deviation-above-max`: the pool's mid against each other
+ *    live pool's mid given (TRADE_MAX_LIVE_DEVIATION_BPS).
+ *
+ * The deviations compare prices before the trade, mid to mid, so they read the same at any amount
+ * and in both directions: they catch a pool whose own price is off. The fee and the trade's impact
+ * are the price impact's bound, which includes them.
  *
  * Otherwise `warn` with `price-impact-high` when the impact is above TRADE_PRICE_IMPACT_WARN_BPS,
  * else `ok`. Every bound is "above": a value exactly at the bound passes.
@@ -165,8 +168,7 @@ export function checkTrade(input: TradeCheckInput): TradeDecision {
   if (aboveCap) return refuse('size-above-max', sizeUsd, limits.maxUsd)
 
   const impact = tradePriceImpact(direction, amountIn, quoted, mid)
-  const effective = tradeEffectivePrice(direction, amountIn, quoted)
-  if (impact === null || effective === null) return refuse('mid-price-invalid')
+  if (impact === null) return refuse('mid-price-invalid')
   const impactBps = ratioToBpsCeil(impact)
   if (ratioAboveBps(impact, TRADE_PRICE_IMPACT_MAX_BPS))
     return refuse('price-impact-above-max', impactBps, TRADE_PRICE_IMPACT_MAX_BPS)
@@ -174,7 +176,7 @@ export function checkTrade(input: TradeCheckInput): TradeDecision {
     return refuse('quote-inconsistent', impactBps, -TRADE_PRICE_IMPACT_MAX_BPS)
 
   const snapshot = input.snapshotMid
-  const fromSnapshot = snapshot === null ? null : tradePriceDeviation(effective, snapshot)
+  const fromSnapshot = snapshot === null ? null : tradePriceDeviation(mid, snapshot)
   if (fromSnapshot === null) return refuse('snapshot-price-missing')
   if (ratioAboveBps(fromSnapshot, TRADE_MAX_SNAPSHOT_DEVIATION_BPS))
     return refuse(
@@ -183,7 +185,7 @@ export function checkTrade(input: TradeCheckInput): TradeDecision {
       TRADE_MAX_SNAPSHOT_DEVIATION_BPS,
     )
   for (const other of input.otherPoolMids ?? []) {
-    const fromLive = tradePriceDeviation(effective, other)
+    const fromLive = tradePriceDeviation(mid, other)
     if (fromLive === null) return refuse('reference-price-invalid')
     if (ratioAboveBps(fromLive, TRADE_MAX_LIVE_DEVIATION_BPS))
       return refuse(

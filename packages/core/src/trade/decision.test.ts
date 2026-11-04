@@ -180,7 +180,7 @@ describe('checkTrade: refusals', () => {
     expect(check({ tokenIn: unpriced })).toMatchObject({ kind: 'ok', sizeUsd: 623.125 })
   })
 
-  it('refuses without a snapshot price and more than 10 % away from it', () => {
+  it('refuses without a snapshot price and a pool mid more than 10 % away from it', () => {
     expect(check({ snapshotMid: null })).toEqual({
       kind: 'refuse',
       reason: 'snapshot-price-missing',
@@ -188,26 +188,27 @@ describe('checkTrade: refusals', () => {
     expect(check({ snapshotMid: { num: 0n, den: 1n } })).toMatchObject({
       reason: 'snapshot-price-missing',
     })
-    // Effective price 0.997; 0.997 × 1.1 = 1.0967 is exactly 10 % away and passes.
-    expect(check({ snapshotMid: { num: 10_967n, den: 10_000n } })).toMatchObject({ kind: 'ok' })
-    // 1.0968 / 0.997 − 1 = 998 / 9,970 = 1,001.003 bps, shown rounded up as 1,002.
-    expect(check({ snapshotMid: { num: 10_968n, den: 10_000n } })).toEqual({
+    // The pool's mid is 1: a snapshot at 1.1 is exactly 10 % away and passes.
+    expect(check({ snapshotMid: { num: 11n, den: 10n } })).toMatchObject({ kind: 'ok' })
+    // 1.1001 / 1 − 1 = 1,001 bps.
+    expect(check({ snapshotMid: { num: 11_001n, den: 10_000n } })).toEqual({
       kind: 'refuse',
       reason: 'snapshot-deviation-above-max',
-      value: 1_002,
+      value: 1_001,
       limit: 1_000,
     })
-    // Below works the same: 0.997 / 1.1 is exactly 10 % away the other way.
-    expect(check({ snapshotMid: { num: 9_970n, den: 11_000n } })).toMatchObject({ kind: 'ok' })
-    expect(check({ snapshotMid: { num: 9_969n, den: 11_000n } })).toMatchObject({
+    // Below works the same: 1 / (10 / 11) is exactly 10 % away the other way.
+    expect(check({ snapshotMid: { num: 10n, den: 11n } })).toMatchObject({ kind: 'ok' })
+    expect(check({ snapshotMid: { num: 9_999n, den: 11_000n } })).toMatchObject({
       reason: 'snapshot-deviation-above-max',
+      value: 1_002,
     })
   })
 
-  it('refuses more than 2 % away from another live pool of the pair', () => {
-    // 0.997 × 1.02 = 1.01694: exactly 2 % away passes, a hair more does not.
-    const exact = { num: 101_694n, den: 100_000n }
-    const beyond = { num: 101_695n, den: 100_000n }
+  it('refuses a pool mid more than 2 % away from another live pool’s mid', () => {
+    // The pool's mid is 1: a reference at 1.02 is exactly 2 % away and passes, 1.0201 does not.
+    const exact = { num: 102n, den: 100n }
+    const beyond = { num: 10_201n, den: 10_000n }
     expect(check({ otherPoolMids: [exact] })).toMatchObject({ kind: 'ok' })
     expect(check({ otherPoolMids: [exact, beyond] })).toEqual({
       kind: 'refuse',
@@ -220,6 +221,20 @@ describe('checkTrade: refusals', () => {
       reason: 'reference-price-invalid',
     })
     expect(check({ otherPoolMids: [] })).toMatchObject({ kind: 'ok' })
+  })
+
+  it('compares mids, so the fee and the impact never count against the live and snapshot bounds', () => {
+    // The 0.30 % fee puts the trade's average price at 0.997: a reference at 1.019 is 190 bps from
+    // the mid, though 2.2 % from the average price.
+    expect(check({ otherPoolMids: [{ num: 1_019n, den: 1_000n }] })).toMatchObject({ kind: 'ok' })
+    // An impact just under 5 % (fee included), a reference 2 % and a snapshot 8 % from the mid.
+    expect(
+      check({
+        quotedAmountOut: 9_501n,
+        otherPoolMids: [{ num: 102n, den: 100n }],
+        snapshotMid: { num: 108n, den: 100n },
+      }),
+    ).toMatchObject({ kind: 'warn', reason: 'price-impact-high', priceImpactBps: 499 })
   })
 })
 

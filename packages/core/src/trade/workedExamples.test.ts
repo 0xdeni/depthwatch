@@ -55,9 +55,9 @@ describe('docs/METRICS.md worked examples: swap checks', () => {
     expect(bps2dp(impact)).toBe(33.97)
     expect(impact && ratioToBpsCeil(impact)).toBe(34)
     expect(minAmountOut(sell.quotedAmountOut, 50)).toBe(991_619_541n)
-    const avg = tradeEffectivePrice('zeroForOne', sell.amountIn, sell.quotedAmountOut)
-    if (!avg || !snapshot) throw new Error('missing price')
-    expect(bps2dp(tradePriceDeviation(avg, snapshot))).toBe(34.09)
+    if (!snapshot) throw new Error('missing price')
+    // Mid to mid: the pool's mid is the snapshot's 2,500, whatever the trade's average price.
+    expect(bps2dp(tradePriceDeviation(mid, snapshot))).toBe(0)
     expect(checkTrade(sell)).toEqual({
       kind: 'ok',
       slippageBps: 50,
@@ -121,26 +121,56 @@ describe('docs/METRICS.md worked examples: swap checks', () => {
     expect(bps2dp(refuse)).toBe(503.41)
   })
 
-  it('Deviation: 2,440 in another live pool and 2,260 in the snapshot are too far', () => {
-    const sell = input('zeroForOne', 4n * 10n ** 17n)
-    const avg = tradeEffectivePrice('zeroForOne', sell.amountIn, sell.quotedAmountOut)
-    const at = (price: number) => humanPriceToRawPrice(price, 18, 6)
-    const [live2450, live2440, snap2400, snap2260] = [at(2_450), at(2_440), at(2_400), at(2_260)]
-    if (!avg || !live2450 || !live2440 || !snap2400 || !snap2260) throw new Error('missing price')
-    expect(bps2dp(tradePriceDeviation(avg, live2450))).toBe(169.41)
-    expect(bps2dp(tradePriceDeviation(avg, live2440))).toBe(211.09)
-    expect(bps2dp(tradePriceDeviation(avg, snap2400))).toBe(381.28)
-    expect(bps2dp(tradePriceDeviation(avg, snap2260))).toBe(1_024.36)
-    expect(checkTrade({ ...sell, otherPoolMids: [live2450] })).toMatchObject({ kind: 'ok' })
-    expect(checkTrade({ ...sell, otherPoolMids: [live2440] })).toMatchObject({
-      reason: 'live-deviation-above-max',
-      value: 212,
-    })
-    expect(checkTrade({ ...sell, snapshotMid: snap2400 })).toMatchObject({ kind: 'ok' })
-    expect(checkTrade({ ...sell, snapshotMid: snap2260 })).toMatchObject({
-      reason: 'snapshot-deviation-above-max',
-      value: 1_025,
-    })
+  it('Deviation, mid to mid: 2,450 in another live pool and 2,272 in the snapshot are too far', () => {
+    const [live2451, live2450, snap2273, snap2272] = [2_451, 2_450, 2_273, 2_272].map((price) =>
+      humanPriceToRawPrice(price, 18, 6),
+    )
+    if (!live2451 || !live2450 || !snap2273 || !snap2272) throw new Error('missing price')
+    expect(bps2dp(tradePriceDeviation(mid, live2451))).toBe(199.92)
+    expect(bps2dp(tradePriceDeviation(mid, live2450))).toBe(204.08)
+    expect(bps2dp(tradePriceDeviation(mid, snap2273))).toBe(998.68)
+    expect(bps2dp(tradePriceDeviation(mid, snap2272))).toBe(1_003.52)
+    // The same for the sale and the purchase: neither the fee nor the impact enters.
+    for (const trade of [
+      input('zeroForOne', 4n * 10n ** 17n),
+      input('oneForZero', 1_000n * USDC),
+    ]) {
+      expect(checkTrade({ ...trade, otherPoolMids: [live2451] })).toMatchObject({ kind: 'ok' })
+      expect(checkTrade({ ...trade, otherPoolMids: [live2450] })).toMatchObject({
+        reason: 'live-deviation-above-max',
+        value: 205,
+      })
+      expect(checkTrade({ ...trade, snapshotMid: snap2273 })).toMatchObject({ kind: 'ok' })
+      expect(checkTrade({ ...trade, snapshotMid: snap2272 })).toMatchObject({
+        reason: 'snapshot-deviation-above-max',
+        value: 1_004,
+      })
+    }
+  })
+
+  it('A 2 % fee pool: 0.1 WETH for 244.975992 USDC, 200.96 bps, allowed both ways next to 2,530', () => {
+    const steep = buildConstantProductState(1_000n * WETH, 2_500_000n * USDC, 20_000)
+    const reference = humanPriceToRawPrice(2_530, 18, 6)
+    if (!reference) throw new Error('missing price')
+    const sell = simulateSwapExactIn(steep, 'zeroForOne', WETH / 10n).amountOut
+    const buy = simulateSwapExactIn(steep, 'oneForZero', 250n * USDC).amountOut
+    expect([sell, buy]).toEqual([244_975_992n, 97_990_396_941_099_772n])
+    expect(bps2dp(tradePriceImpact('zeroForOne', WETH / 10n, sell, mid))).toBe(200.96)
+    expect(bps2dp(tradePriceImpact('oneForZero', 250n * USDC, buy, mid))).toBe(205.08)
+    expect(bps2dp(tradePriceDeviation(mid, reference))).toBe(120)
+    const sellAvg = tradeEffectivePrice('zeroForOne', WETH / 10n, sell)
+    expect(sellAvg && bps2dp(tradePriceDeviation(sellAvg, reference))).toBe(327.54)
+    for (const [direction, amountIn, out] of [
+      ['zeroForOne', WETH / 10n, sell],
+      ['oneForZero', 250n * USDC, buy],
+    ] as const)
+      expect(
+        checkTrade({
+          ...input(direction, amountIn),
+          quotedAmountOut: out,
+          otherPoolMids: [reference],
+        }),
+      ).toMatchObject({ kind: 'warn', reason: 'price-impact-high' })
   })
 
   it('Deadline: block 53,466,609 at 1,793,722,565 s signs until 1,793,722,865', () => {

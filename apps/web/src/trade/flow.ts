@@ -31,6 +31,7 @@ import {
   type WalletClients,
 } from './reads.js'
 import {
+  gasLimit,
   type Outcome,
   receivedFrom,
   type SendPath,
@@ -210,9 +211,11 @@ export type StepResult =
 /** True while the panel that started a step is still the one on screen. */
 export type Alive = () => boolean
 
+/** `gas`: the limit to sign with (send.ts `gasLimit`), null to leave it to the wallet. */
 async function signAndWait(
   env: TradeEnv,
   tx: TxRequest,
+  gas: bigint | null,
   onStage: (stage: Stage) => void,
   alive: Alive,
 ): Promise<Outcome | { kind: 'stopped'; reason: 'switched-off' }> {
@@ -220,7 +223,7 @@ async function signAndWait(
   if ((await liveFlagsFor(env)) === null) return { kind: 'stopped', reason: 'switched-off' }
   if (!alive()) return { kind: 'abandoned' }
   onStage({ at: 'sign' })
-  const sent = await send(env.clients, env.path, env.account, tx)
+  const sent = await send(env.clients, env.path, env.account, tx, gas)
   onStage({ at: 'wait', hash: null })
   return waitFor(env.clients, sent, {
     pollMs: env.pollMs,
@@ -259,14 +262,17 @@ export async function approveStep(
   } catch {
     return { kind: 'stopped', reason: 'simulation-failed' }
   }
-  const outcome = await signAndWait(env, tx, onStage, alive)
+  // The wallet's estimate of the exact transaction, padded; one that reverts sends nothing.
+  const gas = await gasLimit(env.clients, env.path, env.account, tx)
+  if (gas === 'reverts') return { kind: 'stopped', reason: 'simulation-failed' }
+  const outcome = await signAndWait(env, tx, gas, onStage, alive)
   return outcome.kind === 'confirmed' ? { kind: 'approved' } : outcome
 }
 
 /**
  * The swap: the switch, a fresh quote (a lower minimum goes back to the review), balance and
- * allowance, the deadline from the quote's block, the exact transaction simulated, the switch
- * again, then the one signature request and the wait.
+ * allowance, the deadline from the quote's block, the exact transaction simulated and its gas
+ * estimated, the switch again, then the one signature request and the wait.
  */
 export async function swapStep(
   env: TradeEnv,
@@ -318,7 +324,10 @@ export async function swapStep(
       return { kind: 'stopped', reason: 'simulation-failed' }
     }
   }
-  const outcome = await signAndWait(env, tx, onStage, alive)
+  // The wallet's estimate of the exact transaction, padded; one that reverts sends nothing.
+  const gas = await gasLimit(env.clients, env.path, env.account, tx)
+  if (gas === 'reverts') return { kind: 'stopped', reason: 'simulation-failed' }
+  const outcome = await signAndWait(env, tx, gas, onStage, alive)
   if (outcome.kind !== 'confirmed') return outcome
   const received = receivedFrom(outcome.logs, {
     token: side.tokenOut.address,

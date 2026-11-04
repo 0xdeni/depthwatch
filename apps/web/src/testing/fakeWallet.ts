@@ -1,7 +1,8 @@
 /**
  * Test helper: a fake EIP-1193 wallet on a fake Base, for the swap panel's tests behind viem's
- * `custom()` transport. It answers the reads the panel makes (pool identity, quoter, `slot0`,
- * balances, allowances, blocks), records every `eth_call`, `eth_sendTransaction` and
+ * `custom()` transport. It answers the reads the panel makes (pool identity, quoter, `slot0`, the
+ * pool's live `fee()`, balances, allowances, blocks) and `eth_estimateGas`, records every
+ * `eth_call` (with its block), estimate, `eth_sendTransaction` (with its gas) and
  * `wallet_sendCalls`, and applies an approval to its allowances. `wallet_sendCalls` behaves as an
  * ERC-4337 smart wallet: the bundle transaction always succeeds, and the user operation's own
  * outcome is in `wallet_getCallsStatus` (200, or 500 with a reverted receipt). Calldata is decoded and encoded
@@ -29,6 +30,7 @@ import {
 } from 'viem'
 import type { Eip1193Provider } from '../trade/wallets.js'
 import { bundleInput } from './bundle.js'
+import { BLOCK, blockJson, type MinedTx, receiptJson, transactionJson } from './fakeChain.js'
 import { decodeSwap } from './swapCalldata.js'
 
 export const ACCOUNT: Address = '0x00000000000000000000000000000000000a11ce'
@@ -50,7 +52,12 @@ export interface FakeTx {
   to: Address
   data: Hex
   value: bigint
+  /** The gas limit the transaction was sent with; null when the wallet was left to set it. */
+  gas: bigint | null
 }
+
+/** What `eth_estimateGas` answers: an estimate, a revert, an unknown method or another error. */
+export type FakeEstimate = bigint | 'revert' | 'unsupported' | 'error'
 
 export interface FakeWalletOptions {
   routes: readonly TradeRoute[]
@@ -74,9 +81,15 @@ export interface FakeWalletOptions {
   wrapSent?: boolean
 }
 
-const BLOCK = 30_000_000n
-const TIMESTAMP = 1_760_000_000n
 const rpcError = (code: number, message: string) => Object.assign(new Error(message), { code })
+
+/** The answers of `eth_estimateGas` that are not an estimate, as nodes and wallets give them. */
+const ESTIMATE_ERRORS = {
+  revert: () =>
+    Object.assign(rpcError(3, 'execution reverted: Too little received'), { data: '0x08c379a0' }),
+  unsupported: () => rpcError(-32601, 'the method eth_estimateGas does not exist/is not available'),
+  error: () => rpcError(-32603, 'Internal JSON-RPC error.'),
+}
 
 function decodeAny(abis: readonly Abi[], data: Hex) {
   for (const abi of abis) {
@@ -103,17 +116,23 @@ export function createFakeWallet(options: FakeWalletOptions) {
     failUnwrap: false,
     /** True: the quoter stops at the open price limit (part of the input unused). */
     quoteAtLimit: false,
-    calls: [] as { to: Address; data: Hex; from?: Address; value?: bigint }[],
+    /** A pool's live `fee()` (pips) when it differs from its `FakePool.fee` (the factory's key). */
+    fees: new Map<Address, number>(),
+    /** True: every pool's `fee()` reverts. */
+    failFee: false,
+    /** What `eth_estimateGas` answers. */
+    estimate: 120_000n as FakeEstimate,
+    /** Every `eth_estimateGas` request, as asked. */
+    estimates: [] as Omit<FakeTx, 'gas'>[],
+    /** `block`: the block tag or number the call was made at, as sent. */
+    calls: [] as { to: Address; data: Hex; from?: Address; value?: bigint; block?: string }[],
     sent: [] as FakeTx[],
     bundles: [] as { calls: { to: Address; data: Hex; value?: Hex }[]; capabilities: unknown }[],
     methods: [] as string[],
   }
   type Status = '0x1' | '0x0'
   /** `status`: the call's own outcome; `outer`: the transaction's (always 0x1 for a bundle). */
-  const mined = new Map<
-    Hex,
-    { tx: FakeTx; status: Status; outer: Status; input: Hex; logs: unknown[] }
-  >()
+  const mined = new Map<Hex, MinedTx & { tx: FakeTx; status: Status }>()
   const routers = new Map(options.routes.map((route) => [route.router, route]))
   const quoters = new Map(options.routes.map((route) => [route.quoter, route]))
   const factories = new Set(options.routes.map((route) => route.factory))
@@ -145,11 +164,12 @@ export function createFakeWallet(options: FakeWalletOptions) {
           [pool.sqrtPriceX96, 0, 0, 1, 1, true],
         )
       const { functionName } = decodeFunctionData({ abi: tradePoolAbi, data })
+      if (functionName === 'fee' && state.failFee) throw rpcError(3, 'execution reverted')
       const value =
         functionName === 'tickSpacing'
           ? pool.tickSpacing
           : functionName === 'fee'
-            ? pool.fee
+            ? (state.fees.get(pool.address) ?? pool.fee)
             : pool[functionName]
       return encodeFunctionResult({ abi: tradePoolAbi, functionName, result: value } as never)
     }
@@ -249,23 +269,7 @@ export function createFakeWallet(options: FakeWalletOptions) {
 
   const receipt = (hash: Hex) => {
     const entry = mined.get(hash)
-    if (!entry) return null
-    return {
-      transactionHash: hash,
-      transactionIndex: '0x0',
-      blockHash: pad('0x1', { size: 32 }),
-      blockNumber: toHex(BLOCK + 1n),
-      from: entry.tx.from,
-      to: entry.tx.to,
-      cumulativeGasUsed: '0x5208',
-      gasUsed: '0x5208',
-      effectiveGasPrice: '0x1',
-      contractAddress: null,
-      logs: entry.logs,
-      logsBloom: `0x${'0'.repeat(512)}`,
-      status: entry.outer,
-      type: '0x2',
-    }
+    return entry ? receiptJson(hash, entry) : null
   }
 
   const provider: Eip1193Provider & {
@@ -291,17 +295,7 @@ export function createFakeWallet(options: FakeWalletOptions) {
         case 'eth_blockNumber':
           return toHex(BLOCK)
         case 'eth_getBlockByNumber':
-          return {
-            number: toHex(BLOCK),
-            hash: pad('0x1', { size: 32 }),
-            parentHash: pad('0x0', { size: 32 }),
-            timestamp: toHex(TIMESTAMP),
-            gasLimit: '0x1c9c380',
-            gasUsed: '0x0',
-            baseFeePerGas: '0x1',
-            transactions: [],
-            uncles: [],
-          }
+          return blockJson()
         case 'eth_getBalance':
           return toHex(options.ethBalance ?? 0n)
         case 'eth_getCode':
@@ -313,16 +307,30 @@ export function createFakeWallet(options: FakeWalletOptions) {
             data: call.data,
             from: call.from,
             value: call.value ? BigInt(call.value) : 0n,
+            block: typeof p[1] === 'string' ? p[1] : undefined,
           })
           return answerCall(call.to.toLowerCase() as Address, call.data)
         }
-        case 'eth_sendTransaction': {
+        case 'eth_estimateGas': {
           const raw = p[0] as { from: Address; to: Address; data: Hex; value?: Hex }
+          state.estimates.push({
+            from: raw.from.toLowerCase() as Address,
+            to: raw.to.toLowerCase() as Address,
+            data: raw.data,
+            value: raw.value ? BigInt(raw.value) : 0n,
+          })
+          const answer = state.estimate
+          if (typeof answer === 'bigint') return toHex(answer)
+          throw ESTIMATE_ERRORS[answer]()
+        }
+        case 'eth_sendTransaction': {
+          const raw = p[0] as { from: Address; to: Address; data: Hex; value?: Hex; gas?: Hex }
           const tx: FakeTx = {
             from: raw.from.toLowerCase() as Address,
             to: raw.to.toLowerCase() as Address,
             data: raw.data,
             value: raw.value ? BigInt(raw.value) : 0n,
+            gas: raw.gas ? BigInt(raw.gas) : null,
           }
           state.sent.push(tx)
           const input = options.wrapSent
@@ -342,6 +350,7 @@ export function createFakeWallet(options: FakeWalletOptions) {
             to: call.to.toLowerCase() as Address,
             data: call.data,
             value: call.value ? BigInt(call.value) : 0n,
+            gas: null,
           }
           // The smart wallet appends the suffix to its user operation, which a bundle wraps.
           const input = bundleInput({
@@ -369,26 +378,7 @@ export function createFakeWallet(options: FakeWalletOptions) {
           return receipt(p[0] as Hex)
         case 'eth_getTransactionByHash': {
           const entry = mined.get(p[0] as Hex)
-          if (!entry) return null
-          return {
-            hash: p[0],
-            input: entry.input,
-            from: entry.tx.from,
-            to: entry.tx.to,
-            value: toHex(entry.tx.value),
-            blockNumber: toHex(BLOCK + 1n),
-            blockHash: pad('0x1', { size: 32 }),
-            transactionIndex: '0x0',
-            nonce: '0x0',
-            gas: '0x5208',
-            maxFeePerGas: '0x1',
-            maxPriorityFeePerGas: '0x1',
-            type: '0x2',
-            chainId: '0x2105',
-            v: '0x0',
-            r: '0x1',
-            s: '0x1',
-          }
+          return entry ? transactionJson(p[0] as Hex, entry) : null
         }
         default:
           throw rpcError(-32601, `method ${method} not supported`)

@@ -75,7 +75,7 @@ describe('writing amounts', () => {
 })
 
 describe('refusalText', () => {
-  it('words a gap to another live pool as the cost of this amount, with what to try', () => {
+  it('words a gap to another live pool as the pool’s own price, not the amount’s', () => {
     const text = refusalText({
       kind: 'refuse',
       reason: 'live-deviation-above-max',
@@ -83,7 +83,20 @@ describe('refusalText', () => {
       limit: 200,
     }).replace(/\u00a0/g, ' ')
     expect(text).toBe(
-      'At this amount, the price you would get, with the pool fee and price impact, differs by 3.15 % from another live pool of the same pair; the limit is 2 %. Try a smaller amount.',
+      'This pool’s price differs by 3.15 % from another live pool of the same pair; the limit is 2 %. Its price may be off right now, so it can’t be traded here. Try again later.',
+    )
+    expect(text).not.toMatch(/price you would get|smaller amount/)
+  })
+
+  it('words a gap to the snapshot as the pool’s live price against its snapshot price', () => {
+    const text = refusalText({
+      kind: 'refuse',
+      reason: 'snapshot-deviation-above-max',
+      value: 1_204,
+      limit: 1_000,
+    }).replace(/\u00a0/g, ' ')
+    expect(text).toBe(
+      'The pool’s live price is too far from its price in the latest snapshot (12.04 %); the limit is 10 %.',
     )
   })
 

@@ -96,13 +96,13 @@ export function refusalText(decision: Extract<TradeDecision, { kind: 'refuse' }>
     case 'snapshot-price-missing':
       return 'The latest snapshot has no price for this pool to check the live price against.'
     case 'snapshot-deviation-above-max':
-      return `The live price is too far from the latest snapshot${at(value)}; the limit is 10${NB}%.`
+      return `The pool’s live price is too far from its price in the latest snapshot${at(value)}; the limit is 10${NB}%.`
     case 'reference-price-invalid':
       return 'Another pool of this pair gave an unusable price. Try again in a moment.'
     case 'live-deviation-above-max': {
-      // Core compares the effective price (fee and impact included), so the amount is the lever.
+      // Core compares the two pools' prices before any trade: the amount changes nothing.
       const by = value === undefined ? 'too much' : `by ${bpsPercent(value)}`
-      return `At this amount, the price you would get, with the pool fee and price impact, differs ${by} from another live pool of the same pair; the limit is 2${NB}%. Try a smaller amount.`
+      return `This pool’s price differs ${by} from another live pool of the same pair; the limit is 2${NB}%. Its price may be off right now, so it can’t be traded here. Try again later.`
     }
   }
 }

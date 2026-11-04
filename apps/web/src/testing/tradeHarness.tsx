@@ -1,9 +1,10 @@
 /**
- * Test harness of the swap panel: the WETH/USDC 0.05 % Uniswap v3 pool of the mock world on a
- * fake wallet (testing/fakeWallet.ts) whose quoter answers 3,842.15 USDC per WETH less the fee,
- * the panel rendered with fake discovery and a scripted trade switch, and the steps a reader takes.
+ * Test harness of the swap panel: the WETH/USDC 0.05 % Uniswap v3 pool of the mock world (or its
+ * WETH/USDC Aerodrome Slipstream pool, `slipDetail`) on a fake wallet (testing/fakeWallet.ts) whose
+ * quoter answers 3,842.15 USDC per WETH less the fee, the panel rendered with fake discovery and a
+ * scripted trade switch, and the steps a reader takes.
  */
-import { TOKENS, TRADE_ROUTES } from '@depthwatch/chain/addresses'
+import { TOKENS, TRADE_ROUTES, type TradeVenue } from '@depthwatch/chain/addresses'
 import type { TradeFlags } from '@depthwatch/core'
 import { QueryClient } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
@@ -27,6 +28,8 @@ export const ON: TradeFlags = {
   maxSlippageBps: 300,
 }
 export const OFF: TradeFlags = { enabled: false, venues: [], maxUsd: 1000, maxSlippageBps: 300 }
+/** On for Aerodrome Slipstream pools only. */
+export const ON_SLIPSTREAM: TradeFlags = { ...ON, venues: ['aerodrome-slipstream'] }
 export const UNISWAP = TRADE_ROUTES.find((r) => r.venue === 'uniswap-v3')!
 export const SLIPSTREAM = TRADE_ROUTES.find((r) => r.deployment === 'initial')!
 export const SUFFIX = BUILDER_SUFFIX.slice(2)
@@ -34,6 +37,8 @@ export const ONE_ETH = 10n ** 18n
 
 export const client = createMockClient({ now: NOW })
 export const detail = await client.pool(`uniswap-v3:${V3}`)
+/** The Slipstream pool's page: its snapshot fee is 400 pips, "0.04 % dynamic". */
+export const slipDetail = await client.pool(`aerodrome-slipstream:${SLIP}`)
 
 /** sqrtPriceX96 of a human price (token1 per token0). */
 export function sqrtOf(price: number, dec0: number, dec1: number): bigint {
@@ -84,12 +89,14 @@ export type Fake = ReturnType<typeof wallet>
 /**
  * Renders the panel; `flags` answers each live read of the switch in turn (then the last), the
  * first one when the panel connects; `setFlags` starts a new list from its first answer. `page`:
- * another pool detail than the harness's (the bundle's data, as the page passes it).
+ * another pool detail than the harness's (the bundle's data, as the page passes it), of `venue`,
+ * which the switch at load is on for.
  */
 export function renderPanel(
   fake: Fake,
   flags: (TradeFlags | null)[] = [ON],
   page: PoolDetail = detail,
+  venue: TradeVenue = 'uniswap-v3',
 ) {
   let reads = 0
   const fetchLiveFlags = async () => {
@@ -103,8 +110,8 @@ export function renderPanel(
     <Providers client={client} mock={false} queryClient={queryClient}>
       <TradePanel
         detail={page}
-        venue="uniswap-v3"
-        flagsAtLoad={ON}
+        venue={venue}
+        flagsAtLoad={{ ...ON, venues: [venue] }}
         deps={{
           discover: async () => [
             { id: 'fake', name: 'Fake Wallet', icon: null, provider: fake.provider },

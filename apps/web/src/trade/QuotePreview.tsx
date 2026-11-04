@@ -1,8 +1,9 @@
 /**
  * The form's live quote: what the reader would receive, about and at least, with the price
- * impact, the pool fee, the slippage tolerance and the block the price was read at; core's
- * warning or refusal in a sentence. A polite live region, so a screen reader hears each new
- * quote once.
+ * impact, the pool's fee read with the quote (the fee a swap at that block pays, not the
+ * snapshot's; it can change by the block the swap lands in), the slippage tolerance and the block
+ * the price was read at; core's warning or refusal in a sentence. A polite live region, so a
+ * screen reader hears each new quote once.
  */
 import type { ReactNode } from 'react'
 import type { PoolDetail } from '../api/types.js'
@@ -79,8 +80,8 @@ export function QuotePreview({
               <dd className="num">{bpsPercent(impact)}</dd>
             </div>
             <div>
-              <dt>Pool fee</dt>
-              <dd className="num">{feeText(detail.pool)}</dd>
+              <dt>Live pool fee</dt>
+              <dd className="num">{feeText({ dex: detail.pool.dex, feePips: live.feePips })}</dd>
             </div>
             <div>
               <dt>Slippage tolerance</dt>

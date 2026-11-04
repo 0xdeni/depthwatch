@@ -150,8 +150,8 @@ export function ReviewView({
           <dd className="num">{bpsPercent(impact)}</dd>
         </div>
         <div>
-          <dt>Pool fee</dt>
-          <dd className="num">{feeText(detail.pool)}</dd>
+          <dt>Live pool fee</dt>
+          <dd className="num">{feeText({ dex: detail.pool.dex, feePips: quoted.live.feePips })}</dd>
         </div>
         <div>
           <dt>Slippage tolerance</dt>

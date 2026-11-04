@@ -2,8 +2,8 @@
  * Sending, with the Builder Code on every transaction (DESIGN.md, "Dashboard (apps/web)"):
  * - an EOA (a wallet that does not report the `dataSuffix` capability on Base) is asked, once it
  *   has said it is on Base, for `eth_sendTransaction` of our calldata with `BUILDER_SUFFIX`
- *   appended: the exact bytes `simulate` ran, with a gas limit 25 % above the wallet's
- *   `eth_estimateGas` of them (`gasLimit`). One request per signature: viem's `sendTransaction`
+ *   appended: the exact bytes `simulate` ran, with a gas limit of the wallet's `eth_estimateGas`
+ *   of them × 1.25 plus 150,000 (`gasLimit`). One request per signature: viem's `sendTransaction`
  *   is not used, since after some errors it asks again as `wallet_sendTransaction`, a second wallet
  *   prompt behind the back of the trade switch's re-read;
  * - a wallet whose `wallet_getCapabilities` reports `dataSuffix.supported` for 0x2105 (a smart
@@ -83,12 +83,33 @@ export async function simulate(
   await call(clients.plain, { account, to: tx.to, data, value: tx.value })
 }
 
-/** The gas limit over the wallet's estimate: × 125 / 100, rounded up. */
+/** The gas limit's share of the wallet's estimate: × 125 / 100, rounded up. */
 export const GAS_MARGIN = { num: 125n, den: 100n } as const
 
-/** `estimate` with GAS_MARGIN, rounded up: 100,001 → 125,002. */
+/**
+ * Gas added to every limit after GAS_MARGIN, for work whose cost depends on the pool's state when
+ * the transaction runs rather than on the swap. A Slipstream pool's `fee()` asks its factory's
+ * `getSwapFee(pool)`, which runs the dynamic fee module with at most 200,000 gas
+ * (docs/research/base-contracts.md, §2.12). The module answers from a few reads (about 13,000 to
+ * 24,000 gas) while the pool charges its initial fee (a pool that has one, until its oracle is
+ * written in the block), while the oracle's newest observation is at least the module's
+ * `secondsAgo` old, or when the oracle holds fewer than `secondsAgo` / 2 observations; otherwise
+ * `observe()` binary-searches the oracle, two cold storage reads (about 5,500 gas) a step and at
+ * most 16 steps: about 70,000 to 86,000 gas on pools of 360 to 3,010 observations. Another
+ * transaction that writes the oracle (a swap that moves the tick, whatever its size, or a
+ * liquidity change in range) can switch the module to the search, so a swap estimated before it
+ * needs about 47,000 to 73,000 more gas after it, and a move that brings an initialized tick into
+ * the swap's path adds a crossing (about 50,000). Measured on a fork of Base mainnet, a swap
+ * needed up to 118,986 gas over its estimate (× 1.61, both at once) where × 1.25 left 48,744:
+ * 150,000 covers that with 31,014 to spare before the 25 % counts, and with the 25 % a full
+ * 65,535-observation oracle and a crossing. A fixed amount, since that cost does not grow with the
+ * swap; the account pays for the gas used, not the limit.
+ */
+export const GAS_ALLOWANCE = 150_000n
+
+/** `estimate` × GAS_MARGIN, rounded up, plus GAS_ALLOWANCE: 100,001 → 125,002 + 150,000. */
 export function paddedGas(estimate: bigint): bigint {
-  return (estimate * GAS_MARGIN.num + GAS_MARGIN.den - 1n) / GAS_MARGIN.den
+  return (estimate * GAS_MARGIN.num + GAS_MARGIN.den - 1n) / GAS_MARGIN.den + GAS_ALLOWANCE
 }
 
 /**
@@ -114,11 +135,13 @@ export function isRevertError(error: unknown): boolean {
 
 /**
  * The gas limit of `tx` on the EOA path: the wallet's `eth_estimateGas` of exactly the transaction
- * `send` asks it to sign (from the account, suffix appended), with GAS_MARGIN. An estimate is the
- * least gas that succeeded against the state it was made on; the transaction runs later, in another
- * block, and can need more. A call passes on at most 63/64 of the gas it has left, so a limit at the
- * bare estimate can leave the innermost call of the router short: the swap reverts and its gas is
- * spent. An estimate that reverts is a failed simulation (nothing is sent); a wallet that cannot
+ * `send` asks it to sign (from the account, suffix appended), padded (`paddedGas`). An estimate is
+ * the least gas that succeeded against the state it was made on; the transaction runs later, in
+ * another block or after other transactions in the same pool, and can need more. A call passes on
+ * at most 63/64 of the gas it has left, so a limit at the bare estimate can leave the innermost call
+ * of the router short (GAS_MARGIN), and a Slipstream pool's fee lookup can cost several times what
+ * it did when estimated (GAS_ALLOWANCE): short of gas, the swap reverts and its gas is spent. An
+ * estimate that reverts is a failed simulation (nothing is sent); a wallet that cannot
  * estimate (the method unsupported, or any other error) is left to set the limit itself. The
  * capability path sets no gas: the wallet builds that transaction itself.
  */

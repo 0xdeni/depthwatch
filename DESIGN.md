@@ -488,8 +488,17 @@ WETH out offered when only the unwrap fails its simulation. The Builder Code `bc
 every transaction as its ERC-8021 suffix (`trade/builderCode.ts`, 29 bytes): an EOA is asked once,
 after a check that it is on Base, for `eth_sendTransaction` of our calldata with the suffix appended,
 the bytes simulated, and `gas` the wallet's `eth_estimateGas` of those bytes × 125 / 100, rounded
-up: an estimate that reverts sends nothing, and a wallet that cannot estimate sets the limit itself
-(viem's `sendTransaction` is not used: it can ask again as `wallet_sendTransaction`); a wallet
+up, plus 150,000 (`GAS_ALLOWANCE` in `trade/send.ts`: a Slipstream pool's `fee()` runs its factory's
+dynamic fee module, about 13,000 to 24,000 gas, or about 70,000 to 86,000 when the module
+binary-searches the pool's oracle; it switches to the search once another transaction, a swap that
+moves the tick or a liquidity change in range, has written the oracle in the same block or, on a
+pool without an initial fee, within the module's `secondsAgo`, which an estimate made before that
+transaction cannot see; measured on a fork of Base mainnet (docs/research/base-contracts.md
+§2.12), a swap after such a swap, which also brought an initialized tick into its path, needed
+118,986 gas over its estimate, × 1.61, and 150,000 covers that with 31,014 to spare before the 25 %
+counts; the account pays for the gas used, not the limit): an estimate that reverts sends nothing,
+and a wallet that cannot estimate sets the limit itself (viem's `sendTransaction` is not used: it
+can ask again as `wallet_sendTransaction`); a wallet
 whose `wallet_getCapabilities` reports `dataSuffix` on 0x2105 gets `wallet_sendCalls` with
 `capabilities.dataSuffix = { value, optional: false }` and plain calldata, so it is never appended
 twice and never dropped by a fallback, and its outcome is the wallet's EIP-5792

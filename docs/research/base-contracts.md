@@ -466,7 +466,7 @@ Sources and notes per item:
   - Second live CL factory. Has its own NFPM, SwapRouter, Quoter (README table). CLFactory has an immutable legacyCLFactory; createPool() requires owner if the same (token0,token1,tickSpacing) pool exists on the legacy factory, so the same pair/tickSpacing can exist on more than one factory.
   - verifier: confirmed via <https://raw.githubusercontent.com/velodrome-finance/sugar/main/deployments/base.env (CL_FACTORIES_8453[1]); https://raw.githubusercontent.com/paraswap/paraswap-dex-lib/master/src/dex/uniswap-v3/config.ts (AerodromeSlipstreamNewFactory factory); https://raw.githubusercontent.com/0xProject/0x-settler/master/src/core/univ3forks/AerodromeSlipstream.sol (aerodromeFactoryV3_1); https://raw.githubusercontent.com/velodrome-finance/indexer/main/config.yaml (Base CLFactory list)> — Four independent sources agree. Paraswap pairs this factory with router 0xcbBb8035cAc7D4B3Ca7aBb74cF7BdF900215Ce0D (matches the README's Gauge Caps SwapRouter) but with quoter 0xfa2CB6D6cea79D6Efa102e527B3D67b2e61E3659 rather than the README's Quoter 0x3d4C2225...; that discrepancy is outside the claims under test but worth checking before using a Gauge Caps quoter.
 - `slipstream_cl_factory_gauges_v3`: <https://github.com/aerodrome-finance/slipstream (README 'Deployments' > 'Gauges V3 Deployment', row 'PoolFactory')>, <https://raw.githubusercontent.com/DefiLlama/dimension-adapters/master/dexs/aerodrome-slipstream/index.ts (CONFIG.factories[3], fromBlock 44394724)>
-  - Third live CL factory. README: 'Existing gauges are still in use, but all new gauges will be deployed from here.' Pairs with DynamicSwapFeeModule 0x87D8f999BBa9343E8099552426775B51C338E8CB (fee scales with tick crossings), so fee() can vary per block.
+  - Third live CL factory. README: 'Existing gauges are still in use, but all new gauges will be deployed from here.' Pairs with DynamicSwapFeeModule 0x87D8f999BBa9343E8099552426775B51C338E8CB (the fee adds |current tick − time-weighted average tick over the module's `secondsAgo`| × the pool's scaling factor, capped; §2.12), so fee() can vary per block.
   - verifier: confirmed via <https://raw.githubusercontent.com/velodrome-finance/sugar/main/deployments/base.env (CL_FACTORIES_8453[2]); https://raw.githubusercontent.com/paraswap/paraswap-dex-lib/master/src/dex/uniswap-v3/config.ts (AerodromeSlipstreamFactory3 factory); https://raw.githubusercontent.com/velodrome-finance/sugar-sdk/main/sugar/config.py (Base slipstream_factory_addr); https://raw.githubusercontent.com/velodrome-finance/indexer/main/config.yaml (Base CLFactory list)> — Four independent sources agree; Sugar SDK treats it as the current default Slipstream factory on Base. Paraswap lists router 0x33a47A122De0B5c429Ba79E6d17965B0e841c60e and quoter 0x86D33DCbEC9c75897c6Ce521f33CF84009c4272e for this factory, which differ from the README's Gauges V3 SwapRouter 0x698Cb2b6... and Quoter 0x514c8B5f...; not claims under test, but do not assume a single canonical router/quoter per factory without on-chain checks.
 - `slipstream_cl_factory_deprecated_early`: <https://raw.githubusercontent.com/DefiLlama/dimension-adapters/master/dexs/aerodrome-slipstream/index.ts (CONFIG.factories[0], fromBlock 13592962, comment: 'Deprecated early Slipstream factory (Apr 2024, 22 pools); superseded within a week by 0x5e7B')>
   - Only source is a DefiLlama code comment; not in the aerodrome-finance/slipstream README. Include only if you want full historical coverage.
@@ -502,7 +502,7 @@ Unresolved:
 - Deprecated early CL factory 0x9592cd9b267748cbFbDe90Ac9f7df3c437A6d51b (and 4th CL gauge factory 0x3e703fd2b6506e2abcce2c8b5633872a7d9b6fbc) appear only in a DefiLlama adapter comment, not in any Aerodrome source; unverified.
 - Router 0xcF77a3Ba… , FactoryRegistry, the three NFPMs, SwapRouters and Quoters are single-source (official README only); no second corroboration found.
 - Mapping NFPM→factory is inferred from code (each NFPM has an immutable `factory` and computes pool addresses from it) and README grouping, not verified on-chain via NFPM.factory(). Verified on chain since (2.8): each NFPM's `factory()` is its paired CLFactory.
-- DynamicSwapFeeModule behaviour (fee scaling by tick crossings in the Gauges V3 deployment) was not researched beyond the README summary; CLPool.fee() is a live view that may change block to block for pools under that module.
+- DynamicSwapFeeModule behaviour was not researched beyond the README summary; CLPool.fee() is a live view that may change block to block for pools under that module. Researched since (2.12): on all three deployments the fee adds the distance between the current tick and its time-weighted average over the module's `secondsAgo`, times the pool's scaling factor, capped, not a count of tick crossings; the module source, each deployment's config and the gas of the lookup are there.
 - Event topic hashes were computed locally with a pure-Python keccak256 validated against three known hashes (v2 Swap, v3 Swap, v3 PoolCreated); not cross-checked against an explorer.
 
 ### Technical notes
@@ -1691,6 +1691,69 @@ Not established read-only:
   (docs/DEPLOY.md, "Before switching on") asserts the balance difference of real swaps.
 - Rebasing over time was not measured (no balance was compared across blocks); the conclusion
   rests on the verified sources.
+
+### 2.12 Slipstream swap fee modules: the fee and the gas of `fee()` (2026-11-04)
+
+Source: aerodrome-finance/slipstream@f8717fa, `contracts/core/fees/DynamicSwapFeeModule.sol`
+(`getFee`, `_getDynamicFee`), `contracts/core/CLFactory.sol` (`getSwapFee`),
+`contracts/core/CLPool.sol` (`swap`, `_modifyPosition`, `observe`) and
+`contracts/core/libraries/Oracle.sol`. As in `## trade`, no runtime code was compared byte for byte
+with its source: the views below answer as the source's do, and the gas measured on a fork follows
+its branches.
+- `getSwapFee(pool)` staticcalls the module's `getFee(pool)` with 200,000 gas and takes an answer of
+  at most 100,000 pips, else `tickSpacingToFee`.
+- `getFee` reads the pool's `dynamicFeeConfig` (baseFee, feeCap, scalingFactor, initialFeeEnabled,
+  initialFee). baseFee 420 (`ZERO_FEE_INDICATOR`) answers 0; baseFee 0 means `tickSpacingToFee`.
+  With `initialFeeEnabled`, while the newest oracle observation is not from the current block
+  (`slot0()`, then `observations(index)`), it answers initialFee (0: baseFee). Otherwise, with
+  scalingFactor 0 it takes the module's `defaultScalingFactor` and `defaultFeeCap`, and answers
+  `min(baseFee + |tick − twAvgTick| × scalingFactor / 1e6, feeCap)`, less any discount registered
+  for `tx.origin`, where `twAvgTick` is the pool's time-weighted average tick over the module's
+  `secondsAgo` (`observe([secondsAgo, 0])`). The dynamic part is 0, without `observe()`, when the
+  oracle's cardinality is below `secondsAgo / 2`, and 0 when `observe()` reverts. The fee follows
+  the tick's distance from its recent average, not a count of tick crossings.
+- The pool writes an oracle observation in `swap()` only when the swap moves the tick
+  (`state.tick != slot0Start.tick`), and in `_modifyPosition` when the position's range holds the
+  current tick (a mint or burn in range); `Oracle.write` adds at most one per block. `observe()`
+  answers `secondsAgo` 0, and any target at or after the newest observation, from the newest
+  observation; an older target is a binary search over the ring, two storage reads a step (at most
+  16 steps at the 65,535-observation maximum).
+
+At block 53,479,700 (2026-11-03T23:32:27Z), read through `https://mainnet.base.org` (each pool's
+`token0()` WETH, `token1()` USDC):
+
+| deployment | module        | `secondsAgo` | pool, tick spacing | `dynamicFeeConfig(pool)`                     | cardinality | newest observation | `fee()` |
+| ---------- | ------------- | ------------ | ------------------ | -------------------------------------------- | ----------- | ------------------ | ------- |
+| initial    | `0x090b…803b` | 480          | `0xb2cc…dc59`, 100 | 535, 2,000, 14,900,000; initial fee on, 150  | 3,010       | 12 s old           | 150     |
+| gauge-caps | `0xf4ec…2785` | 480          | `0x56ae…e7ef`, 500 | all 0 (`tickSpacingToFee` 20,000)            | 360         | 78 s old           | 20,000  |
+| gauges-v3  | `0x87d8…e8cb` | 30           | `0x3fe0…392a`, 50  | 250, 10,000, 125,000,000; initial fee off, 0 | 1,801       | 64 s old           | 250     |
+
+Each module (the factory's `swapFeeModule()`, 9,270 bytes) has `defaultScalingFactor()` 0 and
+`defaultFeeCap()` 30,000; each pool's `fee()` equals its factory's `getSwapFee`.
+
+Gas of the fee lookup (the pool's call to `getSwapFee` in the swap panel's swaps on a fork of Base
+mainnet at that block, at the panel's estimate and after another account's swap of about 15 to
+200 bps in the same pool):
+- initial: 13,471 (the initial fee) before any oracle write in the block; 70,882 to 86,150 (the
+  search, whose cost varies with the block timestamp) after another swap in the same block; 13,471
+  again in the next block.
+- gauges-v3: 24,079 (`observe()` without a search, the newest observation at least 30 s old);
+  77,172 to 77,698 after another swap, in the same block or 2 s later.
+- gauge-caps: 71,363 to 73,173 before and after: its newest observation is within 480 s, so the
+  module always searches, and scaling factor 0 makes the result add nothing.
+
+The 118,986 in DESIGN.md and `trade/send.ts` (`GAS_ALLOWANCE`): the panel's swap of 900 USDC → WETH
+on 0xb2cc…dc59 through the initial SwapRouter 0xbe6d…18a5 (`exactInputSingle`) was estimated at
+194,973 gas at tick −198,967. Another account's swap of 74,752 USDC → WETH moved the tick to
+−198,901, just below the initialized tick −198,900, and the panel's swap, run at that swap's block
+timestamp (which the oracle and the module treat as the same block), crossed −198,900 and needed
+313,959 gas (`eth_estimateGas` on that state with the minimum output set to 0, the move having
+taken the price past the panel's minimum): 118,986 over the estimate (× 1.61), the fee lookup
+costing 86,150 gas instead of 13,471 and the crossing most of the rest. The limit
+`ceil(194,973 × 1.25) + 150,000` is 393,717, 79,758 above that. With limits set that way, none of
+112 swaps the panel sent on the fork after another account's swap (17 to 478 bps, in the same block
+or the next, on these three pools and Uniswap v3's 0xd0b5…f224) ran out of gas; the least room left
+over what a swap needed was 83,310 gas.
 
 ## 3. Still unresolved (do not guess; resolve at first run)
 

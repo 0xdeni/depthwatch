@@ -285,9 +285,64 @@ describe('the trade switch in docs/DEPLOY.md and the workflows', () => {
     expect(gates).toBeGreaterThan(0)
     expect(gates).toBeLessThan(section.indexOf('set it to the venues'))
     const list = section.slice(gates, section.indexOf('### Changing the switch'))
-    for (const gate of ['wording release', 'fork test', 'live test'])
+    for (const gate of ['switch-agnostic', 'fork test', 'live test'])
       expect(list, gate).toContain(gate)
     expect(list).toContain('the only values to use are unset (the default) or `off`')
+    expect(list).not.toContain('wording release')
+    expect(list).toContain('say only the API is read-only')
+    expect(list).toContain('keeps its footer until it reloads')
+  })
+
+  it('keeps the promise lines switch-agnostic, as the first gate says', () => {
+    const flat = (...path: string[]) => read(...path).replace(/\s+/g, ' ')
+    const promises = [
+      ['README.md'],
+      ['AGENTS.md'],
+      ['DESIGN.md'],
+      ['docs', 'ROADMAP.md'],
+      ['SECURITY.md'],
+      ['docs', 'ARCHITECTURE.md'],
+    ]
+    for (const path of promises) {
+      const text = flat(...path)
+      const name = path.join('/')
+      expect(text, name).not.toMatch(/talks only to `\/api`/i)
+      expect(text, name).not.toMatch(/\bno trading(?! capital| on its own account)/i)
+      expect(text, name).not.toMatch(/sends no transactions(?! of its own)/i)
+      expect(text, name).toContain('optional swap panel')
+      expect(text, name).toContain('off unless')
+    }
+    // The Builder Code costs no fee, but its suffix is calldata the visitor pays gas for.
+    for (const path of [['README.md'], ['AGENTS.md'], ['DESIGN.md'], ['docs', 'ROADMAP.md']]) {
+      const text = flat(...path)
+      const name = path.join('/')
+      expect(text, name).toContain('Builder Code (ERC-8021), which lets Base attribute')
+      expect(text, name).toContain('only 29 bytes of calldata (a negligible amount of gas)')
+      expect(text, name).not.toMatch(/costs the visitor nothing/i)
+    }
+    expect(flat('docs', 'ROADMAP.md')).not.toContain('No trading, routing or aggregation')
+    const security = flat('SECURITY.md')
+    for (const subject of [
+      '**Calldata:**',
+      '**Approvals:**',
+      '**The Builder Code suffix:**',
+      '**The switch:**',
+      '**The security headers:**',
+      '`apps/web/public/_headers`',
+    ])
+      expect(security, subject).toContain(subject)
+    // Neither is in scope: an ETH-out swap pays the router before it unwraps to the visitor, and
+    // a page already open shows the swap it loaded with until the panel reads the switch again.
+    expect(security).toContain('leave the output with anyone but the visitor at the end')
+    expect(security).toContain("show the swap while the bundle's `features.trade` is off for the")
+    expect(security).toContain('or ask for a signature while it or `data/flags.json` is off')
+    // The API's agent documents keep the API read-only and promise nothing of the dashboard.
+    const agents = flat('apps', 'api', 'src', 'agentDocs', 'AGENTS.md')
+    expect(agents).toContain('This server answers read-only JSON')
+    expect(agents).toContain('This API does not execute, route or quote trades')
+    expect(flat('apps', 'api', 'src', 'agentDocs', 'llms.txt')).toContain(
+      'This API does not execute or route trades',
+    )
   })
 
   it('says a refused value is published off and fails the run, as both workflows do', () => {

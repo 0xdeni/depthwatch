@@ -861,10 +861,16 @@ its footer on the viewport bottom.
 
 **Footer:** the ink block in both themes (Gray 100, a Gray 80 top rule in dark); 64 px above it
 (48 on phones), 48 px padding (32 on phones) plus the bottom safe area.
-- Desktop (from 1024): one row of three columns: the wordmark at 28 px; the sentence "Open source
-  and read-only. No token, no custody. Built on Base: it indexes Uniswap and Aerodrome pools on
-  Base mainnet." plus the data source ("Data: a Base mainnet snapshot.") in `--on-ink-2`; the links
-  Methodology, API and GitHub (15 px, 650, 44 px targets, underline on hover).
+- Desktop (from 1024): one row of three columns: the wordmark at 28 px; the promise plus the data
+  source ("Data: a Base mainnet snapshot.") in `--on-ink-2`; the links Methodology, API and GitHub
+  (15 px, 650, 44 px targets, underline on hover).
+- The promise follows the trade switch the page loaded with (`tradeSwitchOn`), and a page already
+  open keeps it until it reloads. While the switch is off: "Open source and read-only. No token, no
+  custody. It indexes Uniswap, Aerodrome and Aero pools on Base mainnet. Independent: not
+  affiliated with or endorsed by Base." While it is on for a venue whose route is not on hold:
+  "Open source. No token, no custody, no fee added to swaps. It indexes Uniswap, Aerodrome and Aero
+  pools on Base mainnet. The swap panel is on and non-custodial: a swap goes from your own wallet
+  straight to the pool’s router. Independent: not affiliated with or endorsed by Base."
 - Phones: one column in that order, links left-aligned 20 px apart.
 
 ### 5.2 The band and blocks

@@ -9,8 +9,8 @@ over HTTP.
 
 Typical use: an agent about to trade on Base checks how deep the pool is on the side it will
 trade and what a round trip costs at its size, then verifies onchain and executes elsewhere.
-Depthwatch does not execute, route or quote trades, holds no funds, and its USD prices are a
-valuation convention, not an oracle.
+This API does not execute, route or quote trades, Depthwatch holds no funds, and its USD prices
+are a valuation convention, not an oracle.
 
 Every Depthwatch server (`depthwatch serve`, `depthwatch start`, `depthwatch demo`) serves three
 documents for agents: `GET /AGENTS.md` (this file), `GET /llms.txt` (a short index) and `GET

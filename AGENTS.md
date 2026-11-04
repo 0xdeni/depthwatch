@@ -3,7 +3,13 @@
 Depthwatch is an open-source (MIT) liquidity observatory for Base mainnet: it indexes Uniswap
 v3/v4, Aerodrome and Aero pools and publishes depth at ±1/2/5 %, effective spread, LP
 concentration, persistence, a Liquidity Health Score and market-maker scorecards through a CLI
-pipeline, a Hono API and a React dashboard. No token, no custody, no trading.
+pipeline, a Hono API and a React dashboard. It measures and does not trade on its own account: no
+token, no custody, no trading capital, no fee added to swaps. The static site's optional swap panel,
+off unless its operator switches it on (docs/DEPLOY.md, "Trade switch"), lets a visitor swap in the
+pool they are viewing, from their own wallet, straight to that pool's router; it never routes or
+recommends a pool, and each swap carries Depthwatch's Builder Code (ERC-8021), which lets Base
+attribute the transaction onchain; the code adds no fee, only 29 bytes of calldata (a negligible
+amount of gas).
 
 This file is for coding agents working on this repository. An agent that wants to use a running
 Depthwatch API reads `GET /AGENTS.md` on that server instead (source:
@@ -21,7 +27,7 @@ runs TypeScript directly and workspace imports resolve to each package's `src/in
 | `packages/chain`         | `@depthwatch/chain` | viem adapters for Base, contract addresses (`src/addresses.ts`), fixture transports.         |
 | `packages/db`            | `@depthwatch/db`    | `node:sqlite` schema, migrations, typed repositories.                                        |
 | `apps/api`               | `@depthwatch/api`   | Hono REST API (zod validation), agent documents, static serving of the dashboard.            |
-| `apps/web`               | `@depthwatch/web`   | Vite + React 19 dashboard; talks only to `/api`. `plugins/` holds build-time plugins.        |
+| `apps/web`               | `@depthwatch/web`   | React 19 dashboard: reads `/api` or the bundle, swaps use the wallet. Vite build `plugins/`. |
 | `apps/cli`               | `@depthwatch/cli`   | The `depthwatch` command: discover → snapshot → volume → score → serve, start, demo, export. |
 | `apps/api/src/agentDocs` | agent documents     | `AGENTS.md`, `llms.txt`, `openapi.json` served at the API root and copied by the build.      |
 | `deploy/`                | deployment          | `compose.yaml` and the entrypoint of the root `Dockerfile`; `docs/DEPLOY.md` is the guide.   |

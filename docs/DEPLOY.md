@@ -343,11 +343,14 @@ $1,000 per swap and at most 3 % slippage, are set in the code, not by the variab
 
 Trading ships switched off. Until all three of these hold, the only values to use are unset (the
 default) or `off`:
-- The wording release is merged: the read-only promise (the dashboard footer, README.md,
-  AGENTS.md, DESIGN.md, the non-goals of docs/ROADMAP.md, the scope of SECURITY.md, the API's
-  agent document `apps/api/src/agentDocs/AGENTS.md`) and the "talks only to `/api`" descriptions
-  in AGENTS.md, README.md and docs/ARCHITECTURE.md say what the swap panel does, in the same
-  release that switches it on.
+- The wording is still switch-agnostic, so switching on needs no release of its own. README.md,
+  AGENTS.md, DESIGN.md, the non-goals of docs/ROADMAP.md, the scope of SECURITY.md and
+  docs/ARCHITECTURE.md describe the swap panel as optional and off unless switched on, and none
+  says the dashboard talks only to `/api`; the API's agent documents say only the API is
+  read-only; and the dashboard footer says the panel is on and non-custodial when the switch the
+  page loaded with is on for a venue whose route is not on hold, and read-only otherwise (a page
+  already open keeps its footer until it reloads). `apps/cli/src/tradeSwitch.test.ts` and
+  `apps/web/src/components/shell/Footer.test.tsx` check this.
 - The fork test has passed for every venue to be listed: each venue and direction, ETH in and
   out, against a local fork of Base, never in CI; it runs outside the repository.
 - The live test has passed: small swaps on Base mainnet from a Cloudflare Pages preview with

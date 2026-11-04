@@ -4,18 +4,22 @@
  * Content-Security-Policy runs only this origin's scripts plus the inline scripts of index.html by
  * hash, fetches go to this origin only (the static client reads `./data/bundle.json` and
  * `./data/flags.json`; the trade panel reads the chain through the user's wallet, not over HTTP),
- * and the trade switch is never cached. The build checks the built index.html the same way
- * (`securityHeaders` below); `src/productionBundle.test.ts` runs that build.
+ * and the trade switch is never cached. The build checks the built index.html the same way, and
+ * refuses a URL pattern that opens two blocks (`securityHeaders` below);
+ * `src/productionBundle.test.ts` runs that build.
  */
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { Rollup } from 'vite'
 import { describe, expect, it } from 'vitest'
 import {
+  checkHeadersFile,
   checkInlineScripts,
   cspDirectives,
   cspScriptHashes,
+  duplicatePatterns,
   HEADERS_SOURCE,
   headersFor,
   inlineScriptHashes,
@@ -31,8 +35,10 @@ const policy = headersFor(rules, '/').get('content-security-policy') ?? ''
 const directives = cspDirectives(policy)
 
 describe('public/_headers', () => {
-  it('has one rule for every path and one for the trade switch', () => {
+  it('has one rule for every path and one for the trade switch, each pattern once', () => {
     expect(rules.map((rule) => rule.pattern)).toEqual(['/*', '/data/flags.json'])
+    expect(duplicatePatterns(rules)).toEqual([])
+    expect(checkHeadersFile(headersText, '_headers')).toEqual(rules)
   })
 
   it('refuses framing and content sniffing on every path', () => {
@@ -89,22 +95,50 @@ describe('public/_headers', () => {
   })
 })
 
-describe('the preview rule (.github/workflows/trade-preview.yml)', () => {
+describe("the preview's noindex header (.github/workflows/trade-preview.yml)", () => {
   const workflow = readFileSync(
     resolve(HEADERS_SOURCE, '..', '..', '..', '..', '.github', 'workflows', 'trade-preview.yml'),
     'utf8',
   )
-  // What the workflow's printf appends to the built file.
-  const previewText = `${headersText}\n/*\n  X-Robots-Tag: noindex, nofollow\n`
-  const preview = parseHeadersFile(previewText)
+  const step = workflow.slice(
+    workflow.indexOf('- name: Build the static site'),
+    workflow.indexOf('- name: Install wrangler'),
+  )
+  // The script the build step runs on the built file; it holds no single quote.
+  const script = /node -e '([^']*)' apps\/web\/dist-static\/_headers\n/.exec(step)?.[1] ?? ''
+  /** Runs the script on a copy of `text`, as the workflow runs it on the built `_headers`. */
+  const insert = (text: string) => {
+    const dir = mkdtempSync(join(tmpdir(), 'depthwatch-preview-'))
+    try {
+      const file = join(dir, '_headers')
+      writeFileSync(file, text)
+      const { status, stdout } = spawnSync(process.execPath, ['-e', script, file], {
+        encoding: 'utf8',
+      })
+      return { status, stdout, text: readFileSync(file, 'utf8') }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+  // What the first run appended to the built file instead.
+  const appended = `${headersText}\n/*\n  X-Robots-Tag: noindex, nofollow\n`
 
-  it('is the rule the workflow appends after the build', () => {
-    expect(workflow).toContain(
-      "printf '\\n%s\\n%s\\n' '/*' '  X-Robots-Tag: noindex, nofollow' >> apps/web/dist-static/_headers",
+  it('is inserted into the /* block by the build step, not appended', () => {
+    expect(script).toContain(
+      'lines.splice(lines.indexOf("/*") + 1, 0, "  X-Robots-Tag: noindex, nofollow")',
     )
+    expect(workflow).not.toContain('>> apps/web/dist-static/_headers')
   })
 
-  it('adds noindex, nofollow on every path and changes no other header', () => {
+  it('goes right after the one /* line of the built file, every other line as built', () => {
+    // The static build copies public/_headers into dist-static unchanged.
+    const result = insert(headersText)
+    expect(result.status).toBe(0)
+    const lines = headersText.split('\n')
+    lines.splice(lines.indexOf('/*') + 1, 0, '  X-Robots-Tag: noindex, nofollow')
+    expect(result.text).toBe(lines.join('\n'))
+    const preview = checkHeadersFile(result.text, 'the preview _headers')
+    expect(preview.map((rule) => rule.pattern)).toEqual(['/*', '/data/flags.json'])
     for (const path of [
       '/',
       '/index.html',
@@ -119,8 +153,39 @@ describe('the preview rule (.github/workflows/trade-preview.yml)', () => {
       after.delete('x-robots-tag')
       expect(after).toEqual(before)
     }
-    expect(headersFor(preview, '/').get('content-security-policy')).toBe(policy)
-    expect(() => checkInlineScripts(indexHtml, previewText)).not.toThrow()
+    for (const path of ['/', '/data/flags.json']) {
+      expect(headersFor(preview, path).get('content-security-policy')).toBe(policy)
+      expect(headersFor(preview, path).get('x-frame-options')).toBe('DENY')
+    }
+    expect(() => checkInlineScripts(indexHtml, result.text)).not.toThrow()
+  })
+
+  it('stops the run, changing nothing, unless exactly one line is /*', () => {
+    for (const text of [
+      appended,
+      headersText.replace('\n/*\n', '\n/**\n'),
+      headersText.replaceAll('\n', '\r\n'),
+    ]) {
+      const result = insert(text)
+      expect(result.status).toBe(1)
+      expect(result.stdout).toMatch(
+        /^::error::.* lines \/\* where the preview needs exactly one; nothing was published\.\n$/,
+      )
+      expect(result.text).toBe(text)
+    }
+  })
+
+  it('would lose the policy if appended as a block of its own, so the build refuses that', () => {
+    // As seen on Pages on the first run: the appended /* block replaced the first one.
+    const served = headersFor(parseHeadersFile(appended), '/')
+    expect(served.get('x-robots-tag')).toBe('noindex, nofollow')
+    expect(served.has('content-security-policy')).toBe(false)
+    expect(served.has('x-frame-options')).toBe(false)
+    expect(duplicatePatterns(parseHeadersFile(appended))).toEqual(['/*'])
+    expect(() => checkHeadersFile(appended, 'dist-static/_headers')).toThrow(
+      /^dist-static\/_headers: more than one block opens with "\/\*"\. /,
+    )
+    expect(() => checkInlineScripts(indexHtml, appended)).toThrow(/more than one block/)
   })
 })
 
@@ -147,11 +212,22 @@ describe('the helpers', () => {
     expect(patternMatches('/data/*.json', '/data/x.js')).toBe(false)
   })
 
-  it('join a header two rules set, and refuse a header line outside a rule', () => {
+  it('join a header two patterns set, and refuse a header line outside a rule', () => {
     const joined = parseHeadersFile('/*\n  X-Robots-Tag: noindex\n/a\n  X-Robots-Tag: nosnippet\n')
     expect(headersFor(joined, '/a').get('x-robots-tag')).toBe('noindex, nosnippet')
+    expect(duplicatePatterns(joined)).toEqual([])
     expect(() => parseHeadersFile('  X-Frame-Options: DENY\n')).toThrow(/line 1/)
     expect(() => parseHeadersFile('/*\n  no colon\n')).toThrow(/line 2/)
+  })
+
+  it('let a block replace every earlier block with the same pattern, as Pages was seen to', () => {
+    const twice = parseHeadersFile('/*\n  A: 1\n  B: 2\n/a\n  A: 3\n/*\n  C: 4\n/a\n  B: 5\n')
+    expect([...headersFor(twice, '/a')]).toEqual([
+      ['c', '4'],
+      ['b', '5'],
+    ])
+    expect(duplicatePatterns(twice)).toEqual(['/*', '/a'])
+    expect(() => checkHeadersFile('/a\n  A: 1\n/a\n  A: 2\n', 'x')).toThrow(/opens with "\/a"/)
   })
 })
 
@@ -162,8 +238,8 @@ describe('securityHeaders (the Vite plugin)', () => {
     }
     writeBundle: (this: unknown, options: { dir?: string }) => void
   }
-  const plugin = (keepFile: boolean) =>
-    securityHeaders({ readText: () => headersText, keepFile }) as unknown as Hooks
+  const plugin = (keepFile: boolean, text = headersText) =>
+    securityHeaders({ readText: () => text, keepFile }) as unknown as Hooks
   const bundleOf = (html: string) =>
     ({
       'index.html': { type: 'asset', fileName: 'index.html', source: html },
@@ -178,6 +254,26 @@ describe('securityHeaders (the Vite plugin)', () => {
     expect(() => generateBundle.handler.call({}, {}, {} as Rollup.OutputBundle)).toThrow(
       /no index.html/,
     )
+    const twice = `${headersText}\n/*\n  X-Robots-Tag: noindex\n`
+    expect(() =>
+      plugin(true, twice).generateBundle.handler.call({}, {}, bundleOf(indexHtml)),
+    ).toThrow(/^apps\/web\/public\/_headers: more than one block opens with "\/\*"/)
+  })
+
+  it('fails the static build when its _headers opens a pattern twice, or is missing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'depthwatch-headers-'))
+    try {
+      const file = join(dir, '_headers')
+      expect(() => plugin(true).writeBundle.call({}, { dir })).toThrow(/wrote no .*_headers/)
+      writeFileSync(file, `${headersText}\n/data/flags.json\n  Cache-Control: no-cache\n`)
+      expect(() => plugin(true).writeBundle.call({}, { dir })).toThrow(
+        /_headers: more than one block opens with "\/data\/flags\.json"/,
+      )
+      writeFileSync(file, headersText)
+      expect(() => plugin(true).writeBundle.call({}, { dir })).not.toThrow()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('keeps _headers in the static output and removes it from the server output', () => {

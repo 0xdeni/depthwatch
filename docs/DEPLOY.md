@@ -312,7 +312,9 @@ The build ships `apps/web/public/_headers`, the response headers Cloudflare Page
 page may be framed (`X-Frame-Options: DENY`, `frame-ancestors 'none'`), no type sniffing, and a
 Content-Security-Policy that runs only the site's own scripts and the inline script of
 `index.html` by its hash and lets pages fetch from the site itself only. Every build fails when
-that hash and the inline script differ. `depthwatch serve` does not send these headers, and the
+that hash and the inline script differ, or when the file opens a URL pattern in more than one
+block: Pages was seen to serve only the last of them ([Trade preview (the live
+test)](#trade-preview-the-live-test)). `depthwatch serve` does not send these headers, and the
 server build leaves the file out. A Pages feature that adds a script to the pages, such as
 Cloudflare Web Analytics, would be blocked by this policy: leave it off, or add its host to the
 policy.
@@ -403,9 +405,21 @@ branch through Cloudflare's API and stops unless it is `main`; after uploading, 
 Cloudflare made anything but a preview deployment, or if
 <https://depthwatch.pages.dev/data/flags.json> does not serve `"enabled":false`, whatever the
 input: it is a test for while the production switch is off. A refused value publishes nothing.
-The preview adds `X-Robots-Tag: noindex, nofollow` on every path; every other header, the
-Content-Security-Policy included, is the production site's. It has its own concurrency group, so
-it does not wait for Refresh site, and two previews never publish at once.
+It has its own concurrency group, so it does not wait for Refresh site, and two previews never
+publish at once.
+
+The preview adds `X-Robots-Tag: noindex, nofollow` on every path: the build step inserts it into
+the one `/*` block of the built `_headers`, right after that line, and leaves every other line as
+built, so every other header, the Content-Security-Policy included, is the production site's. The
+step fails, publishing nothing, unless the file has exactly one line `/*`. On its first run (4
+November 2026) the workflow appended a second `/*` block instead, and Pages did not join the two:
+the preview served that block's `X-Robots-Tag` but neither the Content-Security-Policy nor the
+`X-Frame-Options` of the first, which the production site serves from the same file. Cloudflare
+documents that the headers of different rules matching a path are joined; that a block replaces an
+earlier one with the same pattern was seen on Pages, not documented. So the static build fails when
+`_headers` opens a URL pattern twice, and after each upload the run checks the headers the preview
+serves: `/` and `/data/flags.json` must be served the Content-Security-Policy and `X-Frame-Options`
+of the built `/*` block, exactly, and an `X-Robots-Tag` with `noindex`, or the run fails.
 
 Each deployment also has an address of its own, `https://<id>.depthwatch.pages.dev` (in the run's
 summary and in the public log of its publish step), which keeps the switch it was built with until
@@ -417,10 +431,10 @@ Steps 1, 2 and 4 work from a phone, in a browser signed in to GitHub; the extens
 step 3 needs a computer:
 1. Actions, Trade preview, Run workflow on `main`; under "Trade switch of the preview; off
    switches it off again", pick the venues to test, for example `uniswap-v3`, and Run workflow.
-2. The run turns green once <https://trade-preview.depthwatch.pages.dev> serves its build and
-   switch, the earlier deployments are deleted and the production site still serves the switch
-   off. Its summary gives the preview's address, the switch, the run's own deployment address and
-   the number of earlier deployments deleted.
+2. The run turns green once <https://trade-preview.depthwatch.pages.dev> serves its build, its
+   switch and its security headers, the earlier deployments are deleted and the production site
+   still serves the switch off. Its summary gives the preview's address, the switch, the run's own
+   deployment address and the number of earlier deployments deleted.
 3. Open <https://trade-preview.depthwatch.pages.dev> in each wallet's browser and go through the
    checklist below.
 4. Right after the test, run Trade preview again with `off`: while the preview is on, anyone with
@@ -428,7 +442,8 @@ step 3 needs a computer:
    switch off and deletes the deployment that had it on; its summary says none is left.
 5. If the run fails, its log says why, and the step that failed says what was published:
    - **Check settings** to **Build the static site** (the secrets, the published bundle, a refused
-     value, a bundle with no pools, the build): nothing was published. Correct it and run again.
+     value, a bundle with no pools, the build, a built `_headers` without exactly one line `/*`):
+     nothing was published. Correct it and run again.
    - **Check the production branch**: nothing was published. If the log names a branch other than
      `main`, set the project's production branch back to `main`: a Direct Upload project changes
      it only through Cloudflare's API (a `PATCH` of the project with
@@ -439,9 +454,15 @@ step 3 needs a computer:
      may serve this build with trading on. Run Trade switch at once with `DEPTHWATCH_TRADE` unset,
      until <https://depthwatch.pages.dev/data/flags.json> serves `"enabled":false`, then set the
      production branch back to `main` as above. For any other failure here, see the next item.
-   - **Check the preview's switch**: the run could not show that the preview address serves this
-     build (Pages may not serve the alias for this project, or gave another, which the log names),
-     and nothing was deleted. The run's own deployment address, in its summary, serves the build;
+   - **Check the preview's switch**: if the log says the preview is serving this build without its
+     security headers, a failed run leaves the preview deployed: it serves this build and its
+     switch without the headers the log names, and nothing was deleted. Switch it off at once by
+     running Trade preview again with `off`. If that run fails the same way, the preview serves the
+     switch off, still without those headers, and the earlier deployments keep the switch they were
+     built with: delete them by hand, as in the next item, and run nothing but `off` until the
+     cause is found. Otherwise the run could not show that the preview address serves this build
+     (Pages may not serve the alias for this project, or gave another, which the log names), and
+     nothing was deleted. The run's own deployment address, in its summary, serves the build;
      a run with `off` then fails the same way, so delete the deployments by hand, as in the next
      item.
    - **Delete the earlier previews**: an earlier deployment is still there, with the switch it
@@ -474,19 +495,21 @@ Each transaction is checked on Basescan:
   suffix of `bc_j6obesn8` (`apps/web/src/trade/builderCode.ts`): its last 58 hex digits. The
   approval carries it too.
 
-Unverified until a first run: whether Pages serves the alias `trade-preview.depthwatch.pages.dev`
-for this project (Cloudflare documents an alias for every branch of a Direct Upload project;
-without one the run fails at Check the preview's switch); the answers the run's checks read, none
-of which has yet come from Cloudflare itself: the project's `result.production_branch`, the
-`environment` and `alias` wrangler records for the deployment, and the listing and deletion of
-deployments (their pages, and the refusal to delete the deployment an alias points to); whether a
-preview serves `index.html` as built (the production site did on 4 November 2026); the header
-served: Cloudflare documents that `_headers` overrides what it ordinarily sends, so the preview
-should send `X-Robots-Tag: noindex, nofollow` in place of the `noindex` it adds to previews, but
-that has not been seen; how long a run takes; how Basescan shows a user operation; and these steps
-on a phone. Cloudflare can also limit previews to the account (the project's Settings, General,
-Enable access policy); whether that covers the alias and works in a wallet's browser is unverified
-too.
+Seen on the first run (4 November 2026): Pages serves the alias `trade-preview.depthwatch.pages.dev`
+for this project, as Cloudflare documents for every branch of a Direct Upload project, and
+Cloudflare's API gives `main` as the project's `result.production_branch` (the upload went ahead,
+which it does only then). The preview served `X-Robots-Tag: noindex, nofollow`, and
+`Cache-Control: no-store` on `/data/flags.json`, but the appended `/*` block replaced the first one
+instead of joining it, so neither the Content-Security-Policy nor `X-Frame-Options` was served
+(`Referrer-Policy` and `X-Content-Type-Options: nosniff`, which Pages sends by default, were). The
+run now inserts the header into the one `/*` block, and the served headers are checked after each
+upload. Still unverified: the other answers the run's checks read, from the `environment` and
+`alias` wrangler records for the deployment to the listing and deletion of deployments (their
+pages, and the refusal to delete the deployment an alias points to); whether a preview serves
+`index.html` as built (the production site did on 4 November 2026); how long a run takes; how
+Basescan shows a user operation; and these steps on a phone. Cloudflare can also limit previews to
+the account (the project's Settings, General, Enable access policy); whether that covers the alias
+and works in a wallet's browser is unverified too.
 
 ## Upgrading
 

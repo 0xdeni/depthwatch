@@ -7,8 +7,10 @@ name: Trade preview
 # published data/bundle.json, writes it again with `depthwatch export --bundle`, builds the static
 # site from this branch and uploads it, but only to the branch trade-preview: the production site
 # is never published from here, and it must still serve the switch off when the run ends. Once the
-# preview serves the new build, the earlier trade-preview deployments are deleted. It needs the
-# repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, and runs only by hand.
+# preview serves the new build, the earlier trade-preview deployments are deleted. The preview
+# keeps the production site's response headers, with X-Robots-Tag noindex added, and the run fails
+# unless it serves them. It needs the repository secrets CLOUDFLARE_API_TOKEN and
+# CLOUDFLARE_ACCOUNT_ID, and runs only by hand.
 
 run-name: Trade preview (${{ inputs.venues }})
 
@@ -106,10 +108,23 @@ jobs:
           pnpm --filter @depthwatch/web build:static
           # As in Refresh site: unknown paths answer 404, not index.html.
           printf '%s\n' '<!doctype html><meta charset="utf-8"><title>Not found</title><p>Not found. This static copy of Depthwatch has no API; the dashboard is at <a href="/">/</a>.</p>' > apps/web/dist-static/404.html
-          # Preview only: keep it out of search results. Pages gives a path the headers of every
-          # rule that matches it, so the other headers, the Content-Security-Policy included, are
-          # the production site's.
-          printf '\n%s\n%s\n' '/*' '  X-Robots-Tag: noindex, nofollow' >> apps/web/dist-static/_headers
+          # Preview only: keep it out of search results. The header goes into the build's one /*
+          # block, right after its pattern line, and every other line stays as built: a second /*
+          # block, appended on the first run, replaced the first on Pages instead of joining it,
+          # and the preview served neither its Content-Security-Policy nor X-Frame-Options.
+          node -e '
+            const fs = require("node:fs")
+            const file = process.argv[1]
+            const lines = fs.readFileSync(file, "utf8").split("\n")
+            const found = lines.filter((line) => line === "/*").length
+            if (found !== 1) {
+              console.log("::error::" + file + " has " + found + " lines /* where the preview needs exactly one; nothing was published.")
+              process.exit(1)
+            }
+            lines.splice(lines.indexOf("/*") + 1, 0, "  X-Robots-Tag: noindex, nofollow")
+            fs.writeFileSync(file, lines.join("\n"))
+            console.log("Added X-Robots-Tag: noindex, nofollow to the /* block of " + file + ".")
+          ' apps/web/dist-static/_headers
       - name: Install wrangler
         run: npm install --global --ignore-scripts --no-audit wrangler@4.150.0
       # wrangler publishes the production site when --branch names the project's production
@@ -173,13 +188,18 @@ jobs:
               process.exit(1)
             }
           ' "$RUNNER_TEMP/wrangler-output.json"
-      # The run goes on only once the preview serves this build: the new switch, and this build's
-      # index.html, which names its hashed assets (an earlier build may have had the same switch).
+      # The run goes on only once the preview serves this build: the new switch, this build's
+      # index.html, which names its hashed assets (an earlier build may have had the same switch),
+      # and its security headers. / and data/flags.json must be served the Content-Security-Policy
+      # and X-Frame-Options of the built _headers' /* block, exactly, and an X-Robots-Tag with
+      # noindex; on the first run, the preview served neither of the first two. The check is tried
+      # again with the others, in case an answer still comes from the previous deployment.
       - name: Check the preview's switch
         id: preview
         run: |
           want=$(cat apps/web/dist-static/data/flags.json)
           echo "Switch built: $want"
+          headers=""
           for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
             got=$(curl --fail --silent --show-error --max-time 30 \
               --header "Cache-Control: no-cache" "$PREVIEW_URL/data/flags.json" || true)
@@ -189,18 +209,59 @@ jobs:
               cmp --silent "$RUNNER_TEMP/preview-index.html" apps/web/dist-static/index.html ||
               page="another"
             if [ "$got" = "$want" ] && [ "$page" = "this build's" ]; then
-              echo "$PREVIEW_URL serves this build's index.html and the new switch."
-              robots=$(curl --silent --show-error --max-time 30 --head "$PREVIEW_URL/" | grep -i '^x-robots-tag:' || true)
-              echo "Served: ${robots:-no X-Robots-Tag}"
-              case "$robots" in
-                *noindex*) ;;
-                *) echo "::warning::$PREVIEW_URL/ was served without X-Robots-Tag noindex." ;;
-              esac
-              exit 0
+              if node -e '
+                const fs = require("node:fs")
+                // The headers of the built /* block, names lowercased.
+                const built = new Map()
+                let inBlock = false
+                for (const line of fs.readFileSync(process.argv[1], "utf8").split("\n")) {
+                  if (line.trim() === "" || line.trim().startsWith("#")) continue
+                  if (!/^\s/.test(line)) {
+                    inBlock = line === "/*"
+                    continue
+                  }
+                  const colon = line.indexOf(":")
+                  if (inBlock && colon > 0) built.set(line.slice(0, colon).trim().toLowerCase(), line.slice(colon + 1).trim())
+                }
+                const exact = ["content-security-policy", "x-frame-options"]
+                const shown = (value) => (value === null || value === undefined ? "none" : JSON.stringify(value))
+                ;(async () => {
+                  const problems = []
+                  for (const path of ["/", "/data/flags.json"]) {
+                    // At most 30 s, as each curl above: a stalled answer is a failed attempt.
+                    const signal = AbortSignal.timeout(30000)
+                    const response = await fetch(process.env.PREVIEW_URL + path, { headers: { "cache-control": "no-cache" }, signal })
+                    // Headers.get matches names case-insensitively.
+                    for (const name of exact) {
+                      const served = response.headers.get(name)
+                      if (!built.has(name) || served !== built.get(name)) {
+                        problems.push(path + ": " + name + " served " + shown(served) + ", built " + shown(built.get(name)))
+                      }
+                    }
+                    const robots = response.headers.get("x-robots-tag")
+                    if (!/noindex/i.test(robots ?? "")) problems.push(path + ": x-robots-tag served " + shown(robots) + ", without noindex")
+                  }
+                  for (const problem of problems) console.log(problem)
+                  process.exit(problems.length === 0 ? 0 : 1)
+                })().catch((error) => {
+                  console.log("Could not read the headers of " + process.env.PREVIEW_URL + ": " + error.message)
+                  process.exit(1)
+                })
+              ' apps/web/dist-static/_headers; then
+                echo "$PREVIEW_URL serves this build's index.html, the new switch and its security headers."
+                exit 0
+              fi
+              headers="missing"
+              echo "Attempt $attempt: the preview serves this build without its security headers; trying again in 10 s."
+            else
+              echo "Attempt $attempt: the preview serves ${got:-nothing} and $page index.html; trying again in 10 s."
             fi
-            echo "Attempt $attempt: the preview serves ${got:-nothing} and $page index.html; trying again in 10 s."
             sleep 10
           done
+          if [ "$headers" = "missing" ]; then
+            echo "::error::$PREVIEW_URL is serving this build without its security headers (the lines above name them), whatever its switch. A failed run leaves the preview deployed: it must be switched off now, by running Trade preview again with off (docs/DEPLOY.md, Trade preview (the live test))."
+            exit 1
+          fi
           echo "::error::$PREVIEW_URL does not serve this build and its switch after 2 minutes."
           exit 1
       # Each deployment also keeps its own address (https://<id>.depthwatch.pages.dev), with the
@@ -296,7 +357,7 @@ jobs:
           {
             echo "## Trade preview: $switch"
             echo
-            echo "- Preview: $PREVIEW_URL, trade switch $switch (check that it serves this build: $PREVIEW_CHECK)."
+            echo "- Preview: $PREVIEW_URL, trade switch $switch (check that it serves this build and its security headers: $PREVIEW_CHECK)."
             echo "- This run's own deployment: ${DEPLOYMENT_URL:-see Publish to the preview}. It keeps this switch until a later Trade preview run deletes it."
             if [ "$CLEANUP" = success ]; then
               echo "- Earlier trade-preview deployments: none is left ($DELETED deleted)."

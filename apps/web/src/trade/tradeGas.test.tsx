@@ -1,9 +1,10 @@
 /**
  * The gas limit of the EOA path: the approval and the swap go out with `gas` set to the wallet's
- * `eth_estimateGas` of the exact transaction (suffix included) × 125 / 100, rounded up, so a wallet
- * that would sign at the bare estimate does not run out of gas inside the router. An estimate that
- * reverts sends nothing; a wallet that cannot estimate is left to set the limit; a smart wallet's
- * `wallet_sendCalls` carries no gas. Hermetic: the fake wallet of testing/fakeWallet.ts.
+ * `eth_estimateGas` of the exact transaction (suffix included) × 125 / 100, rounded up, plus
+ * 150,000 (send.ts `GAS_ALLOWANCE`), so a wallet that would sign at the bare estimate does not run
+ * out of gas inside the router or the pool's fee lookup. An estimate that reverts sends nothing; a
+ * wallet that cannot estimate is left to set the limit; a smart wallet's `wallet_sendCalls`
+ * carries no gas. Hermetic: the fake wallet of testing/fakeWallet.ts.
  */
 import { cleanup, fireEvent, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -24,7 +25,7 @@ import {
 afterEach(() => cleanup())
 
 describe('the gas limit of an EOA’s transactions', () => {
-  it('is the estimate of the exact transaction × 1.25, rounded up, for the approval and the swap', async () => {
+  it('is the estimate of the exact transaction × 1.25, rounded up, plus 150,000, for the approval and the swap', async () => {
     const fake = wallet()
     fake.state.estimate = 180_001n
     renderPanel(fake)
@@ -34,8 +35,8 @@ describe('the gas limit of an EOA’s transactions', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Approve 100\sUSDC$/ }))
     await screen.findByRole('heading', { name: 'Swap done' })
     expect(fake.state.sent.map((tx) => [tx.to, tx.gas])).toEqual([
-      [USDC, 225_002n],
-      [UNISWAP.router, 225_002n],
+      [USDC, 375_002n],
+      [UNISWAP.router, 375_002n],
     ])
     // Each estimate is of the bytes then sent: from the account, the suffix once, at the end.
     expect(fake.state.estimates).toEqual(fake.state.sent.map(({ gas: _gas, ...tx }) => tx))
@@ -56,7 +57,7 @@ describe('the gas limit of an EOA’s transactions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Swap' }))
     await screen.findByRole('heading', { name: 'Swap done' })
     expect(fake.state.estimates.map((tx) => tx.value)).toEqual([ONE_ETH / 10n])
-    expect(fake.state.sent.map((tx) => tx.gas)).toEqual([125_000n])
+    expect(fake.state.sent.map((tx) => tx.gas)).toEqual([275_000n])
   })
 
   it('sends nothing when the estimate of the swap reverts', async () => {

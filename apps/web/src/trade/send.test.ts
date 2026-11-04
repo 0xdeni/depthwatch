@@ -2,8 +2,8 @@
  * The outcome of a smart wallet's call bundle comes from its EIP-5792 status and receipts, never
  * from the bundle transaction alone (an ERC-4337 bundle succeeds when the user operation inside it
  * reverts), an account counts as a contract account only for code that is not an EIP-7702
- * delegation, and the EOA path's gas limit is the wallet's estimate × 1.25, rounded up, with a
- * reverting estimate told apart from a wallet that cannot estimate.
+ * delegation, and the EOA path's gas limit is the wallet's estimate × 1.25, rounded up, plus
+ * 150,000, with a reverting estimate told apart from a wallet that cannot estimate.
  */
 import type { Address } from '@depthwatch/core'
 import { createClient, custom, type Hex } from 'viem'
@@ -12,7 +12,15 @@ import { base } from 'viem/chains'
 import { describe, expect, it } from 'vitest'
 import { BUILDER_SUFFIX } from './builderCode.js'
 import { walletClients } from './reads.js'
-import { bundleOutcome, gasLimit, isContractAccount, isRevertError, paddedGas } from './send.js'
+import {
+  bundleOutcome,
+  GAS_ALLOWANCE,
+  GAS_MARGIN,
+  gasLimit,
+  isContractAccount,
+  isRevertError,
+  paddedGas,
+} from './send.js'
 
 type CallsStatus = Awaited<ReturnType<typeof getCallsStatus>>
 type Receipt = CallsStatus['receipts'] extends (infer R)[] | undefined ? R : never
@@ -110,13 +118,38 @@ describe('gasLimit', () => {
     return { clients: walletClients({ request }), asked }
   }
 
-  it('pads the estimate by 25 %, rounded up', () => {
-    expect([100_000n, 100_001n, 1n, 3n].map(paddedGas)).toEqual([125_000n, 125_002n, 2n, 4n])
+  it('pads the estimate by 25 %, rounded up, then adds 150,000', () => {
+    expect(GAS_MARGIN).toEqual({ num: 125n, den: 100n })
+    expect(GAS_ALLOWANCE).toBe(150_000n)
+    expect([100_000n, 100_001n, 100_003n, 100_004n, 1n, 3n].map(paddedGas)).toEqual([
+      275_000n,
+      275_002n,
+      275_004n,
+      275_005n,
+      150_002n,
+      150_004n,
+    ])
+  })
+
+  it('covers what swaps needed after another swap in the same pool, measured on a fork of Base mainnet', () => {
+    // [estimate, what the same transaction needed after the other swap]: Slipstream pools whose
+    // fee lookup went from its short answer to the oracle search, two with a tick crossing too
+    // (docs/research/base-contracts.md, §2.12).
+    const measured: [bigint, bigint][] = [
+      [171_169n, 234_679n],
+      [181_675n, 235_847n],
+      [205_459n, 309_743n],
+      [194_973n, 313_959n],
+    ]
+    for (const [estimate, need] of measured) {
+      expect((estimate * 125n + 99n) / 100n < need).toBe(true)
+      expect(paddedGas(estimate) - need > 30_000n).toBe(true)
+    }
   })
 
   it('estimates exactly what the EOA path signs: from the account, the suffix appended', async () => {
     const { clients, asked } = walletWith('0x30d40')
-    expect(await gasLimit(clients, 'eoa', ACCOUNT, TX)).toBe(250_000n)
+    expect(await gasLimit(clients, 'eoa', ACCOUNT, TX)).toBe(400_000n)
     expect(asked).toEqual([
       [{ from: ACCOUNT, to: ACCOUNT, data: `0x095ea7b3${BUILDER_SUFFIX.slice(2)}`, value: '0x5' }],
     ])

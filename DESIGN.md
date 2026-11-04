@@ -454,7 +454,8 @@ build contains no mock data and, when `/api/health` does not answer, shows "The 
 closed: a missing or malformed block is off, and a swap needs both on for its venue. The static build also ships
 `public/_headers` for Cloudflare Pages (no framing, `nosniff`, a Content-Security-Policy with `connect-src 'self'` and
 the inline script of `index.html` by hash, `data/flags.json` uncached); every build fails when that hash and the inline
-script differ, and the server build leaves the file out (`plugins/securityHeaders.ts`).
+script differ or the file opens a URL pattern in two blocks (Pages was seen to serve only the last), and the server
+build leaves the file out (`plugins/securityHeaders.ts`).
 
 The swap panel (`src/trade/`: an exact-input swap in the one pool the page shows, nothing
 else). The Pool page gains "trade in this pool" under cost to trade only when `pages/pool/tradeGate.ts`

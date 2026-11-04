@@ -2,109 +2,28 @@
  * The Trade preview workflow (docs/DEPLOY.md, "Trade preview (the live test)"): it publishes the
  * static copy to the Cloudflare Pages branch `trade-preview` with the trade switch from its
  * `venues` input, and never the production site, which only Refresh site and Trade switch publish
- * (`--branch main`). The workflows are read as text: the repository has no YAML parser, so the
- * helpers below read only the simple shapes these files use.
+ * (`--branch main`). Its headers, the noindex one it adds and the security headers it checks
+ * after the upload, are in `tradePreviewHeaders.test.ts`.
  */
-import { readdirSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { tradeOff } from '@depthwatch/core'
 import { describe, expect, it } from 'vitest'
+import {
+  actionsOf,
+  blockUnder,
+  choiceOptions,
+  deployBranches,
+  nonBlank,
+  PRODUCTION_PUBLISHERS,
+  read,
+  runScripts,
+  stepOf,
+  WORKFLOWS,
+  workflow,
+} from './testing/workflowText.js'
 import { parseTradeSwitch, switchableVenues } from './tradeSwitch.js'
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-const read = (...path: string[]) => readFileSync(join(ROOT, ...path), 'utf8')
-const WORKFLOWS = readdirSync(join(ROOT, '.github', 'workflows')).filter((file) =>
-  file.endsWith('.yml'),
-)
-const workflow = (file: string) => read('.github', 'workflows', file)
 const PREVIEW = workflow('trade-preview.yml')
-const PRODUCTION_PUBLISHERS = ['refresh-site.yml', 'trade-switch.yml']
 const at = (text: string) => PREVIEW.indexOf(text)
-
-/** The rule the preview appends to the built `_headers`. */
-const NOINDEX_STEP =
-  "printf '\\n%s\\n%s\\n' '/*' '  X-Robots-Tag: noindex, nofollow' >> apps/web/dist-static/_headers"
-
-const indentOf = (line: string) => line.search(/\S/)
-const nonBlank = (lines: string[]) =>
-  lines.filter((line) => line.trim() !== '').map((l) => l.trim())
-
-/** The lines indented under the first line that is exactly `key` once trimmed. */
-function blockUnder(text: string, key: string): string[] {
-  const lines = text.split('\n')
-  const start = lines.findIndex((line) => line.trim() === key)
-  if (start < 0) throw new Error(`no line ${key}`)
-  const level = indentOf(lines[start] ?? '')
-  const block: string[] = []
-  for (const line of lines.slice(start + 1)) {
-    if (line.trim() !== '' && indentOf(line) <= level) break
-    block.push(line)
-  }
-  return block
-}
-
-/**
- * The shell of every `run:` step: a one-line `run: …`, or the lines indented under `run:` and any
- * block scalar header (`|`, `|-`, `>`, `>+` and so on).
- */
-function runScripts(text: string): string[] {
-  const lines = text.split('\n')
-  const scripts: string[] = []
-  lines.forEach((line, index) => {
-    const match = /^(\s*)(?:- )?run:(?: (.*))?$/.exec(line)
-    if (match === null) return
-    const value = (match[2] ?? '').trim()
-    if (!/^([|>][-+]?)?$/.test(value)) {
-      scripts.push(value)
-      return
-    }
-    const level = (match[1] ?? '').length
-    const body: string[] = []
-    for (const next of lines.slice(index + 1)) {
-      if (next.trim() !== '' && indentOf(next) <= level) break
-      body.push(next)
-    }
-    scripts.push(body.join('\n'))
-  })
-  return scripts
-}
-
-/** The `--branch` of every upload by wrangler (`pages deploy`, `publish`, `project upload`). */
-function deployBranches(text: string): string[] {
-  return runScripts(text)
-    .flatMap((script) => script.replace(/\\\n\s*/g, ' ').split('\n'))
-    .filter((line) => /wrangler\S* pages (deploy|publish|project upload)\b/.test(line))
-    .map((line) => /--branch[= ](\S+)/.exec(line)?.[1] ?? 'none')
-}
-
-/** The text of the step named `name`, from its `- name:` line to the next step or comment. */
-function stepOf(text: string, name: string): string {
-  const lines = text.split('\n')
-  const start = lines.findIndex((line) => line.trim() === `- name: ${name}`)
-  if (start < 0) throw new Error(`no step ${name}`)
-  const level = indentOf(lines[start] ?? '')
-  const end = lines.findIndex(
-    (line, i) => i > start && line.trim() !== '' && indentOf(line) <= level,
-  )
-  return lines.slice(start, end < 0 ? undefined : end).join('\n')
-}
-
-/** The `options:` of the choice input, each quoted (a bare `off` is a boolean in YAML 1.1). */
-function choiceOptions(text: string): string[] {
-  return nonBlank(blockUnder(text, 'options:')).map((line) => {
-    const option = /^- "([^"]+)"$/.exec(line)?.[1]
-    if (option === undefined) throw new Error(`not a quoted option: ${line}`)
-    return option
-  })
-}
-
-/** Every `uses:` of the workflow, with its pinned SHA and the release it names. */
-const actionsOf = (text: string) =>
-  text
-    .split('\n')
-    .filter((line) => /^\s*(- )?uses: /.test(line))
-    .map((line) => line.replace(/^\s*(- )?uses: /, ''))
 
 /** The steps that stop the run when they fail: none may be skipped or softened. */
 const GUARDS = [
@@ -286,16 +205,6 @@ describe('the Trade preview workflow', () => {
     expect(cleanup).toMatch(/if \(!response\.ok\) \{\n\s*fail\("Could not delete/)
     expect(cleanup).toMatch(/if \(left\.length > 0\) \{\n\s*fail\(/)
   })
-
-  it('adds the noindex rule to the preview build only', () => {
-    const rule = PREVIEW.indexOf(NOINDEX_STEP)
-    expect(rule).toBeGreaterThan(PREVIEW.indexOf('pnpm --filter @depthwatch/web build:static'))
-    expect(rule).toBeLessThan(PREVIEW.indexOf('wrangler pages deploy'))
-    expect(PREVIEW).toContain('Not found. This static copy of Depthwatch has no API')
-    for (const file of PRODUCTION_PUBLISHERS)
-      expect(workflow(file), file).not.toContain('X-Robots-Tag')
-    expect(read('apps', 'web', 'public', '_headers')).not.toContain('X-Robots-Tag')
-  })
 })
 
 describe('docs/DEPLOY.md: Trade preview (the live test)', () => {
@@ -388,14 +297,14 @@ describe('docs/DEPLOY.md: Trade preview (the live test)', () => {
       expect(section, text).toContain(text)
   })
 
-  it('says what is unverified', () => {
+  it('says what the first run showed and what is unverified', () => {
     for (const text of [
-      'Unverified until a first run: whether Pages serves the alias',
-      "the project's `result.production_branch`",
+      'Seen on the first run (4 November 2026): Pages serves the alias `trade-preview.depthwatch.pages.dev` for this project',
+      "Cloudflare's API gives `main` as the project's `result.production_branch` (the upload went ahead, which it does only then)",
+      "Still unverified: the other answers the run's checks read",
       'the `environment` and `alias` wrangler records for the deployment',
       'the listing and deletion of deployments',
       'whether a preview serves `index.html` as built',
-      'Cloudflare documents that `_headers` overrides what it ordinarily sends',
       'how long a run takes',
       'how Basescan shows a user operation',
       'these steps on a phone',

@@ -247,16 +247,16 @@ CLFactory) and one over Aero v2's volatile and stable factories, whose shared `P
 defaults to 2,000 blocks per chunk (`DEPTHWATCH_LOG_CHUNK` / `--log-chunk`; Base's public RPC
 rejects larger spans) and always passes its value to the reader, so 10,000 is only the library
 default of `createChainReader`. Incremental runs cover a day (432,000 blocks) in about 216 chunks
-per factory at 2,000 blocks, or about 44 at 10,000 (22 and 5 for a day of 2 s blocks, before
-Denim). The first run starts at each factory's deployment block (`startBlock` in `addresses.ts`,
-or `--from-block`; the three Aerodrome Slipstream factories all from the earliest of theirs) and
-spans tens of millions of blocks: on the order of tens of thousands of requests per factory at the
-CLI default, a few thousand at 10,000, and the head now moves 432,000 blocks a day, about 216 more
+per factory at 2,000 blocks, or about 44 at 10,000 (22 and 5 for a day of 2 s blocks, before Denim).
+The first run starts at each factory's deployment block (`startBlock` in `addresses.ts`, or
+`--from-block`; the three Aerodrome Slipstream factories all from the earliest of theirs) and spans
+tens of millions of blocks: on the order of tens of thousands of requests per factory at the CLI
+default, a few thousand at 10,000, and the head now moves 432,000 blocks a day, about 216 more
 2,000-block requests per factory for each day the backfill waits, so raise `--log-chunk` for the
-backfill if the provider allows it. A scan of more than 100,000 chunks per factory logs a warning
-before it starts. The cursor advances every 50 chunks (100,000 blocks at the CLI default), so a
-failure costs at most one window on the next run. Token metadata is resolved once per token through
-multicall and cached in `tokens`.
+backfill if the provider allows it. A scan of more than 5,000 chunks per factory
+(`DISCOVER_WARN_CHUNKS`) logs a warning before it starts. The cursor advances every 50 chunks
+(100,000 blocks at the CLI default), so a failure costs at most one window on the next run. Token
+metadata is resolved once per token through multicall and cached in `tokens`.
 
 ### Seeded discovery: factory views and archive state
 
@@ -361,13 +361,13 @@ by a test), so Uniswap v3 and Slipstream pools share one filter, and Aero v2 poo
 v2's `Swap`: three sources for six DEXes.
 Uniswap v4 swaps are read from the PoolManager filtered by the `id` topic.
 
-The window is exact by time. It runs from the first block of the hour that held the time
-`--hours` (24) before the head to the head, so its first hour bucket is complete and no block
-before it is read. `ChainReader.blockAtOrAfter` finds that block: the one Base's block schedule
-names (`BASE_BLOCK_SCHEDULE` in `packages/chain/src/schedule.ts`: 2 s blocks from genesis, 200 ms
-blocks from Denim's first block on), once its own header and its parent's confirm it, else a
-binary search over headers (about 26 for Base's height). Since Denim an hour is 18,000 blocks, so
-a 24 h window is 432,000 to 450,000 blocks: about 216 to 225 chunks at the CLI default of 2,000
+The window is exact by time. It runs from the first block of the hour that held the time `--hours`
+(24) before the head to the head, so its first hour bucket is complete and no block before it is
+read. `ChainReader.blockAtOrAfter` finds that block: the one Base's block schedule names
+(`BASE_BLOCK_SCHEDULE` in `packages/chain/src/schedule.ts`: 2 s blocks from genesis, 200 ms blocks
+from Denim's first block on), once its own header and its parent's confirm it, else a binary search
+over headers (about 26 to 27 for Base's height, log2 of it). Since Denim an hour is 18,000 blocks,
+so a 24 h window is 432,000 to 450,000 blocks: about 216 to 225 chunks at the CLI default of 2,000
 blocks, or 44 to 45 at 10,000 (24 whole hours, then the head's hour so far). A window that still
 reaches back before 2026-11-05 18:00 UTC holds 1,800 blocks for each of its hours of 2 s blocks.
 
@@ -499,15 +499,16 @@ accepts wider spans.
   source: at least 43,200 requests per source a day, about 130,000 a day with three, about 9.7 M
   units a day, so a 30 M-unit month lasts about three days, and a 5-minute loop pays the reread
   hour on every pass, about seven times that.
-  So 24 h of volume no longer fits a 10-block free plan, not even as single passes (about three a
-  month); `discover --seed`, `snapshot` and `score` do. Run `volume` against a logs endpoint that
-  takes wider ranges (`DEPTHWATCH_LOGS_RPC_URL`), or on the plan only over short windows
-  (`--hours 1` or `2`: 1,800 to 5,400 requests per source a pass), and the score's 24 h volume
-  then counts only the hours read.
-  A first `discover` from the factories' deployment blocks (around 50 M blocks, about 5 M requests
-  per factory at 10 blocks, 43,200 more per factory each day) and `positions` are not practical
-  there either: run them against a logs endpoint that takes 2,000-block spans. `discover --seed`
-  needs no logs and finds the reference-token pools on such a plan (see
+  So 24 h of volume no longer fits a 10-block free plan: a 30 M-unit month covers about three
+  single 24 h passes (about 10 M units each) and little else, while `discover --seed`, `snapshot`
+  and `score` fit. Run `volume` against a logs endpoint that takes wider ranges
+  (`DEPTHWATCH_LOGS_RPC_URL`), or on the plan only over short windows (`--hours 1` or `2`: 1,800
+  to 5,400 requests per source a pass), and the score's 24 h volume then counts only the hours
+  read.
+  A first `discover` from the factories' deployment blocks (up to about 52 M blocks, about 5.2 M
+  requests per factory at 10 blocks, 43,200 more per factory each day) and `positions` are not
+  practical there either: run them against a logs endpoint that takes 2,000-block spans.
+  `discover --seed` needs no logs and finds the reference-token pools on such a plan (see
   [Seeded discovery](#seeded-discovery-factory-views-and-archive-state)).
 
 ## Running as a service

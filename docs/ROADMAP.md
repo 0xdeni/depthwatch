@@ -50,11 +50,11 @@ fixture for at least one pool per DEX decodes correctly.
 
 Acceptance: a fresh clone with an RPC URL reaches a populated dashboard with
 `discover --seed → snapshot → volume → score → serve` in under 30 minutes for the top 200 pools
-(a first factory-log `discover` was about 97,000 `eth_getLogs` at 2,000-block chunks as of 28
-October 2026, hours on a public endpoint, and is outside that budget; since Denim's 200 ms blocks
-the chain grows 432,000 blocks a day, about 216 more requests a day per factory scan); all API
-routes respond in under 200 ms on a 7-day database; the dashboard has no backend-specific code
-(`VITE_MOCK=1` still works).
+(a first factory-log `discover` is about 126,000 `eth_getLogs` at 2,000-block chunks at a head of
+53.6 M on 5 November 2026, hours on a public endpoint, and is outside that budget; since Denim's
+200 ms blocks the chain grows 432,000 blocks a day, about 216 more requests a day per factory
+scan); all API routes respond in under 200 ms on a 7-day database; the dashboard has no
+backend-specific code (`VITE_MOCK=1` still works).
 
 ### Week 4: validation at scale and public deployment
 

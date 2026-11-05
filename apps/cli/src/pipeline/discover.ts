@@ -33,13 +33,14 @@ import { type PipelineContext, StepBudget, syncKeys, throwIfStopped } from './co
 export const DISCOVER_WINDOW_CHUNKS = 50
 
 /**
- * More `eth_getLogs` per DEX than this and the scan logs a warning first: 5 000 requests take
- * about 17 minutes at the 5 requests a second Base's public endpoint allows per IP. 5 000 chunks of
- * 2 000 blocks are 10 M blocks: 231 days of 2 s blocks, 23 days of the 200 ms blocks Base makes
- * since Denim, so a cursor that far behind warns too. A first scan of Base at 2 000-block chunks
- * needs up to about 26 000 per DEX at Denim's activation (about 97 000 in all on 2026-10-28,
- * docs/ROADMAP.md) and about 216 more per factory every day since (432 000 blocks a day); at a free
- * tier's 10-block chunks, up to about 5.2 M per DEX, and 43 200 more per factory a day.
+ * More log chunks per DEX than this (one `eth_getLogs` per factory each) and the scan logs a
+ * warning first: 5 000 requests take about 17 minutes at the 5 requests a second Base's public
+ * endpoint allows per IP. 5 000 chunks of 2 000 blocks are 10 M blocks: 231 days of 2 s blocks, 23
+ * days of the 200 ms blocks Base makes since Denim, so a cursor that far behind warns too. A first
+ * scan of Base at 2 000-block chunks needs up to about 26 000 chunks per factory at Denim's
+ * activation (Uniswap v3; about 126 000 requests over the eight factory filters at a head of
+ * 53.6 M, README "Quick start") and about 216 more per factory every day since (432 000 blocks a
+ * day); at a free tier's 10-block chunks, up to about 5.2 M per factory, and 43 200 more a day.
  */
 export const DISCOVER_WARN_CHUNKS = 5_000n
 

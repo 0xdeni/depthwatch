@@ -1,8 +1,9 @@
 /**
- * Info-level progress for long steps (the volume step's log scans run for half an hour on a
- * 10-block `eth_getLogs` plan): at most one line every `intervalMs` (30 s by default), with
- * done/total, percent, elapsed time, a linear ETA and the caller's fields. The clock is
- * injectable (milliseconds) so tests drive the cadence without waiting.
+ * Info-level progress for long steps (a volume log scan of 24 h on a 10-block `eth_getLogs` plan
+ * took about half an hour on Base's 2 s blocks and is ten times the requests on the 200 ms blocks
+ * since Denim): at most one line every `intervalMs` (30 s by default), with done/total, percent,
+ * elapsed time, a linear ETA and the caller's fields. The clock is injectable (milliseconds) so
+ * tests drive the cadence without waiting.
  */
 import type { LogFields, Logger } from '../log.js'
 

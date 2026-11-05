@@ -289,16 +289,16 @@ multicalls and block headers stay on `DEPTHWATCH_RPC_URL`; with one URL nothing 
   `discover --seed` asks each DEX's factory (StateView for Uniswap v4) for every pair of the
   reference tokens in `packages/chain/src/addresses.ts` and of the tokens given with `--seed-token`
   (`DEPTHWATCH_SEED_TOKENS`, e.g. a project's own token), and dates each new pool exactly by binary
-  search over archive state, about 26 requests per pool, storing every 50 pools so an interrupted
-  seed resumes. A DEX whose factory reads fail does not hold the others back: their pools are
-  stored, the failure is logged and the next seed asks that DEX again. On Base on 2026-10-25 that
-  was 580 pools in about 10 minutes and 13,399 search requests (some 349,000 compute units, see
-  [Measured on Base](#measured-on-base-2026-10-25)), once; a rerun takes seconds. `positions` and
-  24 h of `volume` are unavailable on such a plan alone, and pools outside the seeded pairs are
-  only found by the log-based `discover`: all three need a logs endpoint that takes 2,000-block
-  spans, such as `https://mainnet.base.org` from a host with its own IP.
-  `discover` saves its cursor every 50 chunks, so an interrupted scan resumes where it stopped;
-  seeding never moves that cursor.
+  search over archive state, about 26 to 27 requests per pool (log2 of the height), storing every 50
+  pools so an interrupted seed resumes. A DEX whose factory reads fail does not hold the others
+  back: their pools are stored, the failure is logged and the next seed asks that DEX again. On Base
+  on 2026-10-25 that was 580 pools in about 10 minutes and 13,399 search requests (some 349,000
+  compute units, see [Measured on Base](#measured-on-base-2026-10-25)), once; a rerun takes seconds.
+  `positions` and 24 h of `volume` are impractical on such a plan alone, and pools outside the
+  seeded pairs are only found by the log-based `discover`: all three need a logs endpoint that takes
+  2,000-block spans, such as `https://mainnet.base.org` from a host with its own IP. `discover`
+  saves its cursor every 50 chunks, so an interrupted scan resumes where it stopped; seeding never
+  moves that cursor.
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#rate-limits-range-limits-and-free-plans) has the
 request counts.

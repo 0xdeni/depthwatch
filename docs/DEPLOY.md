@@ -26,7 +26,8 @@ pnpm depthwatch start       # website + API + the pipeline, until SIGTERM
   database the first pass seeds the pools of the reference tokens (and of any
   `DEPTHWATCH_SEED_TOKENS`) first, so the site shows data within minutes; a DEX whose factory
   reads fail is seeded again at the next pass, the others' pools already showing; full discovery from the factories' deployment blocks then completes over the
-  following passes, in about half a day. A mandate registered on a pool whose LP positions are
+  following passes, in about 14 hours (about 126,000 requests at a head of 53.6 M, 5 November
+  2026; [docs/ARCHITECTURE.md](ARCHITECTURE.md#budget-at-the-defaults)). A mandate registered on a pool whose LP positions are
   not indexed yet makes positions run in the next pass, whatever the cadence; its scorecard gets
   no sample before then (an attribution failure in the logs, never a false breach).
 - A failing step is logged and tried again at its next slot; the site keeps serving. A volume or
@@ -298,8 +299,8 @@ most 300 s, then to Tenderly's public gateway at 1,000-block chunks (250 before 
 at most 420 s. The database persists between runs, so a run reads the three hours since the last one
 and the part of the hour before them that held the last run's head: 54,000 to 72,000 blocks per
 event source since Denim, 54 to 72 requests each at 1,000-block chunks. The first run after the
-change that finds blocks by time (5 November 2026) reads a whole 24 h window once
-([Upgrading](#upgrading)): at most 450 requests per source at 1,000 (432 to 450 once the window is
+change that finds blocks by time (5 November 2026) reads a whole 24 h window once when the saved
+database holds coverage from after Denim's activation ([Upgrading](#upgrading)): at most 450 requests per source at 1,000 (432 to 450 once the window is
 all 200 ms blocks), about 1,350 for the three. At the pace measured below (45,000 blocks per source
 at 400-block chunks, some 340 requests for three sources, in 78 s) that is about 310 s, inside the
 420 s; this is inferred, not measured. Should it not fit, every run reads the whole window again,

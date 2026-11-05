@@ -3,7 +3,7 @@
  * `TIMESTAMP_CACHE_LIMIT` of them) and the first block at or after a time. For the last, the block
  * schedule (schedule.ts) names a candidate, which two headers confirm: its own timestamp reaches
  * the time and its parent's does not. Without a schedule, or when they disagree, a binary search
- * over the headers of `[0, toBlock]` finds it (about 26 headers for Base's height; header
+ * over the headers of `[0, toBlock]` finds it (about 26 to 27 headers for Base's height, log2 of it; header
  * timestamps never decrease).
  */
 import { type BlockSchedule, scheduledBlockAtOrAfter } from '../schedule.js'

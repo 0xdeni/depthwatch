@@ -102,7 +102,7 @@ export interface ChainReader {
   getBlockTimestamp(blockNumber: bigint): Promise<number>
   /**
    * First block ≤ `toBlock` whose timestamp is ≥ `timestamp` (Unix seconds), else `toBlock + 1n`:
-   * the schedule's block once two headers confirm it, else a binary search (internal/blockAt.ts).
+   * the schedule's block once two headers confirm it, else a binary search (internal/blocks.ts).
    */
   blockAtOrAfter(timestamp: number, toBlock: bigint): Promise<bigint>
   /** Factory/PoolManager log scan in chunks; token metadata resolved and cached. */

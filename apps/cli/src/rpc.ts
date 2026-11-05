@@ -5,9 +5,9 @@
  * tier: 10 blocks) can keep the calls while log scans go to an endpoint that accepts wide ranges,
  * such as Base's public https://mainnet.base.org. On the capped endpoint alone, short scans still
  * work with `DEPTHWATCH_LOG_CHUNK` set to the provider's limit; 24 h of volume no longer is one
- * since Base's 200 ms blocks (432 000 blocks: 43 200 requests per event source at 10). URLs are never
- * logged: they can carry API keys. The log names the variable, and error text (viem puts the URL in
- * its messages) keeps only each URL's origin (log.ts `errorMessage`, `describeError` below).
+ * since Base's 200 ms blocks (432 000 blocks: 43 200 requests per event source at 10). URLs are
+ * never logged: they can carry API keys. The log names the variable, and error text (viem puts the
+ * URL in its messages) keeps only each URL's origin (log.ts `errorMessage`, `describeError` below).
  */
 import {
   type ChainReader,

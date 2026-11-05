@@ -1235,7 +1235,6 @@ Unresolved:
 > **Superseded on 2026-11-05.** Denim activated on Base mainnet at block 53,556,127 (18:00:01
 > UTC): every canonical block is 200 ms since, and Flashblocks stopped (§2.13). The notes below
 > record the chain as researched on 2026-10-23.
-
 - Canonical block interval **2 s**; each block is composed of **10 Flashblocks** (index 1-10) streamed every **~200 ms**. Sources: https://docs.base.org/base-chain/flashblocks/faq , https://docs.base.org/specifications/flashblocks
 - **Denim upgrade (planned, NOT active as of 2026-10-23)**: moves Base to five canonical blocks per second (200 ms blocks) and **removes Flashblocks** (subscriptions and `pending` state become unavailable). Docs target: Base Sepolia October 2026, Base Mainnet November 2026 (status "Planning"; activation heights/client versions undecided). Migration map: `eth_subscribe("newFlashblocks")` -> `newHeads`; `eth_subscribe("pendingLogs")` -> `logs`; `pending`-tag reads -> ordinary `latest` reads (no preconfirmation equivalent). Sources: https://docs.base.org/upgrades/denim/overview , https://docs.base.org/upgrades/denim/migrate-from-flashblocks , https://docs.base.org/upgrades/denim/200ms-blocks . **Design implication for Depthwatch:** abstract the "fast tick" source behind an interface so the Flashblocks path can be swapped for 200 ms canonical `newHeads` after Denim.
 
@@ -1244,7 +1243,6 @@ Unresolved:
 > **Historical since 2026-11-05.** Denim replaced Flashblocks with canonical 200 ms blocks, and the
 > `pending` tag no longer returns a preconfirmed block (§2.13,
 > <https://docs.base.org/upgrades/denim/migrate-from-flashblocks.md>).
-
 - **Mainnet go-live: 16 July 2025** (Base engineering deep dive: "launch on July 16th ... concluded a four-month development journey from testnet to mainnet"; Base Build X post same day; press coverage 17 July). Sepolia testnet since Feb 2025; staged mainnet rollout from May 2025. Built with Flashbots (rollup-boost; block builder op-rbuilder). Sources: https://blog.base.dev/flashblocks-deep-dive , https://blog.base.dev/accelerating-base-with-flashblocks , https://x.com/buildonbase/status/1895223243713458184 , https://x.com/buildonbase/status/1923058518896132214 , https://www.theblock.co/post/363109/coinbase-base-flashblocks
 - **Mechanism:** the builder emits partial blocks every ~200 ms, each carrying ~10% of a block's gas; nodes apply them to a "pending" state. Optional: nodes/apps that ignore them behave exactly as before.
 - **HTTP consumption - `pending` block tag:** on a Flashblocks-aware endpoint, `"pending"` returns the live pre-confirmed block-in-progress, refreshed every ~200 ms, i.e. state up to ~1.8 s ahead of `latest`. Methods documented as accepting `pending`: `eth_getBlockByNumber`, `eth_getBalance`, `eth_getTransactionByHash`, `eth_getTransactionCount`, `eth_getCode`, `eth_getStorageAt`, `eth_call`, `eth_simulateV1`, `eth_estimateGas`, `eth_getLogs`. `eth_getTransactionReceipt` returns receipts for preconfirmed txs **without any tag** (client v0.8.0+). Pending block has the same shape as a sealed block; docs say `hash`/`number` may be `null` for the pending block in one place and "number = block being built" in another (inconsistent - handle both). If no flashblock is available some providers silently fall back to `latest`. Sources: https://docs.base.org/base-chain/flashblocks/apps , https://docs.base.org/base-chain/flashblocks/api-reference , https://docs.base.org/base-chain/api-reference/flashblocks-api/flashblocks-api-overview , https://docs.getblock.io/flashblocks/base-flashblocks
@@ -1774,7 +1772,6 @@ measured again after Denim: an open item for the swap panel's `GAS_ALLOWANCE`.
 
 Base's Denim upgrade replaced one block every 2 s with five a second. Sources, read on 2026-11-05
 around 20:45 UTC:
-
 - <https://docs.base.org/upgrades/denim/200ms-blocks.md>: "Base Mainnet is targeting November 5,
   2026 at 18:00 UTC"; consecutive activated blocks satisfy T_ms(child) = T_ms(parent) + 200 and
   "Blocks cannot skip slots"; after activation the derivation pipeline "computes each block's

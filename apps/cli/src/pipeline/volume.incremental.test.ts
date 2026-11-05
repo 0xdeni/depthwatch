@@ -1,6 +1,6 @@
 /**
  * `volume` is incremental: a later pass reads from the first block of the hour that held the last
- * pass's head (less the jitter margin), rewrites that hour complete and keeps the hours before it,
+ * pass's head, rewrites that hour complete and keeps the hours before it,
  * so a looping `run` stops paying the whole 24 h window on every pass. Pools without coverage of
  * the window (newly tracked, a wider `--hours`) still get the whole window, read once per DEX.
  */
@@ -22,7 +22,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { loadConfig } from '../config.js'
 import { DEMO_MARKER_KEY, resetDemoHistory } from '../demo.js'
 import { createPipelineContext, syncKeys } from './context.js'
-import { planVolumeScan, VOLUME_JITTER_BLOCKS, VOLUME_MARGIN_BLOCKS, volumeStep } from './volume.js'
+import { coverageHour, planVolumeScan, volumeStep } from './volume.js'
 
 /** 1 800 000 000 is an hour boundary; the head sits 1 000 s into the next hour. */
 const HOUR = 1_800_000_000
@@ -146,8 +146,9 @@ function setup() {
 }
 
 describe('planVolumeScan', () => {
-  const head = { number: HEAD, timestamp: HEAD_TS }
-  const window = { fromBlock: HEAD - 45_300n, fromTs: HOUR - 24 * 3_600 }
+  // The window's first hour is HOUR − 24 h, whose first block is HEAD − 43 700 (2 s blocks).
+  const window = { fromBlock: HEAD - 43_700n, fromTs: HOUR - 24 * 3_600 }
+  const start = { hour: HOUR, firstBlock: HEAD - 500n }
 
   it('reads the whole window without coverage of it', () => {
     const whole = {
@@ -155,23 +156,51 @@ describe('planVolumeScan', () => {
       keepFromTs: window.fromTs,
       coveredFromTs: window.fromTs,
     }
-    expect(planVolumeScan(window, head, undefined)).toEqual(whole)
+    expect(planVolumeScan(window, undefined, undefined)).toEqual(whole)
     // `--hours` wider than the stored coverage, or coverage whose last block is a day old.
-    expect(
-      planVolumeScan(window, head, { lastBlock: HEAD - 10n, fromTs: window.fromTs + 3_600 }),
-    ).toEqual(whole)
-    expect(planVolumeScan(window, head, { lastBlock: HEAD - 44_000n, fromTs: 0 })).toEqual(whole)
+    const coverage = { lastBlock: HEAD - 10n, fromTs: window.fromTs + 3_600 }
+    expect(planVolumeScan(window, coverage, start)).toEqual(whole)
+    expect(planVolumeScan(window, { lastBlock: HEAD - 44_000n, fromTs: 0 }, undefined)).toEqual(
+      whole,
+    )
+    const firstHour = { hour: window.fromTs, firstBlock: window.fromBlock }
+    expect(planVolumeScan(window, { lastBlock: HEAD - 43_000n, fromTs: 0 }, firstHour)).toEqual(
+      whole,
+    )
   })
 
-  it('starts at the first block of the last block’s hour, less the jitter margin', () => {
-    // HEAD − 150 is 300 s before the head: hour HOUR, whose first block is HEAD − 500 (ts HOUR).
-    expect(planVolumeScan(window, head, { lastBlock: HEAD - 150n, fromTs: 0 })).toEqual({
-      fromBlock: HEAD - 500n - VOLUME_JITTER_BLOCKS,
+  it('starts at the first block of the last block’s hour', () => {
+    expect(planVolumeScan(window, { lastBlock: HEAD - 150n, fromTs: 0 }, start)).toEqual({
+      fromBlock: HEAD - 500n,
       keepFromTs: HOUR,
       coveredFromTs: 0,
     })
+  })
+})
+
+describe('coverageHour', () => {
+  const window = { fromBlock: HEAD - 43_700n, fromTs: HOUR - 24 * 3_600 }
+  const head = { number: HEAD }
+  // 2 s blocks: block HEAD − 500 has timestamp HOUR.
+  const tsOf = (block: bigint) => HEAD_TS - Number(HEAD - block) * 2
+  const chain = {
+    getBlockTimestamp: async (block: bigint) => tsOf(block),
+    blockAtOrAfter: async (timestamp: number) => HEAD - BigInt((HEAD_TS - timestamp) / 2),
+  } as unknown as Parameters<typeof coverageHour>[0]
+
+  it('reads the hour from the last block’s header and finds that hour’s first block', async () => {
+    // HEAD − 150 is 300 s before the head: hour HOUR, whose first block is HEAD − 500.
+    expect(await coverageHour(chain, window, head, HEAD - 150n)).toEqual({
+      hour: HOUR,
+      firstBlock: HEAD - 500n,
+    })
     // A last block past the head (a lagging node) counts as the head.
-    expect(planVolumeScan(window, head, { lastBlock: HEAD + 50n, fromTs: 0 }).keepFromTs).toBe(HOUR)
+    expect((await coverageHour(chain, window, head, HEAD + 50n))?.hour).toBe(HOUR)
+  })
+
+  it('leaves blocks before the window and in its first hour to a whole-window read', async () => {
+    expect(await coverageHour(chain, window, head, HEAD - 44_000n)).toBeUndefined()
+    expect(await coverageHour(chain, window, head, HEAD - 43_000n)).toBeUndefined()
   })
 })
 
@@ -179,17 +208,18 @@ describe('volumeStep across passes', () => {
   it('reads only from the last head’s hour on, keeping the hours before it', async () => {
     const { fixture, db, ctx, advance, blocksFor } = setup()
     const first = await volumeStep(ctx)
-    expect(first).toMatchObject({ fromBlock: HEAD - 45_300n, incremental: 0, swaps: 3, dropped: 0 })
-    expect(blocksFor(V3)).toBe(45_301n)
+    expect(first).toMatchObject({ fromBlock: HEAD - 43_700n, incremental: 0, swaps: 3, dropped: 0 })
+    expect(blocksFor(V3)).toBe(43_701n)
     expect(db.syncState.getBigInt(syncKeys.volumeLastBlock(V3.id))).toBe(HEAD)
 
     // Five minutes later: one new swap; the head of the first pass was in hour HOUR.
     advance(150n)
     addLogs(fixture, [v3Swap(HEAD + 100n)])
     const second = await volumeStep(ctx)
-    const start = HEAD - 500n - VOLUME_JITTER_BLOCKS
-    expect(second).toMatchObject({ fromBlock: start, fromTs: HOUR, incremental: 1, swaps: 3 })
-    expect(second.dropped).toBe(1) // HEAD − 600 is in the hour before: its stored bucket stays
+    const start = HEAD - 500n
+    // HEAD − 600 is in the hour before: not read again, its stored bucket stays.
+    expect(second).toMatchObject({ fromBlock: start, fromTs: HOUR, incremental: 1, swaps: 2 })
+    expect(second.dropped).toBe(0)
     expect(blocksFor(V3)).toBe(HEAD + 150n - start + 1n)
     expect(db.volume.swapCount(V3.id, 0)).toBe(4)
     expect(db.volume.get(V3.id, HOUR - 3_600)?.swapCount).toBe(1)
@@ -208,9 +238,9 @@ describe('volumeStep across passes', () => {
     db.pools.setTracked([V2.id], true)
     advance(150n)
     const result = await volumeStep(ctx)
-    expect(result).toMatchObject({ pools: 2, incremental: 1, swaps: 3, dropped: 1 })
-    expect(blocksFor(V3)).toBe(HEAD + 150n - (HEAD - 500n - VOLUME_JITTER_BLOCKS) + 1n)
-    expect(blocksFor(V2)).toBe(24n * 1_800n + VOLUME_MARGIN_BLOCKS + 1n)
+    expect(result).toMatchObject({ pools: 2, incremental: 1, swaps: 2, dropped: 0 })
+    expect(blocksFor(V3)).toBe(HEAD + 150n - (HEAD - 500n) + 1n)
+    expect(blocksFor(V2)).toBe(43_701n + 150n)
     expect(db.volume.swapCount(V2.id, 0)).toBe(1)
   })
 
@@ -222,7 +252,7 @@ describe('volumeStep across passes', () => {
     db.prices.replaceAll([{ token: V3.token1.address, usd: 2, via: ['test'] }])
     advance(150n)
     const result = await volumeStep(ctx)
-    expect(result).toMatchObject({ incremental: 1, swaps: 2, dropped: 1 })
+    expect(result).toMatchObject({ incremental: 1, swaps: 1, dropped: 0 })
     expect(db.volume.sumUsd(V3.id, 0)).toBe(6) // three swaps, two of them in kept hours
     expect(db.volume.get(V3.id, HOUR - 3_600)?.volumeUsd).toBe(2) // HEAD − 600, kept
     expect(db.volume.get(V3.id, HOUR - 11 * 3_600)?.volumeUsd).toBe(2) // HEAD − 20 000, kept
@@ -237,7 +267,7 @@ describe('volumeStep across passes', () => {
     resetDemoHistory(db)
     expect(db.syncState.get(syncKeys.volumeFromTs(V3.id))).toBeUndefined()
     expect(await volumeStep(ctx)).toMatchObject({ incremental: 0, swaps: 3 })
-    expect(blocksFor(V3)).toBe(45_301n)
+    expect(blocksFor(V3)).toBe(43_701n)
     expect(db.volume.swapCount(V3.id, 0)).toBe(3)
   })
 })

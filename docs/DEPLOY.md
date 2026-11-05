@@ -128,7 +128,9 @@ DEPTHWATCH_PUBLIC_URL=https://depthwatch.example                 # the site's pu
 ```
 
 The API key stays in the URL and the URL is never logged: error messages keep only its origin.
-Keep `DEPTHWATCH_LOG_CHUNK` at its default of 2,000 blocks, what Base's public RPC accepts.
+Keep `DEPTHWATCH_LOG_CHUNK` at its default of 2,000 blocks, what Base's public RPC accepts (its
+`eth_getLogs` page, read on 5 November 2026, still says to keep ranges under 2,000 blocks); since
+Denim's 200 ms blocks that is 400 s of chain a request.
 
 The schedule, with its defaults (durations take `90s`, `30m`, `6h`, `1d`; a plain number is
 seconds):
@@ -149,8 +151,17 @@ tracked. `DEPTHWATCH_KEEP_DAYS` (default 30) bounds the disk ([Disk](#disk)).
 ## The logs endpoint
 
 `eth_getLogs` (discovery, volume, positions) goes to `DEPTHWATCH_LOGS_RPC_URL`, everything else to
-`DEPTHWATCH_RPC_URL`. Alchemy's free tier serves log ranges of 10 blocks only, and keeping volume
-current there would cost more than its monthly units, so the logs go elsewhere:
+`DEPTHWATCH_RPC_URL`. Since Denim's activation at block 53,556,127 (5 November 2026, 18:00:01 UTC)
+Base makes a block every 200 ms instead of every 2 s
+([research/base-contracts.md §2.13](research/base-contracts.md#213-block-schedule-denims-200-ms-blocks-2026-11-05)):
+18,000 blocks an hour, 432,000 a day. A whole 24 h volume window of 200 ms blocks is 432,000 to
+450,000 blocks per event source (216 to 225 requests each at 2,000-block chunks); a later pass
+reads the hour that held the previous head and the blocks since, at most about 36,000 blocks per
+source for `start`'s hourly run (18 requests at 2,000) and about 19,500 for a 5-minute `run` (10).
+Alchemy's free tier serves log ranges of 10 blocks only: keeping volume current there takes at
+least 43,200 requests per source a day, about 130,000 for the three sources, some 9.7 M compute
+units a day at 75 per `eth_getLogs`, so the tier's 30 M units a month would last about three days.
+The logs go elsewhere:
 - **Base's public RPC**, `https://mainnet.base.org`, needs no sign-up and has no monthly quota. It
   accepts 2,000-block spans and allows about 5 requests a second per IP address, so the server
   needs its own outbound IP: on hosts whose traffic leaves from shared addresses, neighbours use up
@@ -164,10 +175,14 @@ current there would cost more than its monthly units, so the logs go elsewhere:
   use to a dedicated node (<https://docs.tenderly.co/platform/supported-networks.md>). It refuses
   a range over either limit with -32602 `invalid params` and the reason in the error's `data`,
   which the reader reads: a span is split to 1,000 blocks, too many results halved. Set
-  `DEPTHWATCH_LOG_CHUNK=250`: the busiest 400 blocks of 28-29 October 2026 held 12,916 swaps of
-  about 0.9 KB each, more than the 10 MiB answer viem accepts (a larger answer is halved too, at
-  the cost of the request). The Refresh site workflow uses it
-  ([A free static copy](#a-free-static-copy)).
+  `DEPTHWATCH_LOG_CHUNK=1000` for Base's 200 ms blocks, and 250 for a scan of busy windows of the
+  2 s blocks before Denim: the busiest 400 blocks of 28-29 October 2026 (800 s of 2 s blocks) held
+  12,916 swaps of about 0.9 KB each, more than the 10 MiB answer viem accepts (a larger answer is
+  halved too, at the cost of the request). 1,000 blocks of 200 ms are 200 s of chain, a quarter of
+  that window's time: at that window's swap rate about 3,200 swaps, some 3 MB (inferred, not
+  measured on 200 ms blocks). Until 6 November 2026 18:00 UTC a 24 h window still starts in 2 s
+  blocks, where a busy 1,000-block chunk can pass either cap and is halved. The Refresh site
+  workflow uses 1,000 ([A free static copy](#a-free-static-copy)).
 - **If the server's address gets HTTP 429** all the time (`eth_getLogs backoff reason=rate-limit`
   warnings that never stop), use a keyed endpoint that accepts at least 2,000-block ranges, or set
   `DEPTHWATCH_LOG_CHUNK` to the largest range it accepts (a provider capped at 1,000 blocks:
@@ -184,6 +199,9 @@ compute units estimated:
 INFO  [snapshot] done ms=19021 … pools=580 tracked=200 snapshots=200 … requests=528 main=528 logs=0 alchemyCu=13718
 INFO  [volume] done ms=9120 … requests=9 main=3 logs=6 alchemyCu=48
 ```
+
+These lines predate Denim (they were added on 27 October 2026): the same hours are now ten times
+the blocks, so a volume pass sends up to ten times the `eth_getLogs`.
 
 The first line of each UTC day totals the day before and projects a 30-day month at that rate:
 
@@ -276,26 +294,36 @@ while no server runs. This repository's copy has been at <https://depthwatch.pag
 Each run snapshots the 200 tracked pools (about 14,000 Alchemy compute units, so about 3.4 M a month
 at eight runs a day) and keeps 8 days of history (`DEPTHWATCH_KEEP_DAYS=8`). The `volume` step sends
 `eth_getLogs` to the optional secret `DEPTHWATCH_LOGS_RPC_URL` first, at 2,000-block chunks for at
-most 300 s, then to Tenderly's public gateway at 250-block chunks for at most 420 s. Each try is a
-fresh process, killed with everything it started once its time is up; a killed pass stores
-nothing. If both fail, the step fails alone: the copy is still published, and the score keeps
-the last complete 24 h window until it is a day old. On 29 October 2026 the step sent its logs to
-Base's public RPC, which refused the runner's first `eth_getLogs` (JSON-RPC error -32011,
-`request limit reached`) and all eight retries, so the first copy was published with no 24 h volume
-and an empty gaps feed. That RPC allows 5 `eth_getLogs` a second per IP address and runners share
-addresses, so the workflow no longer tries it. The gateway needs no key. Measured from outside
-GitHub on 29 October 2026, it served a first volume pass for 200 pools (25 h of blocks) in 78 s at
-400-block chunks, at the CLI's own pace (6 requests rate-limited and retried), and 12 h for 552
-pools in 255 requests at 250-block chunks, none refused, with the measuring script spacing requests
-at least 1 s apart. At the CLI's own pace the 250-block pass is untested, and from a runner the
-gateway is untested. Its documentation calls public endpoints rate-limited and not for production:
-if the step fails often, set `DEPTHWATCH_LOGS_RPC_URL` to a keyed endpoint, such as Ankr's Freemium
-plan (3,000-block ranges, <https://www.ankr.com/docs/rpc-service/service-plans/>) or Infura (10,000
-results per request, <https://docs.infura.io/reference/base/json-rpc-methods/eth_getlogs>). A run
-that cannot restore a saved database stops without publishing or saving, so a passing cache error
-never replaces the history; only when no saved database exists (the first run, or every entry
-evicted after 7 days unread) does a run seed again and start the history over. A run that ends with
-no pools at all publishes nothing.
+most 300 s, then to Tenderly's public gateway at 1,000-block chunks (250 before 5 November 2026) for
+at most 420 s. The database persists between runs, so a run reads the three hours since the last one
+and the part of the hour before them that held the last run's head: 54,000 to 72,000 blocks per
+event source since Denim, 54 to 72 requests each at 1,000-block chunks. The first run after the
+change that finds blocks by time (5 November 2026) reads a whole 24 h window once
+([Upgrading](#upgrading)): at most 450 requests per source at 1,000 (432 to 450 once the window is
+all 200 ms blocks), about 1,350 for the three. At the pace measured below (45,000 blocks per source
+at 400-block chunks, some 340 requests for three sources, in 78 s) that is about 310 s, inside the
+420 s; this is inferred, not measured. Should it not fit, every run reads the whole window again,
+since a killed pass stores nothing, until one succeeds. Each try is a fresh process, killed with
+everything it started once its time is up; a killed pass stores nothing. If both fail, the step
+fails alone: the copy is still published, and the score keeps the last complete 24 h window until it
+is a day old. On 29 October 2026 the step sent its logs to Base's public RPC, which refused the
+runner's first `eth_getLogs` (JSON-RPC error -32011, `request limit reached`) and all eight retries,
+so the first copy was published with no 24 h volume and an empty gaps feed. That RPC allows 5
+`eth_getLogs` a second per IP address and runners share addresses, so the workflow no longer tries
+it. The gateway needs no key. Measured from outside GitHub on 29 October 2026, on 2 s blocks before
+Denim, it served a first volume pass for 200 pools (25 h of blocks, 45,000) in 78 s at 400-block
+chunks, at the CLI's own pace (6 requests rate-limited and retried), and 12 h for 552 pools in 255
+requests at 250-block chunks, none refused, with the measuring script spacing requests at least 1 s
+apart. At the CLI's own pace the 250-block pass is untested, as is any pass over 200 ms blocks at
+1,000-block chunks, and from a runner the gateway is untested. Its documentation calls public
+endpoints rate-limited and not for production: if the step fails often, set
+`DEPTHWATCH_LOGS_RPC_URL` to a keyed endpoint, such as Ankr's Freemium plan (3,000-block ranges,
+<https://www.ankr.com/docs/rpc-service/service-plans/>) or Infura (10,000 results per request,
+<https://docs.infura.io/reference/base/json-rpc-methods/eth_getlogs>). A run that cannot restore a
+saved database stops without publishing or saving, so a passing cache error never replaces the
+history; only when no saved database exists (the first run, or every entry evicted after 7 days
+unread) does a run seed again and start the history over. A run that ends with no pools at all
+publishes nothing.
 
 In a public repository, as this one is, GitHub disables a scheduled workflow after 60 days without
 repository activity, such as a push: the copy then stays at its last run, and 7 days later its
@@ -517,6 +545,14 @@ A new build migrates the database when it first opens it, and an older build the
 file (`database schema version 7 is newer than this build (6); upgrade depthwatch`) before any
 step runs. Take a backup ([Backups](#backups)) before upgrading if you may need to roll back:
 rolling back means restoring that backup.
+
+The upgrade that finds blocks by time (5 November 2026, Denim's 200 ms blocks; no schema change):
+- Earlier builds counted 2 s blocks (1,800 an hour) back from the head, so from Denim's block
+  53,556,127 on their volume passes read too few blocks: the hours they stored after it are
+  short. The first volume pass of this build ignores a pool's coverage that ends at or after that
+  block (the database has no `volume:windows` mark yet) and reads its whole 24 h window again:
+  432,000 to 450,000 blocks per event source once the window is all 200 ms blocks, 216 to 225
+  requests each at the default 2,000-block chunks. Later passes are back to their usual size.
 
 The upgrade that indexes Aero's venues (schema version 7, which stores the fee each snapshot
 used):

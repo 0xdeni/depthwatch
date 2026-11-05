@@ -82,7 +82,10 @@ export interface SyntheticAnchor {
   anchorTimestamp: number
 }
 
-/** First block whose timestamp is ≥ `timestamp` (2 s blocks back from the anchor). */
+/**
+ * First block whose timestamp is ≥ `timestamp` (2 s blocks back from the anchor: the synthetic
+ * world keeps Base's pre-Denim spacing, syntheticTypes.ts).
+ */
 export function blockAtOrAfter(anchor: SyntheticAnchor, timestamp: number): bigint {
   const back = Math.floor((anchor.anchorTimestamp - timestamp) / SYNTHETIC_DEFAULTS.secondsPerBlock)
   return anchor.anchorBlock - BigInt(back)

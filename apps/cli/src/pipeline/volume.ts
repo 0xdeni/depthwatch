@@ -1,15 +1,16 @@
 /**
  * `volume`: Swap events of every tracked pool over the last N hours, bucketed per hour.
  *
- * Blocks ≈ hours × 1 800 on Base (2 s blocks); a first scan starts one extra hour early so the
- * first complete hour bucket is never cut short, and swaps before the first whole hour are dropped.
- * USD volume counts |amount| of one priced side per swap — the USD stablecoin side when there is
+ * The window runs from the first block of the hour N hours before the head (`ChainReader
+ * .blockAtOrAfter`: Base's block schedule confirmed by headers, so 2 s blocks before Denim and
+ * 200 ms blocks after it are both exact; a day is 432 000 blocks of 200 ms), so its first hour
+ * bucket is complete and nothing before it is read. USD volume counts |amount| of one priced side per swap — the USD stablecoin side when there is
  * one, else token1 (the quote), else token0 — valued with the prices the snapshot step stored.
  *
  * Incremental: each pool's coverage (`volume:<pool>:lastBlock`, the last block in its buckets, and
  * `volume:<pool>:fromTs`, the first hour from which they are complete) lets the next pass start at
- * the first block of the hour that holds `lastBlock` (exact on Base's 2 s blocks, less
- * VOLUME_JITTER_BLOCKS): that hour, cut short by the last pass, comes back complete, the hours
+ * the first block of the hour that holds `lastBlock` (its header's hour, then `blockAtOrAfter`):
+ * that hour, cut short by the last pass, comes back complete, the hours
  * before it are kept as stored, and a pass costs the blocks since that hour instead of the whole
  * window. A pool without coverage of the window (newly tracked, `--hours` wider than before, or
  * coverage older than the window) gets the whole window. Each log scan (one per `Swap` event
@@ -21,25 +22,24 @@
  * and chunks done/total, %, elapsed, ETA, backoffs. A stop signal (`depthwatch start`) ends the
  * scan and stores nothing.
  */
-import { type SwapScanProgress, swapScanGroups, swapScanOf } from '@depthwatch/chain'
+import {
+  BASE_DENIM_BLOCK,
+  type SwapScanProgress,
+  swapScanGroups,
+  swapScanOf,
+} from '@depthwatch/chain'
 import type { Address, Dex, PoolMeta, SwapEvent, VolumeBucket } from '@depthwatch/core'
 import { maxBigint, minBigint, rawToHuman } from '@depthwatch/core'
 import type { Database } from '@depthwatch/db'
-import {
-  BLOCKS_PER_HOUR,
-  HOUR_SECONDS,
-  type PipelineContext,
-  syncKeys,
-  throwIfStopped,
-} from './context.js'
+import { HOUR_SECONDS, type PipelineContext, syncKeys, throwIfStopped } from './context.js'
 import { chunkProgress, createProgressReporter } from './progress.js'
 
-/** Blocks read before the first block of a rescanned hour: slack for block-time jitter. */
-export const VOLUME_JITTER_BLOCKS = 300n
-/** Extra blocks scanned before the window (one hour of alignment slack plus block-time jitter). */
-export const VOLUME_MARGIN_BLOCKS = BLOCKS_PER_HOUR + VOLUME_JITTER_BLOCKS
-/** Base's block time in seconds (3 600 s / BLOCKS_PER_HOUR). */
-const BLOCK_SECONDS = BigInt(HOUR_SECONDS) / BLOCKS_PER_HOUR
+/**
+ * The `volume:windows` mark of coverage stored by a pass that finds its blocks by time. Coverage
+ * that ends at or after Denim's first block without it was written by a version that counted
+ * 2 s blocks after Denim: its hours are short, so those pools read their whole window once more.
+ */
+export const VOLUME_WINDOWS_BY_TIME = 'by-time'
 
 export interface VolumeOptions {
   hours?: number
@@ -187,19 +187,21 @@ export interface VolumeScan {
   coveredFromTs: number
 }
 
-export interface Head {
-  number: bigint
-  timestamp: number
+/** The hour that holds a pool's `lastBlock` (its header's) and that hour's first block. */
+export interface CoverageHour {
+  hour: number
+  firstBlock: bigint
 }
 
 /**
  * The scan of one pool for the window `{ fromBlock, fromTs }` (see the header): the whole window,
- * or, when `coverage` reaches back to the window's first hour, from the hour of its `lastBlock`.
+ * or, when `coverage` reaches back to the window's first hour, from `start`, the hour of its
+ * `lastBlock` (`coverageHour`).
  */
 export function planVolumeScan(
   window: { fromBlock: bigint; fromTs: number },
-  head: Head,
   coverage: VolumeCoverage | undefined,
+  start: CoverageHour | undefined,
 ): VolumeScan {
   const whole = {
     fromBlock: window.fromBlock,
@@ -207,23 +209,36 @@ export function planVolumeScan(
     coveredFromTs: window.fromTs,
   }
   if (coverage === undefined || coverage.fromTs > window.fromTs) return whole
-  const last = minBigint(coverage.lastBlock, head.number)
-  const headTs = BigInt(head.timestamp)
-  const hour = hourStartOf(Number(headTs - (head.number - last) * BLOCK_SECONDS))
-  if (hour <= window.fromTs) return whole
-  // The first block whose timestamp is ≥ hour, on 2 s blocks counted back from the head.
-  const first = head.number - (headTs - BigInt(hour)) / BLOCK_SECONDS
+  if (start === undefined || start.hour <= window.fromTs) return whole
   return {
-    fromBlock: maxBigint(window.fromBlock, first - VOLUME_JITTER_BLOCKS),
-    keepFromTs: hour,
+    fromBlock: maxBigint(window.fromBlock, start.firstBlock),
+    keepFromTs: start.hour,
     coveredFromTs: coverage.fromTs,
   }
 }
 
-function coverageOf(db: Database, poolId: string): VolumeCoverage | undefined {
+/**
+ * `start` for `planVolumeScan`: the hour of `lastBlock` (capped at the head: a lagging node) and its
+ * first block, or undefined when the block lies before the window (then the whole window is read).
+ */
+export async function coverageHour(
+  chain: PipelineContext['chain'],
+  window: { fromBlock: bigint; fromTs: number },
+  head: { number: bigint },
+  lastBlock: bigint,
+): Promise<CoverageHour | undefined> {
+  const last = minBigint(lastBlock, head.number)
+  if (last < window.fromBlock) return undefined
+  const hour = hourStartOf(await chain.getBlockTimestamp(last))
+  if (hour <= window.fromTs) return undefined
+  return { hour, firstBlock: await chain.blockAtOrAfter(hour, head.number) }
+}
+
+function coverageOf(db: Database, poolId: string, byTime: boolean): VolumeCoverage | undefined {
   const lastBlock = db.syncState.getBigInt(syncKeys.volumeLastBlock(poolId))
   const fromTs = db.syncState.get(syncKeys.volumeFromTs(poolId))
   if (lastBlock === undefined || fromTs === undefined || !/^\d+$/.test(fromTs)) return undefined
+  if (!byTime && lastBlock >= BASE_DENIM_BLOCK) return undefined
   return { lastBlock, fromTs: Number(fromTs) }
 }
 
@@ -291,16 +306,22 @@ export async function volumeStep(
   const hours = opts.hours ?? ctx.config.hours
   const latest = await chain.getLatestBlock()
   const tracked = db.pools.list({ tracked: true })
-  const window = {
-    fromBlock: maxBigint(
-      0n,
-      latest.number - BigInt(hours) * BLOCKS_PER_HOUR - VOLUME_MARGIN_BLOCKS,
-    ),
-    fromTs: hourStartOf(latest.timestamp - hours * HOUR_SECONDS),
+  const fromTs = hourStartOf(latest.timestamp - hours * HOUR_SECONDS)
+  const window = { fromBlock: await chain.blockAtOrAfter(fromTs, latest.number), fromTs }
+  const starts = new Map<bigint, CoverageHour | undefined>()
+  const scans = new Map<string, VolumeScan>()
+  const byTime = db.syncState.get(syncKeys.volumeWindows()) === VOLUME_WINDOWS_BY_TIME
+  for (const pool of tracked) {
+    const coverage = coverageOf(db, pool.id, byTime)
+    if (
+      coverage !== undefined &&
+      coverage.fromTs <= window.fromTs &&
+      !starts.has(coverage.lastBlock)
+    )
+      starts.set(coverage.lastBlock, await coverageHour(chain, window, latest, coverage.lastBlock))
+    const start = coverage === undefined ? undefined : starts.get(coverage.lastBlock)
+    scans.set(pool.id, planVolumeScan(window, coverage, start))
   }
-  const scans = new Map(
-    tracked.map((pool) => [pool.id, planVolumeScan(window, latest, coverageOf(db, pool.id))]),
-  )
   const groups = scanGroups(tracked, scans)
   const keepFrom = (poolId: string) => scans.get(poolId)?.keepFromTs ?? window.fromTs
   const result: VolumeResult = {
@@ -391,6 +412,7 @@ export async function volumeStep(
     }
     db.syncState.setBigInt(syncKeys.volume(), latest.number)
     db.syncState.set(syncKeys.volumeHeadTs(), String(latest.timestamp))
+    db.syncState.set(syncKeys.volumeWindows(), VOLUME_WINDOWS_BY_TIME)
   })
   result.buckets = buckets.length
   log.info('stored hourly volume', {

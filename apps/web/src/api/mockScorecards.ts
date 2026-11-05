@@ -108,7 +108,11 @@ function wobble(index: number): number {
   return 1 + 0.04 * Math.sin(index * 1.7)
 }
 
-/** The block a timestamp is stamped with: the mock's latest block at `now`, one per 2 s before. */
+/**
+ * The block a timestamp is stamped with: the mock's latest block at `now`, one per 2 s before (the
+ * spacing Base kept until Denim, five blocks a second since; the mock does not follow Base's
+ * schedule).
+ */
 function blockAt(now: number, timestamp: number): bigint {
   return BigInt(LATEST_BLOCK) - BigInt(Math.floor((now - timestamp) / 2))
 }

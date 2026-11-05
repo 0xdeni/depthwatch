@@ -9,7 +9,9 @@ below), with no mismatch; §2.8 also flags the Aerodrome Voter's current state. 
 (`## aero`, added on 2026-10-28 after Aerodrome became Aero) were read on chain at blocks
 53,211,601–53,213,030 (§2.9). The trade routers and quoters and the token checks behind the trade
 allowlist (`## trade`) were read on 2026-11-03 at blocks 53,467,794–53,468,151 through the public
-endpoint `https://mainnet.base.org` (§2.10, §2.11).
+endpoint `https://mainnet.base.org` (§2.10, §2.11). Base's block schedule, 2 s blocks and then
+200 ms blocks from Denim's activation at block 53,556,127 on 2026-11-05, was read on chain the
+same day (§2.13).
 
 Base-native addresses (here the `weth` WETH9 predeploy) can also be re-checked on the first live run against Base's contract-address reference, <https://docs.base.org/specifications/reference/base-contracts.md>, which Base's AGENTS.md describes as "canonical contract addresses for Base Mainnet and Base Sepolia" (see [../base/base-agents-reference.md](../base/base-agents-reference.md)). Whether that page lists any DEX or Multicall3 address is unverified: those stay tied to the per-address sources and verdicts below and to the factory logs read on the first live run.
 
@@ -1202,9 +1204,9 @@ Unresolved:
 - DAI: no Sky/MakerDAO documentation page listing the Base DAI address was found; identity of 0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb rests on Basescan's 'Maker: DAI Token' label and its OptimismMintableERC20 constructor pointing at L1 DAI.
 - DEGEN and BRETT: no issuer/official-site page (degen.tips, basedbrett.com) surfaced in search; identities rest on Basescan token/address labels (plus a MEXC listing notice for DEGEN). Both tokens have many impersonators on Base.
 - cbBTC decimals (8) sourced from Chainlink's CCIP directory and an aggregator, not from a Coinbase page; confirm via decimals() on chain.
-- Flashblocks pending-block field semantics are inconsistent across Base docs (one page says hash/number are null for the pending block, another says number = block being built); verify against a live mainnet-preconf.base.org response.
-- Rate limits for mainnet-preconf.base.org (HTTP and WS) are not quantified in the docs; PublicNode's Base WebSocket URL was not verified.
-- Denim upgrade dates (Sepolia Oct 2026 / Mainnet Nov 2026) are targets marked 'Planning' in Base docs; a third-party post cites Sepolia 2026-10-21 18:00 UTC and mainnet Nov 2026 - not confirmed on docs.base.org. Denim will remove Flashblocks subscriptions and the pending tag.
+- Flashblocks pending-block field semantics are inconsistent across Base docs (one page says hash/number are null for the pending block, another says number = block being built); verify against a live mainnet-preconf.base.org response. **Moot since 2026-11-05: Flashblocks stopped when Denim activated (§2.13).**
+- Rate limits for mainnet-preconf.base.org (HTTP and WS) are not quantified in the docs; PublicNode's Base WebSocket URL was not verified. (The preconf endpoint's Flashblocks are gone since Denim, §2.13.)
+- Denim upgrade dates (Sepolia Oct 2026 / Mainnet Nov 2026) are targets marked 'Planning' in Base docs; a third-party post cites Sepolia 2026-10-21 18:00 UTC and mainnet Nov 2026 - not confirmed on docs.base.org. Denim will remove Flashblocks subscriptions and the pending tag. **Resolved on 2026-11-05:** docs.base.org's 200ms-blocks page gives Sepolia's activation as 2026-10-21 18:00 UTC and mainnet's target as 2026-11-05 18:00 UTC, and the chain shows mainnet's first 200 ms block, 53,556,127, at 18:00:01 UTC (§2.13).
 - docs.base.org's block-explorers page names 'Blockscout' but the snippet did not show the base.blockscout.com URL; the URL and its /address/ and /token/ formats were confirmed from base.blockscout.com pages themselves.
 - Every fact above comes from search-result snippets rather than full page reads (unverified in full).
 
@@ -1230,10 +1232,18 @@ Unresolved:
 
 #### Block time
 
+> **Superseded on 2026-11-05.** Denim activated on Base mainnet at block 53,556,127 (18:00:01
+> UTC): every canonical block is 200 ms since, and Flashblocks stopped (§2.13). The notes below
+> record the chain as researched on 2026-10-23.
+
 - Canonical block interval **2 s**; each block is composed of **10 Flashblocks** (index 1-10) streamed every **~200 ms**. Sources: https://docs.base.org/base-chain/flashblocks/faq , https://docs.base.org/specifications/flashblocks
 - **Denim upgrade (planned, NOT active as of 2026-10-23)**: moves Base to five canonical blocks per second (200 ms blocks) and **removes Flashblocks** (subscriptions and `pending` state become unavailable). Docs target: Base Sepolia October 2026, Base Mainnet November 2026 (status "Planning"; activation heights/client versions undecided). Migration map: `eth_subscribe("newFlashblocks")` -> `newHeads`; `eth_subscribe("pendingLogs")` -> `logs`; `pending`-tag reads -> ordinary `latest` reads (no preconfirmation equivalent). Sources: https://docs.base.org/upgrades/denim/overview , https://docs.base.org/upgrades/denim/migrate-from-flashblocks , https://docs.base.org/upgrades/denim/200ms-blocks . **Design implication for Depthwatch:** abstract the "fast tick" source behind an interface so the Flashblocks path can be swapped for 200 ms canonical `newHeads` after Denim.
 
 #### Flashblocks (sub-block preconfirmations)
+
+> **Historical since 2026-11-05.** Denim replaced Flashblocks with canonical 200 ms blocks, and the
+> `pending` tag no longer returns a preconfirmed block (§2.13,
+> <https://docs.base.org/upgrades/denim/migrate-from-flashblocks.md>).
 
 - **Mainnet go-live: 16 July 2025** (Base engineering deep dive: "launch on July 16th ... concluded a four-month development journey from testnet to mainnet"; Base Build X post same day; press coverage 17 July). Sepolia testnet since Feb 2025; staged mainnet rollout from May 2025. Built with Flashbots (rollup-boost; block builder op-rbuilder). Sources: https://blog.base.dev/flashblocks-deep-dive , https://blog.base.dev/accelerating-base-with-flashblocks , https://x.com/buildonbase/status/1895223243713458184 , https://x.com/buildonbase/status/1923058518896132214 , https://www.theblock.co/post/363109/coinbase-base-flashblocks
 - **Mechanism:** the builder emits partial blocks every ~200 ms, each carrying ~10% of a block's gas; nodes apply them to a "pending" state. Optional: nodes/apps that ignore them behave exactly as before.
@@ -1283,7 +1293,7 @@ function getCurrentBlockTimestamp() view returns (uint256);
 function getEthBalance(address addr) view returns (uint256);
 function getBasefee() view returns (uint256);
 ```
-viem's `base` chain definition already wires `contracts.multicall3 = { address: 0xcA11bde05977b3631167028862bE2a173976CA11, blockCreated: 5022 }`, so `publicClient.multicall()` works out of the box (https://cdn.jsdelivr.net/npm/viem@2.52.2/chains/definitions/base.ts). Pair `aggregate3` with `blockTag: "pending"` on a Flashblocks endpoint for sub-second depth snapshots, and with `latest` for the canonical 2 s series.
+viem's `base` chain definition already wires `contracts.multicall3 = { address: 0xcA11bde05977b3631167028862bE2a173976CA11, blockCreated: 5022 }`, so `publicClient.multicall()` works out of the box (https://cdn.jsdelivr.net/npm/viem@2.52.2/chains/definitions/base.ts). Pair `aggregate3` with `blockTag: "pending"` on a Flashblocks endpoint for sub-second depth snapshots, and with `latest` for the canonical 2 s series. (Before Denim. Since 2026-11-05 `latest` is itself a 200 ms series and there is no preconfirmed `pending` block, §2.13.)
 
 #### Research caveats
 
@@ -1407,7 +1417,7 @@ Source: https://raw.githubusercontent.com/kukapay/chainlink-feeds-mcp/main/feeds
 
 ### 2.6 Chain / RPC facts
 
-- docs.base.org: public endpoints are rate-limited, **HTTP only (no WS)**, and `eth_getLogs` should keep `toBlock − fromBlock` **< 2,000 blocks**; `fromBlock=toBlock="pending"` returns Flashblocks (~200 ms) pre-confirmations. (search snippets of https://docs.base.org/base-chain/api-reference/ethereum-json-rpc-api/eth_getLogs and https://docs.base.org/base-chain/api-reference/rpc-overview ; the page itself is unverified). Liquidity-persistence (historical `slot0`/`ticks` at past blocks) needs an **archive** provider.
+- docs.base.org: public endpoints are rate-limited, **HTTP only (no WS)**, and `eth_getLogs` should keep `toBlock − fromBlock` **< 2,000 blocks**; `fromBlock=toBlock="pending"` returns Flashblocks (~200 ms) pre-confirmations (until Denim, 2026-11-05: Flashblocks stopped there and every block is 200 ms, §2.13). (search snippets of https://docs.base.org/base-chain/api-reference/ethereum-json-rpc-api/eth_getLogs and https://docs.base.org/base-chain/api-reference/rpc-overview ; the page itself is unverified). Liquidity-persistence (historical `slot0`/`ticks` at past blocks) needs an **archive** provider.
 - Uniswap v3 fee tier 100 / tickSpacing 1 **is enabled** on Base: USDC/USDbC 0.01% pool 0x06959273E9A65433De71F5A452D529544E07dDD0 exists (https://dexpaprika.com/base/pool/0x06959273e9a65433de71f5a452d529544e07ddd0 , https://defillama.com/yields/pool/169d2475-30aa-427c-baa8-dbc249732c95).
 - New Uniswap Base contracts since the pack: `MixedRouteQuoterV2` 0x94a7d36e2AE728d6A2B2ee533b0a260385596D8b (2026-10-16), `PermissionedHooks` 0x5750be78fedfb2fa48faa6c6623400ba4538a8c0, `ReservesLens` 0x0000001b173C3bbF3984D417d8614E3eed34865B (registry). Only relevant if you quote through them.
 
@@ -1754,6 +1764,53 @@ costing 86,150 gas instead of 13,471 and the crossing most of the rest. The limi
 112 swaps the panel sent on the fork after another account's swap (17 to 478 bps, in the same block
 or the next, on these three pools and Uniswap v3's 0xd0b5…f224) ran out of gas; the least room left
 over what a swap needed was 83,310 gas.
+
+These measurements ran on 2 s blocks, before Denim (§2.13). The oracle and the module key "the same
+block" on the block timestamp, which stays whole seconds, so since Denim it spans the five 200 ms
+blocks of a second, and "the next block" is usually the same second. The gas figures were not
+measured again after Denim: an open item for the swap panel's `GAS_ALLOWANCE`.
+
+### 2.13 Block schedule: Denim's 200 ms blocks (2026-11-05)
+
+Base's Denim upgrade replaced one block every 2 s with five a second. Sources, read on 2026-11-05
+around 20:45 UTC:
+
+- <https://docs.base.org/upgrades/denim/200ms-blocks.md>: "Base Mainnet is targeting November 5,
+  2026 at 18:00 UTC"; consecutive activated blocks satisfy T_ms(child) = T_ms(parent) + 200 and
+  "Blocks cannot skip slots"; after activation the derivation pipeline "computes each block's
+  timestamp from the Denim activation schedule and absolute L2 block number"; the header
+  `timestamp` stays whole seconds; block and header responses gain an optional `timestampMs`, logs
+  an optional `blockTimestampMs`, both omitted when the node lacks the data; Flashblocks stop at
+  activation.
+- <https://docs.base.org/upgrades/denim/overview.md>: status table "Mainnet | Planning | November
+  5, 2026". **Stale**: the chain below shows the activation. Per the routing rules in AGENTS.md the
+  mismatch is worth flagging to Base.
+
+On chain (`eth_getBlockByNumber` through Alchemy's endpoint, 2026-11-05 20:40–20:45 UTC):
+
+| block      | `timestamp`   | `timestampMs`     | UTC                     |
+| ---------- | ------------- | ----------------- | ----------------------- |
+| 0          | 1,686,789,347 | none              | 2023-06-15 00:35:47     |
+| 1          | 1,686,789,349 | none              | 2023-06-15 00:35:49     |
+| 30,000,000 | 1,746,789,347 | none              | 2025-05-09 11:15:47     |
+| 53,554,327 | 1,793,898,001 | none              | 2026-11-05 17:00:01     |
+| 53,556,126 | 1,793,901,599 | none              | 2026-11-05 17:59:59     |
+| 53,556,127 | 1,793,901,601 | 1,793,901,601,000 | 2026-11-05 18:00:01.000 |
+| 53,556,128 | 1,793,901,601 | 1,793,901,601,200 | 2026-11-05 18:00:01.200 |
+| 53,556,131 | 1,793,901,601 | 1,793,901,601,800 | 2026-11-05 18:00:01.800 |
+| 53,556,132 | 1,793,901,602 | 1,793,901,602,000 | 2026-11-05 18:00:02.000 |
+| 53,604,914 | 1,793,911,358 | 1,793,911,358,400 | 2026-11-05 20:42:38.400 |
+
+Every block before 53,556,127 that was read has `timestamp` = 1,686,789,347 + 2 × number: the hour
+from 17:00:01 to 18:00:01 holds 1,800 blocks (53,554,327 to 53,556,127); the hour after it holds
+18,000 (the last 18,000 blocks to 53,604,914 span 3,600 s). From 53,556,127 on, the full time is
+1,793,901,601,000 + 200 × (number − 53,556,127) ms and `timestamp` its whole seconds. That
+endpoint's `eth_getLogs` answers also carry `blockTimestamp` and `blockTimestampMs`.
+
+Verdict: **confirmed**. `BASE_BLOCK_SCHEDULE` in `packages/chain/src/schedule.ts` records the two
+eras (genesis at 1,686,789,347 s, 2,000 ms per block; block 53,556,127 at 1,793,901,601,000 ms,
+200 ms per block), and the reader relies on it only once real headers show its timestamps
+(`internal/timestamps.ts`, `internal/blocks.ts`).
 
 ## 3. Still unresolved (do not guess; resolve at first run)
 

@@ -4,7 +4,8 @@
  * The chain reader asks each DEX for the pools of every pair of the reference tokens and the
  * configured extra tokens (`--seed-token`, DEPTHWATCH_SEED_TOKENS) at the head
  * (`ChainReader.seedPools`, about a dozen multicalls) and finds each new pool's creation block by
- * binary search over archive state (about 26 requests per pool). Pools already in the database
+ * binary search over archive state (about 26 to 28 requests per pool, the log2 of the height,
+ * which grows 432,000 blocks a day since Denim). Pools already in the database
  * keep their stored creation block and cost no search, so a rerun costs only the factory reads.
  *
  * Pools are upserted as the search completes each batch, so a failed or interrupted seed resumes

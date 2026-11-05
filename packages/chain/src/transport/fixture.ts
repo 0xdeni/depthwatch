@@ -8,7 +8,8 @@
  *    per-contract entries. Inner `$error` entries become `success = false` results.
  * 3. `logs` (optional) — a raw log store that answers any `eth_getLogs` by address/topics/range.
  * 4. `clock` (optional) — answers `eth_blockNumber` / `eth_getBlockByNumber` for any block ≤ latest
- *    by extrapolating `secondsPerBlock` backwards from the latest block.
+ *    by extrapolating `secondsPerBlock` backwards from the latest block, or, with `eras`, from that
+ *    block schedule (Base's: 2 s blocks, then 200 ms from Denim on), `timestampMs` included.
  * 5. `history` (optional) — answers that change at given blocks (contract code that appears at a
  *    deployment block, a view whose result changes): a request whose last param is a block gets the
  *    entry with the largest `fromBlock` at or below that block (`latest` and other tags: the clock's
@@ -33,6 +34,7 @@ import {
 } from 'viem'
 import { multicall3Abi } from '../abi/multicall3.js'
 import { BASE_ADDRESSES } from '../addresses.js'
+import { scheduledTimeMs, scheduledTimestamp } from '../schedule.js'
 import { fixtureKey } from './key.js'
 
 export interface FixtureLog {
@@ -53,6 +55,11 @@ export interface FixtureClock {
   /** Unix seconds of the latest block. */
   latestTimestamp: number
   secondsPerBlock: number
+  /**
+   * A `BlockSchedule` (schedule.ts) with decimal `fromBlock`s: when set, every block's time follows
+   * it instead of `secondsPerBlock` (`latestTimestamp` must be the latest block's on it).
+   */
+  eras?: Array<{ fromBlock: string; fromMs: number; msPerBlock: number }>
 }
 
 export interface FixtureErrorEntry {
@@ -295,8 +302,15 @@ function synthesizeBlock(clock: FixtureClock, tag: string): Record<string, unkno
   else if (tag.startsWith('0x')) number = hexToBigInt(tag as Hex)
   else number = latest
   if (number > latest) return null
-  const timestamp = clock.latestTimestamp - Number(latest - number) * clock.secondsPerBlock
+  const schedule = clock.eras?.map((era) => ({ ...era, fromBlock: BigInt(era.fromBlock) }))
+  const timestamp =
+    schedule === undefined
+      ? clock.latestTimestamp - Number(latest - number) * clock.secondsPerBlock
+      : scheduledTimestamp(schedule, number)
   return {
+    ...(schedule === undefined
+      ? {}
+      : { timestampMs: numberToHex(scheduledTimeMs(schedule, number)) }),
     number: numberToHex(number),
     hash: syntheticBlockHash(number),
     parentHash: syntheticBlockHash(number === 0n ? 0n : number - 1n),

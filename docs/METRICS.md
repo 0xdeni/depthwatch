@@ -592,9 +592,11 @@ prices, so the whole window is valued alike.
 start of the hour that holds it (`H = E − E mod 3,600`). The window is `[H − 24 h, H)`: exactly 24
 whole hourly buckets, and `volume24hUsd` is the sum of the pool's buckets whose `hourStart` lies in
 it.
-- **First bucket.** The window starts on an hour boundary, and the volume step scans from at least
-  an hour (plus 300 blocks of block-time slack) before it and drops the swaps before the boundary,
-  so the first bucket is complete. No bucket is prorated.
+- **First bucket.** The window starts on an hour boundary, and the volume step starts its scan at
+  the first block whose timestamp reaches it, found by time (`ChainReader.blockAtOrAfter`: Base's
+  block schedule, 2 s blocks and then 200 ms blocks from Denim's block 53,556,127, confirmed by
+  headers), so the first bucket is complete. Swaps take their block's header timestamp (whole
+  seconds). No bucket is prorated.
 - **Last, partial hour.** The hour from `H` to `E` is stored but not counted: it is still being
   filled, and a later pass completes it. The window therefore ends 0 to 1 hour before the data.
 - **Between volume and score.** The window is anchored to `E`, not to the scoring clock, so a

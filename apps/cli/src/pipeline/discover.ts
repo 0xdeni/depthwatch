@@ -2,7 +2,8 @@
  * `discover`: incremental factory / PoolManager log scan per DEX, in windows of
  * `DISCOVER_WINDOW_CHUNKS` log chunks. After each window the pools it found are upserted and the
  * cursor `discover:<dex>:lastBlock` in sync_state advances to the window's last block, in one
- * transaction, so a first scan of ~50 M blocks that fails after hours resumes at the failed window
+ * transaction, so a first scan of tens of millions of blocks (about 52 M for Uniswap v3 at Denim's
+ * activation, and 432 000 more a day since) that fails after hours resumes at the failed window
  * on the next run instead of starting over. `--from-block` restarts the scan at that block for this
  * run (a rescan upserts, so it is always safe); the cursor only ever moves forward, so a rescan
  * below it that fails part-way leaves it where it was.
@@ -22,17 +23,22 @@ import { errorMessage, type Logger } from '../log.js'
 import { type PipelineContext, StepBudget, syncKeys, throwIfStopped } from './context.js'
 
 /**
- * Log chunks per window: 100 000 blocks at the CLI's 2 000-block chunks (about 2.3 days of Base),
- * so 50 `eth_getLogs` per factory per window, typically under a minute against a public endpoint.
- * A failure loses at most one window; a 50 M-block first scan logs ~500 windows per DEX.
+ * Log chunks per window: 100 000 blocks at the CLI's 2 000-block chunks (about 2.3 days of Base's
+ * 2 s blocks before Denim, block 53 556 127; 5.6 h of its 200 ms blocks since), so 50
+ * `eth_getLogs` per factory per window, typically under a minute against a public endpoint (as
+ * measured on 2 s blocks). A failure loses at most one window; a first scan of Uniswap v3's
+ * 52 M blocks to Denim's activation logs about 520 windows, and every day since adds 4.32 more.
  */
 export const DISCOVER_WINDOW_CHUNKS = 50
 
 /**
  * More `eth_getLogs` per DEX than this and the scan logs a warning first: 5 000 requests take
- * about 17 minutes at the 5 requests a second Base's public endpoint allows per IP. A first scan
- * of Base at 2 000-block chunks needs up to about 26 000 per DEX (about 97 000 in all); at a free
- * tier's 10-block chunks, about 5 M.
+ * about 17 minutes at the 5 requests a second Base's public endpoint allows per IP. 5 000 chunks of
+ * 2 000 blocks are 10 M blocks: 231 days of 2 s blocks, 23 days of the 200 ms blocks Base makes
+ * since Denim, so a cursor that far behind warns too. A first scan of Base at 2 000-block chunks
+ * needs up to about 26 000 per DEX at Denim's activation (about 97 000 in all on 2026-10-28,
+ * docs/ROADMAP.md) and about 216 more per factory every day since (432 000 blocks a day); at a free
+ * tier's 10-block chunks, up to about 5.2 M per DEX, and 43 200 more per factory a day.
  */
 export const DISCOVER_WARN_CHUNKS = 5_000n
 

@@ -3,8 +3,9 @@
  * and multicalls, blocks, the chain id. `DEPTHWATCH_LOGS_RPC_URL` (`--logs-rpc-url`, default: the
  * same URL) serves `eth_getLogs` only, so a provider whose plan caps log ranges (Alchemy's free
  * tier: 10 blocks) can keep the calls while log scans go to an endpoint that accepts wide ranges,
- * such as Base's public https://mainnet.base.org. On the capped endpoint alone, small scans (24 h
- * of volume) still work with `DEPTHWATCH_LOG_CHUNK` set to the provider's limit. URLs are never
+ * such as Base's public https://mainnet.base.org. On the capped endpoint alone, short scans still
+ * work with `DEPTHWATCH_LOG_CHUNK` set to the provider's limit; 24 h of volume no longer is one
+ * since Base's 200 ms blocks (432 000 blocks: 43 200 requests per event source at 10). URLs are never
  * logged: they can carry API keys. The log names the variable, and error text (viem puts the URL in
  * its messages) keeps only each URL's origin (log.ts `errorMessage`, `describeError` below).
  */
@@ -42,8 +43,9 @@ export function logsEndpointHint(error: LogRangeLimitError): string {
   const limit = maxRange === undefined ? 'a span it accepts' : `the provider's limit, ${maxRange}`
   return (
     'Either set DEPTHWATCH_LOGS_RPC_URL (or --logs-rpc-url) to an endpoint that accepts larger ' +
-    'eth_getLogs ranges, for example https://mainnet.base.org, or, for small scans such as 24 h ' +
-    `volume, set DEPTHWATCH_LOG_CHUNK (or --log-chunk) to ${limit}.`
+    'eth_getLogs ranges, for example https://mainnet.base.org, or, for short scans (24 h of ' +
+    "volume is 432,000 blocks of Base's 200 ms blocks: 43,200 requests per event source at 10), " +
+    `set DEPTHWATCH_LOG_CHUNK (or --log-chunk) to ${limit}.`
   )
 }
 

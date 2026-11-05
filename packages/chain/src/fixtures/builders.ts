@@ -18,6 +18,7 @@ import {
   numberToHex,
   stringToHex,
 } from 'viem'
+import { type BlockSchedule, msPerBlockAt, scheduledTimestamp } from '../schedule.js'
 import { type Fixture, type FixtureLog, syntheticBlockHash } from '../transport/fixture.js'
 import { fixtureKey } from '../transport/key.js'
 
@@ -318,10 +319,25 @@ export function addLogs(fixture: Fixture, logs: readonly FixtureLog[]): void {
   fixture.logs = [...(fixture.logs ?? []), ...logs]
 }
 
+/**
+ * The fixture's head and clock: `secondsPerBlock` (default 2) back from `latestTimestamp`, or, with
+ * `schedule`, every block at its scheduled time (e.g. BASE_BLOCK_SCHEDULE, 200 ms after Denim).
+ */
 export function setClock(
   fixture: Fixture,
-  clock: { latestBlock: bigint; latestTimestamp: number; secondsPerBlock?: number },
+  clock:
+    | { latestBlock: bigint; latestTimestamp: number; secondsPerBlock?: number }
+    | { latestBlock: bigint; schedule: BlockSchedule },
 ): void {
+  if ('schedule' in clock) {
+    fixture.clock = {
+      latestBlock: clock.latestBlock.toString(),
+      latestTimestamp: scheduledTimestamp(clock.schedule, clock.latestBlock),
+      secondsPerBlock: msPerBlockAt(clock.schedule, clock.latestBlock) / 1_000,
+      eras: clock.schedule.map((era) => ({ ...era, fromBlock: era.fromBlock.toString() })),
+    }
+    return
+  }
   fixture.clock = {
     latestBlock: clock.latestBlock.toString(),
     latestTimestamp: clock.latestTimestamp,

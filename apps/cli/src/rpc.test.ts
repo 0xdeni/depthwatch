@@ -1,11 +1,14 @@
 /**
  * The CLI's RPC endpoints over the HTTP answers of real providers, replayed by a stubbed `fetch`
  * (no network): DEPTHWATCH_LOGS_RPC_URL routing, backoff warnings, and `volume` on Alchemy's free
- * tier, which works with DEPTHWATCH_LOG_CHUNK=10 and fails fast with both fixes at the default.
+ * tier, which works with DEPTHWATCH_LOG_CHUNK=10 (over Base's 200 ms blocks) and fails fast with
+ * both fixes at the default.
  */
 import {
   addLogs,
   alchemyFreeTierGetLogs,
+  BASE_BLOCK_SCHEDULE,
+  BASE_DENIM_BLOCK,
   createFakeRpcFetch,
   createFixture,
   type FakeRpcOptions,
@@ -46,13 +49,24 @@ const POOL: PoolMeta = {
   createdAtBlock: 1n,
 }
 
-/** Swaps of POOL at HEAD − 100 and HEAD − 20 000, both inside the last 24 h. */
-function world(): Fixture {
+/**
+ * A head two days past Denim on Base's block schedule (200 ms blocks): its 2 h window starts at
+ * the hour 1 794 067 200, block BASE_DENIM_BLOCK + 827 995, 36 006 blocks back.
+ */
+const DENIM_HEAD = BASE_DENIM_BLOCK + 864_000n
+
+/**
+ * Swaps of POOL 100 and 20 000 blocks before the head, both inside the last 24 h on the 2 s clock
+ * (HEAD), inside the last 67 min on Base's schedule (`denim`).
+ */
+function world(denim = false): Fixture {
   const fixture = createFixture()
-  setClock(fixture, { latestBlock: HEAD, latestTimestamp: HEAD_TS })
+  const head = denim ? DENIM_HEAD : HEAD
+  if (denim) setClock(fixture, { latestBlock: head, schedule: BASE_BLOCK_SCHEDULE })
+  else setClock(fixture, { latestBlock: HEAD, latestTimestamp: HEAD_TS })
   addLogs(
     fixture,
-    [HEAD - 20_000n, HEAD - 100n].map((blockNumber) =>
+    [head - 20_000n, head - 100n].map((blockNumber) =>
       makeLog({
         address: POOL.address as Address,
         abi: uniswapV3PoolAbi,
@@ -81,8 +95,8 @@ afterEach(() => {
 })
 
 /** The `volume` pipeline over `env`, every request answered by the fake endpoint(s). */
-function cli(env: Env, fake: FakeRpcOptions = {}) {
-  const rpc = createFakeRpcFetch(world(), fake)
+function cli(env: Env, fake: FakeRpcOptions = {}, denim = false) {
+  const rpc = createFakeRpcFetch(world(denim), fake)
   vi.stubGlobal('fetch', rpc.fetch)
   const lines: string[] = []
   const log = createLogger({ write: (line) => lines.push(line), now: () => new Date(0) })
@@ -156,12 +170,16 @@ describe('volume on a 10-block eth_getLogs plan (Alchemy free tier)', () => {
     const { ctx, db, calls } = cli(
       { DEPTHWATCH_RPC_URL: MAIN, DEPTHWATCH_LOG_CHUNK: '10' },
       { getLogs: alchemyFreeTierGetLogs() },
+      true,
     )
-    const result = await volumeStep(ctx)
-    expect(result).toMatchObject({ fromBlock: HEAD - 45_300n, toBlock: HEAD, swaps: 2, dropped: 0 })
-    expect(calls.filter((c) => c.method === 'eth_getLogs')).toHaveLength(4_531) // ⌈45 301 / 10⌉
-    // The latest block, then anchors 80 000 and 90 000 (100 000 is the latest, cached).
-    expect(calls.filter((c) => c.method === 'eth_getBlockByNumber')).toHaveLength(3)
+    // Two hours: 24 h of 200 ms blocks is 43 200 requests or more per event source at 10.
+    const result = await volumeStep(ctx, { hours: 2 })
+    const fromBlock = DENIM_HEAD - 36_005n
+    expect(result).toMatchObject({ fromBlock, toBlock: DENIM_HEAD, swaps: 2, dropped: 0 })
+    expect(calls.filter((c) => c.method === 'eth_getLogs')).toHaveLength(3_601) // ⌈36 006 / 10⌉
+    // The head; the window's first block and its parent; the first swap's block (the schedule
+    // holds there, and at the head, so every swap takes its scheduled time).
+    expect(calls.filter((c) => c.method === 'eth_getBlockByNumber')).toHaveLength(4)
     expect(db.volume.swapCount(POOL.id, 0)).toBe(2)
     expect(db.volume.sumUsd(POOL.id, 0)).toBeNull() // no stored prices: USD unknown, not 0
   })
@@ -175,7 +193,7 @@ describe('volume on a 10-block eth_getLogs plan (Alchemy free tier)', () => {
     expect(text).toMatch(/^eth_getLogs: the logs endpoint accepts at most 10 blocks per request/)
     expect(text).toContain('Under the Free tier plan, you can make eth_getLogs requests with up to')
     expect(text).toMatch(
-      /Either set DEPTHWATCH_LOGS_RPC_URL \(or --logs-rpc-url\) to an endpoint that accepts larger eth_getLogs ranges, .* or, for small scans such as 24 h volume, set DEPTHWATCH_LOG_CHUNK \(or --log-chunk\) to the provider's limit, 10\.$/,
+      /Either set DEPTHWATCH_LOGS_RPC_URL \(or --logs-rpc-url\) to an endpoint that accepts larger eth_getLogs ranges, .* or, for short scans \(24 h of volume is 432,000 blocks of Base's 200 ms blocks: 43,200 requests per event source at 10\), set DEPTHWATCH_LOG_CHUNK \(or --log-chunk\) to the provider's limit, 10\.$/,
     )
   })
 

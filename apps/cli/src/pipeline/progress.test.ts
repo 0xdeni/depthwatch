@@ -56,6 +56,16 @@ describe('createProgressReporter', () => {
       '1970-01-01T00:00:00.000Z INFO  scan blocks=9060/45301 pct=20.0% elapsed=10s eta=40s chunks=9',
     ])
   })
+
+  it('shows at most 99.9 % until the last unit is done', () => {
+    const { lines, progress, advance } = reporter(446_006)
+    advance(PROGRESS_INTERVAL_MS)
+    progress.update(446_000)
+    advance(PROGRESS_INTERVAL_MS)
+    progress.update(446_006)
+    expect(lines[0]).toContain('done=446000/446006 pct=99.9% ')
+    expect(lines[1]).toContain('done=446006/446006 pct=100.0% ')
+  })
 })
 
 describe('formatDuration', () => {

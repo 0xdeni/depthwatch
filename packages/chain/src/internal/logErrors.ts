@@ -278,8 +278,10 @@ export interface LogRangeLimitDetails {
  * The logs endpoint cannot serve `eth_getLogs` at the configured chunk size: splitting a
  * 2 000-block chunk into 10-block requests would multiply a scan's requests by 200, so the reader
  * stops instead of crawling. A chunk size the endpoint accepts (`logChunkSize` 10 on Alchemy's
- * free tier) never gets here. `summary` says what happened; `message` adds the two fixes in
- * library terms (the CLI words them with its own variables, see apps/cli/src/rpc.ts).
+ * free tier) never gets here, but suits short scans only: since Denim (block 53 556 127) Base
+ * makes 432 000 blocks a day, which one filter reads in 43 200 requests of 10 blocks. `summary`
+ * says what happened; `message` adds the two fixes in library terms (the CLI words them with its
+ * own variables, see apps/cli/src/rpc.ts).
  */
 export class LogRangeLimitError extends Error {
   override readonly name = 'LogRangeLimitError'
@@ -297,7 +299,8 @@ export class LogRangeLimitError extends Error {
           `${minRange} blocks.`
     super(
       `${summary} Use a logs endpoint that accepts larger ranges (createChainReader ` +
-        `logsRpcUrl / logsTransport), or set logChunkSize to ${logRangeLimitText(details)} for small scans.`,
+        `logsRpcUrl / logsTransport), or set logChunkSize to ${logRangeLimitText(details)} for ` +
+        'short scans (a day of Base is 432,000 blocks since Denim).',
     )
     this.summary = summary
   }

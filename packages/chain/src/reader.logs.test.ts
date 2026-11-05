@@ -219,7 +219,8 @@ describe('rejected ranges', () => {
       `eth_getLogs: the logs endpoint accepts at most 10 blocks per request (provider: "${ALCHEMY_FREE}"), ` +
         'fewer than the 2000-block chunks configured, and the reader does not split ranges below ' +
         '100 blocks. Use a logs endpoint that accepts larger ranges (createChainReader logsRpcUrl / ' +
-        'logsTransport), or set logChunkSize to 10 for small scans.',
+        'logsTransport), or set logChunkSize to 10 for short scans (a day of Base is 432,000 ' +
+        'blocks since Denim).',
     )
     expect(counts.get('eth_getLogs')).toBe(1) // no crawl
   })

@@ -78,6 +78,8 @@ export const syncKeys = {
   volumeLastBlock: (poolId: string) => `volume:${poolId}:lastBlock`,
   /** First hour (unix seconds) from which the pool's hourly buckets are complete (volume.ts). */
   volumeFromTs: (poolId: string) => `volume:${poolId}:fromTs`,
+  /** How the stored volume coverage found its blocks: `by-time` since Denim (volume.ts). */
+  volumeWindows: () => 'volume:windows',
 } as const
 
 /**
@@ -110,8 +112,6 @@ export class StepBudget {
   }
 }
 
-/** Blocks per hour on Base (2 s blocks). */
-export const BLOCKS_PER_HOUR = 1_800n
 export const HOUR_SECONDS = 3_600
 export const DAY_SECONDS = 86_400
 

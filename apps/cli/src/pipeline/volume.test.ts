@@ -1,8 +1,12 @@
 import {
+  BASE_BLOCK_SCHEDULE,
+  BASE_DENIM_BLOCK,
   type ChainReader,
   createChainReader,
   createFixtureTransport,
   createSyntheticFixture,
+  scheduledBlockAtOrAfter,
+  scheduledTimestamp,
   syntheticAddresses,
   syntheticWorld,
 } from '@depthwatch/chain'
@@ -12,9 +16,16 @@ import { IN_MEMORY, openDatabase } from '@depthwatch/db'
 import { describe, expect, it } from 'vitest'
 import { loadConfig } from '../config.js'
 import { createLogger } from '../log.js'
-import { createPipelineContext } from './context.js'
+import { createPipelineContext, syncKeys } from './context.js'
 import { discoverStep } from './discover.js'
-import { bucketSwaps, hourStartOf, pricedSide, type UsdLookup, volumeStep } from './volume.js'
+import {
+  bucketSwaps,
+  hourStartOf,
+  pricedSide,
+  type UsdLookup,
+  VOLUME_WINDOWS_BY_TIME,
+  volumeStep,
+} from './volume.js'
 
 const token = (address: string, symbol: string, decimals: number): TokenInfo => ({
   address: address as Address,
@@ -145,9 +156,21 @@ describe('bucketSwaps', () => {
   })
 })
 
+/**
+ * A head 100 000 s after Denim, on Base's block schedule (200 ms blocks). Its 24 h window starts at
+ * hour 1 793 912 400, block BASE_DENIM_BLOCK + 53 995: 446 006 blocks.
+ */
+const HEAD = BASE_DENIM_BLOCK + 500_000n
+const SCHEDULED = {
+  head: { number: HEAD, timestamp: scheduledTimestamp(BASE_BLOCK_SCHEDULE, HEAD) },
+  getBlockTimestamp: async (block: bigint) => scheduledTimestamp(BASE_BLOCK_SCHEDULE, block),
+  blockAtOrAfter: async (timestamp: number) =>
+    scheduledBlockAtOrAfter(BASE_BLOCK_SCHEDULE, timestamp),
+}
+
 describe('volumeStep', () => {
   it('stores a day with more swaps than a spread call takes (> 125 000)', async () => {
-    const head = { number: 50_000_000n, timestamp: 1_800_000_000 + 1_000 }
+    const { head } = SCHEDULED
     const target = pool(`uniswap-v3:${'0x'.padEnd(41, '0')}1`, WETH, USDC)
     const count = 200_000
     const swaps: SwapEvent[] = Array.from({ length: count }, (_, i) => ({
@@ -162,6 +185,8 @@ describe('volumeStep', () => {
     const chain = {
       addresses: { stablecoinAnchors: ANCHORS },
       getLatestBlock: async () => head,
+      getBlockTimestamp: SCHEDULED.getBlockTimestamp,
+      blockAtOrAfter: SCHEDULED.blockAtOrAfter,
       readSwaps: async () => swaps,
     } as unknown as ChainReader
     const db = openDatabase(IN_MEMORY)
@@ -184,7 +209,7 @@ describe('volumeStep', () => {
    * that serves `served`-block chunks, one progress callback per chunk, each 0.1 s of wall time.
    */
   async function progressLines(logChunk: string, served: bigint, intervalMs: number) {
-    const head = { number: 50_000_000n, timestamp: 1_800_000_000 + 1_000 }
+    const { head } = SCHEDULED
     const v3 = pool(`uniswap-v3:${'0x'.padEnd(41, '0')}1`, WETH, USDC)
     const slip: PoolMeta = {
       ...pool(`aerodrome-slipstream:${'0x'.padEnd(41, '0')}2`, WETH, USDC),
@@ -193,6 +218,8 @@ describe('volumeStep', () => {
     const chain = {
       addresses: { stablecoinAnchors: ANCHORS },
       getLatestBlock: async () => head,
+      getBlockTimestamp: SCHEDULED.getBlockTimestamp,
+      blockAtOrAfter: SCHEDULED.blockAtOrAfter,
       readSwaps: async (
         _pools: unknown,
         from: bigint,
@@ -228,13 +255,50 @@ describe('volumeStep', () => {
   it('logs scan progress in blocks at the configured cadence, with chunks and 429s', async () => {
     const lines = await progressLines('10', 10n, 30_000)
     const progress = lines.filter((line) => line.includes('swap scan progress'))
-    // One scan for both DEXes (shared Swap event): 24 h + margin = 45 301 blocks, 4 531 chunks.
-    expect(progress.length).toBe(Math.floor((4_531 * 100) / 30_000))
+    // One scan for both DEXes (shared Swap event): 446 006 blocks of 200 ms, 44 601 chunks.
+    expect(progress.length).toBe(Math.floor((44_601 * 100) / 30_000))
     expect(progress[0]).toMatch(
-      /blocks=\d+\/45301 pct=\d+\.\d% elapsed=30s eta=\S+ chunks=\d+\/4531 rateLimited=1/,
+      /blocks=\d+\/446006 pct=\d+\.\d% elapsed=30s eta=\S+ chunks=\d+\/44601 rateLimited=1/,
     )
-    expect(progress.every((line) => /chunks=\d+\/4531 /.test(line))).toBe(true)
-    expect(lines.some((line) => line.includes('stored hourly volume chunks=4531'))).toBe(true)
+    expect(progress.every((line) => /chunks=\d+\/44601 /.test(line))).toBe(true)
+    expect(lines.some((line) => line.includes('stored hourly volume chunks=44601'))).toBe(true)
+  })
+
+  it('reads the whole window again over coverage a 2 s-block version stored after Denim', async () => {
+    const { head } = SCHEDULED
+    const target = pool(`uniswap-v3:${'0x'.padEnd(41, '0')}1`, WETH, USDC)
+    const reads: bigint[] = []
+    const chain = {
+      addresses: { stablecoinAnchors: ANCHORS },
+      getLatestBlock: async () => head,
+      getBlockTimestamp: SCHEDULED.getBlockTimestamp,
+      blockAtOrAfter: SCHEDULED.blockAtOrAfter,
+      readSwaps: async (_pools: unknown, from: bigint) => {
+        reads.push(from)
+        return []
+      },
+    } as unknown as ChainReader
+    const db = openDatabase(IN_MEMORY)
+    try {
+      db.pools.upsertMany([target])
+      db.pools.setTracked([target.id], true)
+      // Coverage of a pass ten minutes earlier, past Denim, from before the windows were by time.
+      db.syncState.setBigInt(syncKeys.volumeLastBlock(target.id), HEAD - 3_000n)
+      db.syncState.set(syncKeys.volumeFromTs(target.id), '0')
+      const ctx = createPipelineContext({ db, chain, config: loadConfig({}) })
+      const whole = BASE_DENIM_BLOCK + 53_995n
+      expect(await volumeStep(ctx)).toMatchObject({ incremental: 0, fromBlock: whole })
+      expect(db.syncState.get(syncKeys.volumeWindows())).toBe(VOLUME_WINDOWS_BY_TIME)
+      // Marked now: the next pass continues from the hour of the head it stored.
+      const next = await volumeStep(ctx)
+      expect(next.incremental).toBe(1)
+      expect(reads).toEqual([
+        whole,
+        scheduledBlockAtOrAfter(BASE_BLOCK_SCHEDULE, hourStartOf(head.timestamp)),
+      ])
+    } finally {
+      db.close()
+    }
   })
 
   it('reads the Aero pools in the shared scans: three eth_getLogs for six DEXes', async () => {
@@ -275,20 +339,20 @@ describe('volumeStep', () => {
   })
 
   it('keeps progress below 100 % until the end when the provider caps chunks lower', async () => {
-    // --log-chunk 2000, but the provider stated a 1 000-block cap: 46 chunks, not 23.
+    // --log-chunk 2000, but the provider stated a 1 000-block cap: 447 chunks, not 224.
     const lines = await progressLines('2000', 1_000n, 0)
     const pcts = lines
       .filter((line) => line.includes('swap scan progress'))
       .map((line) => Number(/pct=([\d.]+)%/.exec(line)?.[1]))
-    expect(pcts).toHaveLength(46)
+    expect(pcts).toHaveLength(447)
     expect(pcts.slice(0, -1).every((pct) => pct < 100)).toBe(true)
-    expect(pcts[22]).toBeCloseTo((100 * 23_000) / 45_301, 1)
+    expect(pcts[223]).toBeCloseTo((100 * 224_000) / 446_006, 1)
     expect(pcts.at(-1)).toBe(100)
-    // The chunk total follows the served 1 000-block chunks from the first one on: 46, not 23.
+    // The chunk total follows the served 1 000-block chunks from the first one on: 447, not 224.
     const totals = lines
       .filter((line) => line.includes('swap scan progress'))
       .map((line) => /chunks=\d+\/(\d+) /.exec(line)?.[1])
-    expect(new Set(totals)).toEqual(new Set(['46']))
-    expect(lines.some((line) => line.includes('stored hourly volume chunks=46'))).toBe(true)
+    expect(new Set(totals)).toEqual(new Set(['447']))
+    expect(lines.some((line) => line.includes('stored hourly volume chunks=447'))).toBe(true)
   })
 })

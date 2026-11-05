@@ -114,9 +114,10 @@ Each step reads what the previous one stored, so any step can be rerun on its ow
 8. **volume** (`depthwatch volume`). `Swap` events for tracked pools over the last 24 h (or
    `--hours`), chunked `getLogs`, bucketed per hour; token amounts stay `bigint`, the USD value
    uses the `prices` table. Upserted into `volume_hourly`, so reruns are idempotent. Incremental:
-   a later pass starts at the hour that held the previous pass's head (per-pool coverage in
-   `sync_state`, `volume:<pool>:lastBlock` and `volume:<pool>:fromTs`; the head's block and
-   timestamp in `volume:lastBlock` and `volume:lastTs`).
+   a later pass starts at the first block of the hour that held the previous pass's head
+   (per-pool coverage in `sync_state`, `volume:<pool>:lastBlock` and `volume:<pool>:fromTs`; the
+   head's block and timestamp in `volume:lastBlock` and `volume:lastTs`; `volume:windows` marks
+   coverage whose blocks were found by time).
 9. **scores** (`depthwatch score`). For each tracked pool: the snapshot series over 24 h and 7 d
    → `computePersistence`; the 24 h volume (`computeVolume24hUsd`: the 24 whole hourly buckets
    before the hour of the last block the volume pass read, anchored to that block rather than to
@@ -222,10 +223,14 @@ concentrated attribution current.
 
 ## RPC cost model
 
-The pipeline is designed around three facts about Base: blocks every 2 seconds (43,200 per day),
-`eth_getLogs` ranges capped by most providers, and Multicall3 making hundreds of `eth_call`s
-cost one request. Numbers below are estimates for sizing; the recording transport (see
-[Transports](#transports)) gives exact counts for a real run.
+The pipeline is designed around three facts about Base: its block cadence, `eth_getLogs` ranges
+capped by most providers, and Multicall3 making hundreds of `eth_call`s cost one request. Since
+the Denim upgrade Base makes five blocks a second, 200 ms apart, 18,000 an hour, 432,000 per day,
+from block 53,556,127 on (2026-11-05 18:00:01 UTC); before it, one every 2 seconds, 43,200 per
+day ([base-contracts.md](research/base-contracts.md) §2.13). Log costs count blocks, so a span of
+blocks now covers a tenth of the time it did, and a day of logs costs ten times the requests.
+Numbers below are estimates for sizing; the recording transport (see [Transports](#transports))
+gives exact counts for a real run.
 
 Two endpoints split the cost: every `eth_getLogs` goes to the logs endpoint
 (`DEPTHWATCH_LOGS_RPC_URL`, `createChainReader({ logsRpcUrl })`, default: the main one) and
@@ -241,14 +246,17 @@ CLFactory) and one over Aero v2's volatile and stable factories, whose shared `P
 `stable` flag, so the factory that emitted a log gives the pool's kind. The `depthwatch` CLI
 defaults to 2,000 blocks per chunk (`DEPTHWATCH_LOG_CHUNK` / `--log-chunk`; Base's public RPC
 rejects larger spans) and always passes its value to the reader, so 10,000 is only the library
-default of `createChainReader`. Incremental runs cover a day (43,200 blocks) in about 22 chunks per
-factory at 2,000 blocks, or about 5 at 10,000. The first run starts at each factory's deployment
-block (`startBlock` in `addresses.ts`, or `--from-block`) and spans tens of millions of blocks: on
-the order of tens of thousands of requests per factory at the CLI default, a few thousand at 10,000,
-so raise `--log-chunk` for the backfill if the provider allows it. A scan of more than 100,000
-chunks per factory logs a warning before it starts. The cursor advances every 50 chunks (100,000
-blocks at the CLI default), so a failure costs at most one window on the next run. Token metadata is
-resolved once per token through multicall and cached in `tokens`.
+default of `createChainReader`. Incremental runs cover a day (432,000 blocks) in about 216 chunks
+per factory at 2,000 blocks, or about 44 at 10,000 (22 and 5 for a day of 2 s blocks, before
+Denim). The first run starts at each factory's deployment block (`startBlock` in `addresses.ts`,
+or `--from-block`; the three Aerodrome Slipstream factories all from the earliest of theirs) and
+spans tens of millions of blocks: on the order of tens of thousands of requests per factory at the
+CLI default, a few thousand at 10,000, and the head now moves 432,000 blocks a day, about 216 more
+2,000-block requests per factory for each day the backfill waits, so raise `--log-chunk` for the
+backfill if the provider allows it. A scan of more than 100,000 chunks per factory logs a warning
+before it starts. The cursor advances every 50 chunks (100,000 blocks at the CLI default), so a
+failure costs at most one window on the next run. Token metadata is resolved once per token through
+multicall and cached in `tokens`.
 
 ### Seeded discovery: factory views and archive state
 
@@ -352,29 +360,56 @@ Slipstream's CLPool emits Uniswap v3's `Swap` event unchanged (same signature, s
 by a test), so Uniswap v3 and Slipstream pools share one filter, and Aero v2 pools emit Aerodrome
 v2's `Swap`: three sources for six DEXes.
 Uniswap v4 swaps are read from the PoolManager filtered by the `id` topic.
+
+The window is exact by time. It runs from the first block of the hour that held the time
+`--hours` (24) before the head to the head, so its first hour bucket is complete and no block
+before it is read. `ChainReader.blockAtOrAfter` finds that block: the one Base's block schedule
+names (`BASE_BLOCK_SCHEDULE` in `packages/chain/src/schedule.ts`: 2 s blocks from genesis, 200 ms
+blocks from Denim's first block on), once its own header and its parent's confirm it, else a
+binary search over headers (about 26 for Base's height). Since Denim an hour is 18,000 blocks, so
+a 24 h window is 432,000 to 450,000 blocks: about 216 to 225 chunks at the CLI default of 2,000
+blocks, or 44 to 45 at 10,000 (24 whole hours, then the head's hour so far). A window that still
+reaches back before 2026-11-05 18:00 UTC holds 1,800 blocks for each of its hours of 2 s blocks.
+
 The step logs its progress at info level every 30 s (blocks scanned of the total, chunks served of
-the total, percent, elapsed time, ETA, rate-limit and transient backoffs), since a 24 h scan at 10
-blocks per request takes about half an hour. Percent and ETA count blocks, and the chunk total is
-an estimate (the blocks left divided by the mean span of the chunks served so far), because the
-reader shrinks its chunks below `--log-chunk` once a provider states a smaller range cap. The window is `--hours` × 1,800
-blocks plus a 2,100-block margin, so a 24 h window is about 45,300 blocks: about 23 chunks at the
-CLI default of 2,000 blocks, or about 5 at 10,000. Swap timestamps are interpolated between anchor
-headers on the main endpoint, independent of the log chunk: the multiples of 10,000 blocks around
-the swaps plus the scan's last block (`DEFAULT_TIMESTAMP_SPAN`), so a 24 h window needs at most
-seven `eth_getBlockByNumber` whatever `--log-chunk` is, and later `run` passes reuse the cached
-multiples. Base's 2 s cadence makes the interpolation exact; a segment whose endpoints show a
-fractional cadence is bisected instead. Buckets are upserted, so rescanning is idempotent.
+the total, percent, elapsed time, ETA, rate-limit and transient backoffs), since a scan can take
+hours: 24 h at 10 blocks per request took 27.6 minutes on 2 s blocks (2026-10-28, README
+[Measured on Base](../README.md#measured-on-base-2026-10-28)) and is ten times the requests on
+200 ms blocks, about four and a half hours at that pace (an estimate, not a measurement). Percent
+and ETA count blocks (percent stays at 99.9 % at most until the scan is done), and the chunk total
+is an estimate (the blocks left divided by the mean span of the chunks served so far), because the
+reader shrinks its chunks below `--log-chunk` once a provider states a smaller range cap.
+
+Swap timestamps come from the same schedule once real headers on the main endpoint confirm it: the
+scan's last block, both sides of every era boundary inside the scan, then the first swap's block.
+That is two to four `eth_getBlockByNumber` a scan whatever `--log-chunk` is, and every swap then
+takes its block's scheduled timestamp, exactly. When a header disagrees (a cadence change the
+schedule does not record yet, another chain, a fixture's synthetic clock), the timestamps are
+interpolated between anchor headers instead: the multiples of 10,000 blocks around the swaps
+(`DEFAULT_TIMESTAMP_SPAN`: 5.6 h of 2 s blocks, 33 min of 200 ms blocks) plus the scan's last
+block, linear between. A segment whose endpoints show a fractional whole-second cadence is
+bisected; a segment with fewer seconds than blocks (200 ms blocks, whose header timestamps are
+whole seconds) is accepted once its midpoint's header lies within 1 s of the line, else bisected,
+so a swap is right to within about a second there. That fallback costs about 90 headers for a 24 h
+window of 200 ms blocks (some 46 anchors and a midpoint per segment). A reader keeps up to 10,000
+headers (`TIMESTAMP_CACHE_LIMIT`; a full cache starts over), so later `run` passes reuse them.
+Buckets are upserted, so rescanning is idempotent.
 
 The step is incremental. Each pool's coverage (`volume:<pool>:lastBlock`, the last block in its
 buckets, and `volume:<pool>:fromTs`, the first hour from which they are complete) lets a later
-pass start at the first block of the hour that held `lastBlock`, computed exactly from Base's 2 s
-blocks, less a 300-block margin (`VOLUME_JITTER_BLOCKS`): that hour, which the previous pass cut
-short, is rewritten complete, the hours before it are kept as stored, and swaps in the margin are
-dropped. A pool whose coverage does not reach back to the window's first hour (newly tracked,
-untracked for a day, or a wider `--hours`) reads the whole window. Each event source is read once,
-from the earliest start of its pools, since a log request costs the same for one pool or many. The buckets
-a pass keeps are revalued from their stored token totals at the current prices, so the window is
-valued as a full rescan would value it.
+pass start exactly at the first block of the hour that held `lastBlock`: that block's header gives
+the hour and `blockAtOrAfter` the hour's first block. That hour, which the previous pass cut short,
+is rewritten complete and the hours before it are kept as stored. A pool reads no block before its
+hour unless another pool of its event source starts earlier; its swaps there are then dropped, its
+stored hours standing. A pool whose coverage does not reach back to the window's first hour (newly
+tracked, untracked for a day, or a wider `--hours`) reads the whole window. Each event source is
+read once, from the earliest start of its pools, since a log request costs the same for one pool
+or many. The buckets a pass keeps are revalued from their stored token totals at the current
+prices, so the window is valued as a full rescan would value it. Every pass marks its coverage
+`volume:windows` = `by-time` (`VOLUME_WINDOWS_BY_TIME`). Coverage that ends at or after Denim's
+first block without that mark was written by an earlier version, which counted 2 s blocks after
+Denim, so its hours there are short: it is ignored once, and those pools read their whole window
+again.
 
 ### Positions
 
@@ -408,14 +443,14 @@ positions in the pass that finds it.
 ### Per cycle
 
 A 5-minute `run` with 10,000 known pools and 200 tracked pools is roughly: 8 `getLogs` for
-discovery (one per filter: one per factory, and one for the two Aero v2 factories; 150 new blocks
-fit in one chunk at any chunk size), ~70 multicalls for
-the overview, ~500 multicalls for state, 1 to 2 `getLogs` per event source with tracked pools for volume (a
-pass rereads the hour that held the previous head, the new blocks and the margin: at most about
-2,250 blocks) plus a handful of block headers. The first pass, and a DEX with a newly tracked pool,
-read the whole window: ~23 `getLogs` per source at 2,000 blocks. Comfortably inside a free-tier
-budget per cycle; the state step is the lever (`--top`), and `--log-chunk` is the volume lever on
-a provider that accepts wider spans.
+discovery (one per filter: one per factory, and one for the two Aero v2 factories; 1,500 new
+blocks fit in one chunk at the CLI default), ~70 multicalls for the overview, ~500 multicalls for
+state, 1 to 10 `getLogs` per event source with tracked pools for volume (a pass rereads the hour
+that held the previous head and reads the new blocks: at most about 19,500 blocks) plus a handful
+of block headers. The first pass, and a DEX with a newly tracked pool, read the whole window: up
+to 225 `getLogs` per source at 2,000 blocks. Comfortably inside a free-tier budget per cycle; the
+state step is the lever (`--top`), and `--log-chunk` is the volume lever on a provider that
+accepts wider spans.
 
 ### Rate limits, range limits and free plans
 
@@ -443,30 +478,36 @@ a provider that accepts wider spans.
   eth_getLogs requests with up to a 10 block range"; Tenderly's public gateway, in `data`: "maximum
   1000 blocks") is split to that size when it is at or above the floor, and otherwise stops the
   command at once with one error naming the limit and the two fixes: a logs endpoint that accepts
-  larger ranges, or `DEPTHWATCH_LOG_CHUNK` set to the limit for small scans. Without a stated
+  larger ranges, or `DEPTHWATCH_LOG_CHUNK` set to the limit for short scans. Without a stated
   maximum the range is halved: "more than 20000 results", Pocket's "scan work too large", and
   viem's `ResponseBodyTooLargeError` (an answer over the transport's `maxResponseBodySize`, 10 MiB
   by default), read by its name. A chunk the endpoint accepts is never split, so `--log-chunk 10`
   on a 10-block plan works. `run` stops on that error too, since no later pass could succeed. Scans
   already started each send their first request: one per event source for `volume`, one per
   factory for `discover`, and `positions` starts no further pool once one has failed this way.
-- **A 10-block plan.** `snapshot` and `score` need no logs. `volume` for 24 h is 45,300 blocks:
-  4,531 `eth_getLogs` per event source with tracked pools plus at most seven headers, about 13,600
-  requests with all six DEXes (three sources) tracked (on a plan that meters about 75 compute
-  units per `eth_getLogs`, about 1 M units) on a first pass. The pass measured on 2026-10-25
-  ([README](../README.md#measured-on-base-2026-10-25)) predates the shared filter: four scans,
-  18,131 answered requests and about 1.36 M units, 4,192 more answered HTTP 429. Later passes
-  start at the hour of the previous head (about 100 requests per source for a pass 5 minutes
-  after the last, about 300 an hour after, about 1,200 six hours after), but keeping volume
-  current still reads each block at least once per source: at least about 4,320 requests per
-  source a day, about 1 M units a day with three, more than a 30 M-unit month, and a 5-minute
-  loop pays the reread hour on every pass, about ten times that.
-  So a looping `run` does not fit a free plan of that size: run single passes
-  (`run --seed --once`) when fresh numbers are needed.
+- **A 10-block plan.** `snapshot` and `score` need no logs. `volume` for 24 h is 432,000 to
+  450,000 blocks since Denim: 43,200 to 45,000 `eth_getLogs` per event source with tracked pools
+  plus a few headers, about 130,000 to 135,000 requests with all six DEXes (three sources) tracked
+  (on a plan that meters about 75 compute units per `eth_getLogs`, about 10 M units) on a first
+  pass, ten times a pass over 2 s blocks. The passes measured on 2026-10-25 and 2026-10-28
+  ([README](../README.md#measured-on-base-2026-10-25)) ran on 2 s blocks, before Denim, over
+  45,300 blocks each: the first, before the shared filter, read four scans in 18,131 answered
+  requests (about 1.36 M units; 4,192 more answered HTTP 429), the second three scans in 13,593
+  chunks (about 1.02 M units). Later passes start at the hour of the previous head (up to about
+  1,950 requests per source for a pass 5 minutes after the last, up to 3,600 an hour after, up to
+  12,600 six hours after), but keeping volume current still reads each block at least once per
+  source: at least 43,200 requests per source a day, about 130,000 a day with three, about 9.7 M
+  units a day, so a 30 M-unit month lasts about three days, and a 5-minute loop pays the reread
+  hour on every pass, about seven times that.
+  So 24 h of volume no longer fits a 10-block free plan, not even as single passes (about three a
+  month); `discover --seed`, `snapshot` and `score` do. Run `volume` against a logs endpoint that
+  takes wider ranges (`DEPTHWATCH_LOGS_RPC_URL`), or on the plan only over short windows
+  (`--hours 1` or `2`: 1,800 to 5,400 requests per source a pass), and the score's 24 h volume
+  then counts only the hours read.
   A first `discover` from the factories' deployment blocks (around 50 M blocks, about 5 M requests
-  per factory at 10 blocks) and `positions` are not practical there: run them against a logs
-  endpoint that takes 2,000-block spans. `discover --seed` needs no logs and finds the
-  reference-token pools on such a plan (see
+  per factory at 10 blocks, 43,200 more per factory each day) and `positions` are not practical
+  there either: run them against a logs endpoint that takes 2,000-block spans. `discover --seed`
+  needs no logs and finds the reference-token pools on such a plan (see
   [Seeded discovery](#seeded-discovery-factory-views-and-archive-state)).
 
 ## Running as a service
@@ -504,7 +545,8 @@ one after the other, so no two steps ever overlap:
 - **discover**, the log scan from the factories' deployment blocks, runs every pass for at most
   `DEPTHWATCH_DISCOVER_BUDGET` (default 15 min; `off` leaves discovery to the seed). It resumes at
   its cursors, so a first full discovery spreads over passes; once it reaches the head a pass costs
-  one request per factory.
+  one request per filter for every 2,000 blocks since the last pass: 5 per filter at the default
+  30 minutes (9,000 blocks of 200 ms).
 - **prune** closes the pass once a day (`prune:lastRunAt` a day old or unset): the retention of
   the [storage model](#storage-model), database only, no budget (a day's snapshots delete in
   seconds).
@@ -567,8 +609,10 @@ default 200 tracked:
   tracked pools every 30 minutes would need about 42 M, more than the free tier, and about 21 M
   hourly.
 - **Volume** sends its `eth_getLogs` to the logs endpoint; on Alchemy it costs only the block
-  headers that time the swaps, a few per pass. Volume on Alchemy alone, at its 10-block ranges,
-  would cost about 40 M units a month: the reason for the second endpoint.
+  headers that find its first blocks and time the swaps, a few per pass. Volume on Alchemy alone,
+  at its 10-block ranges, would read 18,000 to 36,000 blocks per event source an hourly pass (the
+  new hour and the reread one): about 290 M to 580 M units a month for three sources, ten to
+  twenty times the free tier. That is the reason for the second endpoint.
 - **Discovery** and **positions** read logs on the logs endpoint too. Discovery adds one header per
   pass and the metadata of new tokens. Positions add the `positions()` and `ownerOf()` multicalls
   of the tokens touched since the last run: one pass over each manager's history while catching
@@ -576,11 +620,12 @@ default 200 tracked:
   shows them.
 - **The seed** costs about 380,000 units with all six DEXes, once.
 
-The logs endpoint sees about 20 `eth_getLogs` an hour once discovery is current (eight discovery
-filters a pass, a few per event source for hourly volume), against the measured limit of about 5
-requests a second per IP of Base's public RPC. A first full discovery is on the order of 100,000
-requests, 5 to 6 hours of requests at that rate; at 15 minutes a pass it completes in about half a
-day.
+The logs endpoint sees about 110 to 135 `eth_getLogs` an hour once discovery is current (eight
+discovery filters, 5 chunks each, twice an hour; 10 to 18 per event source for hourly volume,
+which reads one to two hours of blocks), against the measured limit of about 5 requests a second
+per IP of Base's public RPC. A first full discovery was about 126,000 requests at a head of
+53.6 M (5 November 2026), about 7 hours of requests at that rate; at 15 minutes a pass it
+completes in about 14 hours.
 
 ## Storage model
 

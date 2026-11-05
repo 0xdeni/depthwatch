@@ -145,9 +145,10 @@ pnpm depthwatch serve            # REST API on :8787, plus the dashboard when ap
 A first seed is about 14,600 requests (about 10 minutes on Alchemy's free tier, some 50 minutes
 at the public endpoint's 5 requests a second); a rerun takes seconds. A plain
 `pnpm depthwatch discover` finds every pool of the indexed factories from their logs instead: from
-the factories' deployment blocks that is about 97,000 `eth_getLogs` at the default 2,000-block
-chunks, more than 5 hours on the public endpoint, and an interrupted scan resumes where it
-stopped.
+the factories' deployment blocks that is about 126,000 `eth_getLogs` at the default 2,000-block
+chunks at a head of 53.6 M (5 November 2026), about 7 hours at the public endpoint's rate, and an
+interrupted scan resumes where it stopped. Since Base's Denim upgrade (2026-11-05) the chain grows
+432,000 blocks a day, so a first scan grows by about 1,700 requests a day.
 
 The CLI reads `./.env` when it exists (variables already set in the environment win) and flags win
 over both; `pnpm depthwatch --help` lists them. `discover`, `snapshot`, `volume`, `positions`,
@@ -214,7 +215,7 @@ a flag with the same meaning. Flags win over the environment, which wins over `.
 | `DEPTHWATCH_TOP_POOLS`          | `--top`                | `200`                  | Pools (ranked by TVL) that get full depth snapshots.                                                                                                                                                                                                                                                                                                                                                                                        |
 | `DEPTHWATCH_KEEP_DAYS`          | `--keep-days`          | `30`                   | `prune`, `run`, `start`: days of snapshots and hourly volume kept (snapshots at least 8). Scorecard samples keep 35 days, alerts 90.                                                                                                                                                                                                                                                                                                        |
 | `DEPTHWATCH_SEED_TOKENS`        | `--seed-token`         | none                   | Token addresses seeded besides the reference tokens, comma-separated (the flag repeats): `discover --seed`, `run --seed` and `start` also ask each DEX for their pairs with the reference tokens and with each other, e.g. a project's own token.                                                                                                                                                                                           |
-| `DEPTHWATCH_LOG_CHUNK`          | `--log-chunk`          | `2000`                 | Blocks per `eth_getLogs` request. Base's public RPC rejects larger spans; raise it on a provider that allows them, or set it to a capped plan's limit (10 on Alchemy's free tier) for small scans such as `volume`.                                                                                                                                                                                                                         |
+| `DEPTHWATCH_LOG_CHUNK`          | `--log-chunk`          | `2000`                 | Blocks per `eth_getLogs` request. Base's public RPC rejects larger spans; raise it on a provider that allows them, or set it to a capped plan's limit (10 on Alchemy's free tier) for short scans (24 h of `volume` is no longer one: [Running on a free RPC](#running-on-a-free-rpc)).                                                                                                                                                     |
 | `DEPTHWATCH_LOG_LEVEL`          | `--log-level`          | `info`                 | `debug`, `info`, `warn`, `error` or `silent`; logs go to stderr.                                                                                                                                                                                                                                                                                                                                                                            |
 | `DEPTHWATCH_PUBLIC_URL`         | `--public-url`         | `http://<host>:<port>` | Public base URL of the deployment: the scorecard link `mm register` prints and the `scorecardUrl` of webhook alerts are built from it.                                                                                                                                                                                                                                                                                                      |
 | `DEPTHWATCH_ADMIN_TOKEN`        | —                      | unset                  | Bearer token that `POST /api/mm` and `DELETE /api/mm/:id` require (`serve`, `start` and `demo`), at least 32 characters (`openssl rand -hex 32`). A bearer secret: send it only over HTTPS, through a reverse proxy that terminates TLS and rate-limits ([docs/DEPLOY.md](docs/DEPLOY.md#a-reverse-proxy-with-tls)). Unset, those routes answer `403 registration disabled` and mandates are registered with `depthwatch mm register` only. |
@@ -240,7 +241,7 @@ multicalls and block headers stay on `DEPTHWATCH_RPC_URL`; with one URL nothing 
   Alchemy's free tier (10 blocks) against the default 2,000, stops the command after the first
   request of each log scan (one per event source for `volume`; `positions` starts no further pool
   after the first refusal) with an error that names the provider's limit and the two fixes: set
-  `DEPTHWATCH_LOGS_RPC_URL` to an endpoint that accepts larger ranges, or, for small scans, set
+  `DEPTHWATCH_LOGS_RPC_URL` to an endpoint that accepts larger ranges, or, for short scans, set
   `DEPTHWATCH_LOG_CHUNK` to the limit. A stated limit of at least 100 blocks gets ranges split to
   it instead (Tenderly's public gateway: 1,000), and a range refused for its result count, or whose
   answer is over viem's 10 MiB, is halved. The reason is read from the JSON-RPC error's message
@@ -251,31 +252,39 @@ multicalls and block headers stay on `DEPTHWATCH_RPC_URL`; with one URL nothing 
   ([Public endpoint limits](https://docs.tenderly.co/node-rpc/overview.md)). Its public endpoints
   are rate-limited, and production use takes a dedicated node
   ([Supported networks](https://docs.tenderly.co/platform/supported-networks.md)). Use it with
-  `DEPTHWATCH_LOG_CHUNK=250`, which keeps busy windows under both limits and under viem's 10 MiB;
-  the Refresh site workflow does when its optional `DEPTHWATCH_LOGS_RPC_URL` secret is unset or
-  fails ([The logs endpoint](docs/DEPLOY.md#the-logs-endpoint)).
-- **On a 10-block plan** (Alchemy's free tier), seed instead of scanning factory logs, then run
-  the other steps as usual, `volume` at the plan's limit:
+  `DEPTHWATCH_LOG_CHUNK=1000`: since Denim a 1,000-block request covers 200 s of chain, less than
+  the 500 s of the 250-block requests that kept the busiest window measured on 2 s blocks
+  (28–29 October 2026) under both limits and under viem's 10 MiB (an inference from block times,
+  not a measurement on 200 ms blocks). `DEPTHWATCH_LOG_CHUNK=250` still suits busy windows of the
+  2 s blocks before Denim. The Refresh site workflow uses 1,000 when its optional
+  `DEPTHWATCH_LOGS_RPC_URL` secret is unset or fails
+  ([The logs endpoint](docs/DEPLOY.md#the-logs-endpoint)).
+- **On a 10-block plan** (Alchemy's free tier), seed instead of scanning factory logs, snapshot and
+  score as usual, and send `volume`'s logs to an endpoint that takes wider ranges:
 
   ```sh
   depthwatch discover --seed              # pools of the reference tokens, no eth_getLogs
   depthwatch snapshot
-  DEPTHWATCH_LOG_CHUNK=10 depthwatch volume
+  DEPTHWATCH_LOGS_RPC_URL=https://mainnet.base.org depthwatch volume   # a host with its own IP
   depthwatch score
   ```
 
-  or `DEPTHWATCH_LOG_CHUNK=10 depthwatch run --seed --once`. At 10 blocks per request, volume costs
-  one `eth_getLogs` per 10 blocks per event source (three for six DEXes: Uniswap v3 and both
-  Slipstreams share one, Aerodrome v2 and Aero v2 another): the first pass reads 24 h, about 13,600
-  requests and about 1.0 M compute units with all six DEXes tracked (the pass measured on 2026-10-28
-  read 13,593 chunks in 15,855 HTTP requests, 2,256 of them answered HTTP 429 and retried, about
-  1.02 M units: [Measured on Base, 2026-10-28](#measured-on-base-2026-10-28)). A later pass starts
-  at the hour that held the previous pass's head, so it rereads up to an hour: about 100 requests
-  per event source five minutes after the last pass, about 300 an hour after. Keeping volume current
-  therefore reads every block at least once per source, at least about 13,000 requests (about 1.0 M
-  units) a day, and a 5-minute loop rereads so much that it costs about ten times that. A looping
-  `run` does not fit a 30 M-unit/month free plan: run single passes when you need fresh numbers (a
-  month covers fewer than 30 daily ones).
+  or the same variable with `depthwatch run --seed --once`. Since Denim (2026-11-05 18:00 UTC) Base
+  makes five blocks a second, 18,000 an hour, and at 10 blocks per request volume costs one
+  `eth_getLogs` per 10 blocks per event source (three for six DEXes: Uniswap v3 and both
+  Slipstreams share one, Aerodrome v2 and Aero v2 another): a first pass over 24 h is 432,000 to
+  450,000 blocks, about 130,000 to 135,000 requests and about 10 M compute units with all six DEXes
+  tracked, ten times the pass measured on 2 s blocks on 2026-10-28 (13,593 chunks in 15,855 HTTP
+  requests, 2,256 of them answered HTTP 429 and retried, about 1.02 M units:
+  [Measured on Base, 2026-10-28](#measured-on-base-2026-10-28)). A later pass starts at the hour
+  that held the previous pass's head, so it rereads up to an hour: up to about 1,950 requests per
+  event source five minutes after the last pass, up to 3,600 an hour after. Keeping volume current
+  therefore reads every block at least once per source: at least 43,200 requests per source and
+  about 130,000 for three a day, about 9.7 M units, so a 30 M-unit free month lasts about three
+  days, and a 5-minute loop rereads so much that it costs about seven times that. On such a plan
+  `volume` fits only short single passes (`DEPTHWATCH_LOG_CHUNK=10 depthwatch volume --hours 1`,
+  or `2`: 1,800 to 5,400 requests per source, and the score's 24 h volume then counts only the
+  hours read), or not at all.
 
   `discover --seed` asks each DEX's factory (StateView for Uniswap v4) for every pair of the
   reference tokens in `packages/chain/src/addresses.ts` and of the tokens given with `--seed-token`
@@ -284,10 +293,10 @@ multicalls and block headers stay on `DEPTHWATCH_RPC_URL`; with one URL nothing 
   seed resumes. A DEX whose factory reads fail does not hold the others back: their pools are
   stored, the failure is logged and the next seed asks that DEX again. On Base on 2026-10-25 that
   was 580 pools in about 10 minutes and 13,399 search requests (some 349,000 compute units, see
-  [Measured on Base](#measured-on-base-2026-10-25)), once; a rerun takes seconds. `positions` is
-  unavailable on such a plan, and pools outside the seeded pairs are only found by the log-based
-  `discover`: both need a logs endpoint that takes 2,000-block spans, such as
-  `https://mainnet.base.org` from a host with its own IP.
+  [Measured on Base](#measured-on-base-2026-10-25)), once; a rerun takes seconds. `positions` and
+  24 h of `volume` are unavailable on such a plan alone, and pools outside the seeded pairs are
+  only found by the log-based `discover`: all three need a logs endpoint that takes 2,000-block
+  spans, such as `https://mainnet.base.org` from a host with its own IP.
   `discover` saves its cursor every 50 chunks, so an interrupted scan resumes where it stopped;
   seeding never moves that cursor.
 
@@ -296,8 +305,9 @@ request counts.
 
 ### Measured on Base, 2026-10-25
 
-One pass of the pipeline ran against Base mainnet on 2026-10-25 through Alchemy's free tier, with
-every HTTP request counted:
+Both passes recorded here ran on Base's 2 s blocks, before Denim's 200 ms blocks (2026-11-05 18:00
+UTC): their `volume` figures count 2 s blocks, a tenth of what 24 h holds now. The first ran
+against Base mainnet on 2026-10-25 through Alchemy's free tier, with every HTTP request counted:
 - **`discover --seed`**: 2,782 candidate pairs gave 580 pools (Uniswap v3 227, Uniswap v4 165,
   Aerodrome v2 87, Slipstream 101) at head 53,061,869, in 616 s. Dating them took 13,399 search
   requests; 15,388 HTTP requests in all, 1,968 of them answered HTTP 429 and retried; about
@@ -307,9 +317,9 @@ every HTTP request counted:
 - **`volume`** at 10-block chunks over 24 h (blocks 53,016,926 to 53,062,226): 492 pools, 267,572
   swaps in 3,501 hourly buckets, in 36.5 minutes; 22,323 HTTP requests, 18,131 served and 4,192
   answered HTTP 429 and retried, about 1.36 M compute units. That pass read four scans, one per
-  DEX; Uniswap v3 and Slipstream have shared one filter since, so the same pass is now about
-  13,600 requests and about 1 M units
-  ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#rate-limits-range-limits-and-free-plans)).
+  DEX; Uniswap v3 and Slipstream have shared one filter since, so on 2 s blocks the same pass
+  would have been about 13,600 requests and about 1 M units, as the 2026-10-28 pass below found;
+  on 200 ms blocks it is ten times that ([Running on a free RPC](#running-on-a-free-rpc)).
 - **Quoter cross-checks** at block 53,063,332, $10k and $100k each way, matched the stored average
   prices on Uniswap v3, Slipstream and Aerodrome v2 pools; on Uniswap v4 they found the protocol
   fee, which the swap walk has charged since
@@ -323,7 +333,7 @@ endpoint that takes 2,000-block spans), no 7-day run and no swap cross-check
 ### Measured on Base, 2026-10-28
 
 A second pass ran on 2026-10-28, after Aerodrome's move to Aero, on all six DEXes through the same
-free tier, again with every HTTP request counted:
+free tier, again with every HTTP request counted and on 2 s blocks:
 - **`discover --seed`**: 4,060 candidate pairs gave 644 pools (Uniswap v3 235, Uniswap v4 166,
   Aerodrome v2 87, Aerodrome Slipstream 101, Aero v2 21, Aero Slipstream 34) at head 53,218,002,
   in 631 s; 15,135 HTTP requests, 490 of them answered HTTP 429 and retried; about 381,000
@@ -530,8 +540,8 @@ acceptance criteria and explicit non-goals are in [docs/ROADMAP.md](docs/ROADMAP
 3. **Mandate escrow (only once 1 and 2 have users).** Onchain market-making agreements whose fees
    release against verified KPIs.
 
-Flashblocks (sub-block preconfirmations, live on Base mainnet since July 2025) are a roadmap item
-for near-real-time depth.
+Base's Denim upgrade replaced Flashblocks on 2026-11-05: every block is now 200 ms. Depth per
+200 ms block for the top pools is a roadmap item ([docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## Contributing
 

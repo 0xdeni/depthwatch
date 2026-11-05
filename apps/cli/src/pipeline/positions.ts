@@ -38,9 +38,9 @@ import { errorMessage } from '../log.js'
 import { type PipelineContext, StepBudget, settleConcurrent, syncKeys } from './context.js'
 
 /**
- * Blocks per catch-up window of `depthwatch start`, a request budget: 250 `eth_getLogs` per
- * position manager at 2 000-block chunks. That is 11.6 days of Base's 2 s blocks (before Denim,
- * block 53 556 127) and about 28 h of its 200 ms blocks since.
+ * Blocks per catch-up window of `depthwatch start`, a request budget: 250 requests at 2 000-block
+ * chunks. That is 11.6 days of Base's 2 s blocks (before Denim, block 53 556 127) and about 28 h
+ * of its 200 ms blocks since.
  */
 export const POSITIONS_WINDOW_BLOCKS = 500_000n
 

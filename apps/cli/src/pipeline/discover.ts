@@ -25,9 +25,10 @@ import { type PipelineContext, StepBudget, syncKeys, throwIfStopped } from './co
 /**
  * Log chunks per window: 100 000 blocks at the CLI's 2 000-block chunks (about 2.3 days of Base's
  * 2 s blocks before Denim, block 53 556 127; 5.6 h of its 200 ms blocks since), so 50
- * `eth_getLogs` per factory per window, typically under a minute against a public endpoint (as
- * measured on 2 s blocks). A failure loses at most one window; a first scan of Uniswap v3's
- * 52 M blocks to Denim's activation logs about 520 windows, and every day since adds 4.32 more.
+ * `eth_getLogs` per factory per window, typically under a minute against a public endpoint (a
+ * figure from 2 s blocks, before Denim). A failure loses at most one window; a first scan of
+ * Uniswap v3's 52 M blocks to Denim's activation logs about 520 windows, and every day since adds
+ * 4.32 more.
  */
 export const DISCOVER_WINDOW_CHUNKS = 50
 

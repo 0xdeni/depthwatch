@@ -12,9 +12,12 @@
  *
  * Every target exists at `upperBound` (the seed block) and cannot exist before its `lowerBound`
  * (its factory's deployment block), so at most ⌈log2(upperBound − lowerBound + 1)⌉ probes find
- * it: 26 for a pool between Uniswap v3's start (1,371,680) and a head near 53 M. The searches run in lockstep
- * rounds, one probe per open target per round: v4 probes at the same block share one multicall,
- * contract probes are one `eth_getCode` each, and at most `concurrency` requests are in flight.
+ * it: about 26 to 28, the log2 of the height. From Uniswap v3's start (1,371,680) to a head of up
+ * to 68,480,543 it is 26; since Denim (block 53,556,127) the head grows 432,000 blocks a day, so
+ * it is 27 from about 2026-12-10 and 28 from about 2027-05-14 (a head past 135,589,407). The
+ * searches run in lockstep rounds, one probe per open target per round: v4 probes at the same
+ * block share one multicall, contract probes are one `eth_getCode` each, and at most
+ * `concurrency` requests are in flight.
  * A rate-limited or transient probe is retried with backoff (internal/backoff.ts); any other
  * failure stops the search: no new probe starts and the error is thrown.
  */

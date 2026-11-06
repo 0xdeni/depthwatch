@@ -1,8 +1,9 @@
 /**
- * Info-level progress for long steps (the volume step's log scans run for half an hour on a
- * 10-block `eth_getLogs` plan): at most one line every `intervalMs` (30 s by default), with
- * done/total, percent, elapsed time, a linear ETA and the caller's fields. The clock is
- * injectable (milliseconds) so tests drive the cadence without waiting.
+ * Info-level progress for long steps (a volume log scan of 24 h on a 10-block `eth_getLogs` plan
+ * took about half an hour on Base's 2 s blocks and is ten times the requests on the 200 ms blocks
+ * since Denim): at most one line every `intervalMs` (30 s by default), with done/total, percent,
+ * elapsed time, a linear ETA and the caller's fields. The clock is injectable (milliseconds) so
+ * tests drive the cadence without waiting.
  */
 import type { LogFields, Logger } from '../log.js'
 
@@ -53,6 +54,12 @@ export function chunkProgress(
   return `${chunks}/${chunks + left}`
 }
 
+/** `done` of `total` to one decimal; 99.9 % at most until done (a last chunk may be tiny). */
+function percent(done: number, total: number): string {
+  const pct = (100 * Math.min(done, total)) / total
+  return `${(done < total ? Math.min(pct, 99.9) : pct).toFixed(1)}%`
+}
+
 export function createProgressReporter(opts: ProgressOptions): ProgressReporter {
   const clock = opts.clock ?? Date.now
   const interval = opts.intervalMs ?? PROGRESS_INTERVAL_MS
@@ -67,10 +74,7 @@ export function createProgressReporter(opts: ProgressOptions): ProgressReporter 
       const eta = done > 0 && done < opts.total ? (elapsed * (opts.total - done)) / done : null
       opts.log.info(opts.message, {
         [opts.unit ?? 'done']: `${done}/${opts.total}`,
-        pct:
-          opts.total > 0
-            ? `${((100 * Math.min(done, opts.total)) / opts.total).toFixed(1)}%`
-            : null,
+        pct: opts.total > 0 ? percent(done, opts.total) : null,
         elapsed: formatDuration(elapsed),
         eta: done >= opts.total ? '0s' : formatDuration(eta),
         ...fields,

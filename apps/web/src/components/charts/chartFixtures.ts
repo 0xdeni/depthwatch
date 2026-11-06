@@ -129,6 +129,8 @@ export const SNAPSHOT: PoolSnapshotDto = {
 /**
  * A scorecard series sampled every 2 h from `start`: `pattern` holds one character per sample,
  * `b` breached on both sides, `s` breached on the sell side only, `o` within KPI, `u` unpriced.
+ * Samples are 3,600 blocks apart: 2 h of 2 s blocks, Base's spacing before Denim (the default
+ * `start`, 2026-10-16, is before it; 2 h are 36,000 blocks of 200 ms since).
  */
 export function samples(pattern: string, start = 1_792_108_800, kpi = 50_000): MmSampleDto[] {
   return [...pattern].map((c, i) => {

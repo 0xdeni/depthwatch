@@ -2,6 +2,9 @@
  * Types and constants of the synthetic Base world behind `createSyntheticFixture`: eight pools
  * with realistic prices (ETH 2 500, cbBTC 65 000, both AEROs 1.2), a few LP positions each,
  * reserves and ~24 h of swaps. Everything is derived deterministically from `SyntheticOptions`.
+ * Its clock keeps the 2 s blocks Base made before Denim (block 53 556 127, 2026-11-05 18:00:01
+ * UTC; 200 ms blocks since): the default anchor (2026-10-23) lies before it, and the world's block
+ * numbers are close to, not equal to, Base's own schedule.
  *
  * Two flavours: the *static* world (no epoch: the state at `latestBlock`, as it always was) and
  * the *time-varying* world (`epochTimestamp` / `epochBlock` set: the state at that moment, with
@@ -30,12 +33,12 @@ export interface SyntheticOptions {
   seed?: number
 }
 
-/** ≈ Base mainnet height / time on 2026-10-23 00:00 UTC. */
+/** ≈ Base mainnet height / time on 2026-10-23 00:00 UTC, before Denim's 200 ms blocks. */
 export const SYNTHETIC_DEFAULTS = Object.freeze({
   latestBlock: 52_950_000n,
   latestTimestamp: 1_792_713_600,
   secondsPerBlock: 2,
-  /** 24 h of 2 s blocks. */
+  /** 24 h of 2 s blocks (Base's spacing before Denim; 432 000 blocks a day since). */
   swapWindowBlocks: 43_200n,
   /** Seed of the time-varying world. */
   seed: 1,

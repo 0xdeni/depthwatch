@@ -69,8 +69,9 @@ export function sampleMark(
 /**
  * Unique React keys for a list of samples: `block:timestamp`, with an occurrence suffix (`:1`,
  * `:2`, …) for samples that share both. A wire sample has no id, and a mandate can hold several
- * samples with one timestamp (a `mm sample` and a `snapshot` in the same block; storage orders
- * such ties by id), so the timestamp alone is not a key.
+ * samples with one timestamp (a `mm sample` and a `snapshot` in the same block, or, since Denim's
+ * 200 ms blocks, in different blocks of one second: about five blocks share each whole-second
+ * timestamp; storage orders such ties by id), so the timestamp alone is not a key.
  */
 export function sampleKeys(
   samples: readonly Pick<MmSampleDto, 'blockNumber' | 'timestamp'>[],

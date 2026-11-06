@@ -123,7 +123,8 @@ Options
   --public-url <url>  public base URL of this deployment for scorecard links
                       (DEPTHWATCH_PUBLIC_URL, default http://<host>:<port>)
   --log-chunk <n>     blocks per eth_getLogs (DEPTHWATCH_LOG_CHUNK, default ${DEFAULTS.logChunkSize}); on a plan
-                      that caps log ranges, its limit (e.g. 10) for small scans such as volume
+                      that caps log ranges, its limit (e.g. 10) for short scans only, such as
+                      volume --hours 1 (24 h of volume at 10 is 43,200+ requests per source)
   --log-level <lvl>   debug|info|warn|error|silent (DEPTHWATCH_LOG_LEVEL, default ${DEFAULTS.logLevel})
   --port <n>          DEPTHWATCH_PORT, else PORT (default ${DEFAULTS.port}); --host (DEPTHWATCH_HOST, default ${DEFAULTS.hostname})
   --top <n>           DEPTHWATCH_TOP_POOLS (default ${DEFAULTS.topPools})

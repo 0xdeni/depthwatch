@@ -7,7 +7,8 @@
  * the main endpoint), with range splitting (see internal/logs.ts). Every request, on either
  * client, is retried on rate limits and transient failures by one bounded backoff
  * (internal/backoff.ts).
- * Swap timestamps come from a few anchor headers on the main client (internal/timestamps.ts).
+ * Swap timestamps follow the block schedule once a few headers on the main client confirm it, else
+ * anchor headers (internal/timestamps.ts).
  */
 import {
   type Address,
@@ -24,12 +25,14 @@ import { createPublicClient, http, type Transport } from 'viem'
 import { base } from 'viem/chains'
 import { ADAPTERS } from './adapters/index.js'
 import { type ChainAddresses, resolveAddresses } from './addresses.js'
-import { type BackoffEvent, callWithBackoff } from './internal/backoff.js'
+import type { BackoffEvent } from './internal/backoff.js'
+import { blockAtOrAfter, blockReads } from './internal/blocks.js'
 import type { LogRetryPolicy, ReaderContext } from './internal/context.js'
 import { type ReadSwapsOptions, readSwapScans } from './internal/swapScans.js'
 import { DEFAULT_TIMESTAMP_SPAN, fillTimestamps } from './internal/timestamps.js'
 import { readTokens as readTokensWithCache } from './internal/tokens.js'
 import type { PoolOverview } from './internal/types.js'
+import { BASE_BLOCK_SCHEDULE, type BlockSchedule } from './schedule.js'
 import { type SeedPoolsOptions, type SeedResult, seedPools } from './seed/index.js'
 import {
   abortableSleep,
@@ -38,6 +41,7 @@ import {
   type RpcRequestEvent,
 } from './transport/observed.js'
 
+export { TIMESTAMP_CACHE_LIMIT } from './internal/blocks.js'
 export type { LogRetryEvent, LogRetryPolicy } from './internal/context.js'
 export {
   type ReadSwapsOptions,
@@ -60,8 +64,10 @@ export const DEFAULT_MAX_CONCURRENT_MULTICALLS = 4
 /**
  * Smallest span a rejected `eth_getLogs` range is split to (or `logChunkSize`, when that is
  * smaller). Below it the reader throws `LogRangeLimitError`: at 100 blocks a first discovery of
- * Base (~50 M blocks per factory) would already take ~500 000 requests per factory, so a smaller
- * limit means a different endpoint, or a chunk size set to the provider's limit for small scans.
+ * Base (about 52 M blocks for Uniswap v3's factory at Denim's activation, block 53 556 127) would
+ * already take about 520 000 requests per factory, and the chain has grown 432 000 blocks a day
+ * since (200 ms blocks), 4 320 more requests per factory a day, so a smaller limit means a
+ * different endpoint, or a chunk size set to the provider's limit for short scans.
  */
 export const DEFAULT_MIN_LOG_RANGE = 100n
 /**
@@ -76,7 +82,9 @@ export const DEFAULT_LOG_RETRY: Readonly<
  * `eth_getLogs` over a URL (`logsRpcUrl`, or `rpcUrl` when no logs endpoint is given) gets its own
  * HTTP transport: no viem-level retries (the backoff above owns them, so a rate-limited endpoint is
  * not hit again at once) and a 30 s timeout, since a 2 000-block `eth_getLogs` on a busy public
- * node can take longer than viem's 10 s default.
+ * node can take longer than viem's 10 s default. The reasoning dates from Base's 2 s blocks, when
+ * 2 000 blocks were 67 minutes of chain; since Denim they are 400 s (200 ms blocks), but a
+ * backfill still reads the older ranges and a larger `logChunkSize` spans more.
  */
 export const LOGS_HTTP_TIMEOUT_MS = 30_000
 /**
@@ -92,6 +100,11 @@ export interface ChainReader {
   readonly addresses: ChainAddresses
   getLatestBlock(): Promise<{ number: bigint; timestamp: number }>
   getBlockTimestamp(blockNumber: bigint): Promise<number>
+  /**
+   * First block ≤ `toBlock` whose timestamp is ≥ `timestamp` (Unix seconds), else `toBlock + 1n`:
+   * the schedule's block once two headers confirm it, else a binary search (internal/blocks.ts).
+   */
+  blockAtOrAfter(timestamp: number, toBlock: bigint): Promise<bigint>
   /** Factory/PoolManager log scan in chunks; token metadata resolved and cached. */
   discoverPools(dex: Dex, fromBlock: bigint, toBlock: bigint): Promise<PoolMeta[]>
   /**
@@ -118,11 +131,10 @@ export interface ChainReader {
   /** Positions touched in the range, with current liquidity/owner. Aerodrome v2 and Aero v2: []. */
   readPositions(pool: PoolMeta, opts: { fromBlock: bigint; toBlock: bigint }): Promise<Position[]>
   /**
-   * Swap events with timestamps interpolated between anchor headers every `timestampSpan` blocks,
-   * independent of the log chunk size (see internal/timestamps.ts). One log scan per `Swap` event
-   * source (Uniswap v3 and both Slipstreams share one filter, Aerodrome v2 and Aero v2 another;
-   * see internal/swapScans.ts);
-   * `onProgress` hears every chunk and backoff of them.
+   * Swap events, timed by the block schedule once headers confirm it, else between anchor headers
+   * every `timestampSpan` blocks (internal/timestamps.ts). One log scan per `Swap` event source
+   * (Uniswap v3 and both Slipstreams share one filter, Aerodrome v2 and Aero v2 another; see
+   * internal/swapScans.ts); `onProgress` hears every chunk and backoff of them.
    */
   readSwaps(
     pools: PoolMeta[],
@@ -189,6 +201,8 @@ export interface CreateChainReaderOptions {
   maxConcurrentMulticalls?: number
   /** Blocks between swap-timestamp anchors (default 10 000, see DEFAULT_TIMESTAMP_SPAN). */
   timestampSpan?: number | bigint
+  /** Block times once headers confirm them (default BASE_BLOCK_SCHEDULE; null: headers only). */
+  blockSchedule?: BlockSchedule | null
   /**
    * Hears every JSON-RPC request as it is sent (each retry again), with its endpoint: `logs` for
    * `eth_getLogs`, `main` for everything else (transport/observed.ts).
@@ -258,6 +272,7 @@ export function createChainReader(opts: CreateChainReaderOptions = {}): ChainRea
       ? undefined
       : observeTransport(logsInner, { endpoint: 'logs', onRequest, signal })
   const timestampSpan = BigInt(opts.timestampSpan ?? DEFAULT_TIMESTAMP_SPAN)
+  const schedule = opts.blockSchedule === undefined ? BASE_BLOCK_SCHEDULE : opts.blockSchedule
   const retrySleep = opts.logRetry?.sleep
   const ctx: ReaderContext = {
     client,
@@ -291,26 +306,7 @@ export function createChainReader(opts: CreateChainReaderOptions = {}): ChainRea
     throw new RangeError('maxConcurrentMulticalls must be a positive integer')
   if (timestampSpan <= 0n) throw new RangeError('timestampSpan must be positive')
 
-  async function getLatestBlock(): Promise<{ number: bigint; timestamp: number }> {
-    const block = await callWithBackoff(ctx, 'eth_getBlockByNumber latest', () =>
-      client.getBlock({ blockTag: 'latest' }),
-    )
-    if (block.number === null) throw new Error('latest block has no number')
-    const timestamp = Number(block.timestamp)
-    ctx.timestampCache.set(block.number, timestamp)
-    return { number: block.number, timestamp }
-  }
-
-  async function getBlockTimestamp(blockNumber: bigint): Promise<number> {
-    const cached = ctx.timestampCache.get(blockNumber)
-    if (cached !== undefined) return cached
-    const block = await callWithBackoff(ctx, `eth_getBlockByNumber ${blockNumber}`, () =>
-      client.getBlock({ blockNumber }),
-    )
-    const timestamp = Number(block.timestamp)
-    ctx.timestampCache.set(blockNumber, timestamp)
-    return timestamp
-  }
+  const { getLatestBlock, getBlockTimestamp } = blockReads(ctx)
 
   async function resolveBlock(blockNumber: bigint | undefined): Promise<bigint> {
     return blockNumber ?? (await getLatestBlock()).number
@@ -321,6 +317,8 @@ export function createChainReader(opts: CreateChainReaderOptions = {}): ChainRea
     addresses,
     getLatestBlock,
     getBlockTimestamp,
+    blockAtOrAfter: (timestamp, toBlock) =>
+      blockAtOrAfter(timestamp, toBlock, getBlockTimestamp, schedule),
     discoverPools: (dex, fromBlock, toBlock) => ADAPTERS[dex].discover(ctx, fromBlock, toBlock),
     async seedPools(seedOpts = {}) {
       return seedPools(ctx, await resolveBlock(seedOpts.blockNumber), seedOpts)
@@ -368,7 +366,7 @@ export function createChainReader(opts: CreateChainReaderOptions = {}): ChainRea
       const events = (await readSwapScans(ctx, pools, fromBlock, toBlock, swapOpts)).sort(
         compareEvents,
       )
-      await fillTimestamps(events, toBlock, timestampSpan, getBlockTimestamp)
+      await fillTimestamps(events, toBlock, timestampSpan, getBlockTimestamp, schedule)
       return events
     },
     readLpHoldings(pool, addresses, blockNumber) {

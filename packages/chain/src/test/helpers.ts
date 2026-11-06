@@ -94,7 +94,10 @@ export function registerToken(
   registerCall(fixture, { to, abi: erc20Abi, functionName: 'decimals', result: token.decimals })
 }
 
-/** A fixture with the four test tokens and a 2 s clock ending at `latestBlock`. */
+/**
+ * A fixture with the four test tokens and a 2 s clock ending at `latestBlock`: Base's spacing
+ * before Denim, not Base's schedule (`setClock(fixture, { latestBlock, schedule })` gives that).
+ */
 export function newFixture(latestBlock = 10_000n, latestTimestamp = 1_800_000_000): Fixture {
   const fixture = createFixture()
   setClock(fixture, { latestBlock, latestTimestamp })

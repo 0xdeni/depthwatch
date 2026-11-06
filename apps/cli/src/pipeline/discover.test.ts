@@ -256,8 +256,9 @@ describe('discoverStep: unusable logs endpoint', () => {
       `eth_getLogs: the logs endpoint accepts at most 10 blocks per request (provider: "${ALCHEMY_FREE}"), ` +
         'fewer than the 100-block chunks configured, and the reader does not split ranges below ' +
         '100 blocks. Either set DEPTHWATCH_LOGS_RPC_URL (or --logs-rpc-url) to an endpoint that ' +
-        'accepts larger eth_getLogs ranges, for example https://mainnet.base.org, or, for small ' +
-        "scans such as 24 h volume, set DEPTHWATCH_LOG_CHUNK (or --log-chunk) to the provider's " +
+        'accepts larger eth_getLogs ranges, for example https://mainnet.base.org, or, for short ' +
+        "scans (24 h of volume is 432,000 blocks of Base's 200 ms blocks: 43,200 requests per " +
+        "event source at 10), set DEPTHWATCH_LOG_CHUNK (or --log-chunk) to the provider's " +
         'limit, 10.',
     )
 

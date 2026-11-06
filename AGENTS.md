@@ -100,6 +100,9 @@ static copy at <https://depthwatch.pages.dev> about every three hours from `main
    single quotes, no semicolons. Run `pnpm lint:fix` rather than formatting by hand.
 10. **Never extrapolate pool state**, keep files under about 400 lines, no TODO stubs, no secrets
     (`.env` is git-ignored).
+11. **A block count is not a duration.** Base's block time changed at Denim (2 s, then 200 ms):
+    find blocks by time with `ChainReader.blockAtOrAfter` and time blocks with `getBlockTimestamp`
+    or the block schedule (`packages/chain/src/schedule.ts`), never with a blocks-per-hour constant.
 
 ## Base contract addresses
 
@@ -126,22 +129,30 @@ Depthwatch supports Base Mainnet only (`BASE_CHAIN_ID = 8453` in core).
 | Base Mainnet | `8453`   | `https://mainnet.base.org` | `https://basescan.org`         |
 | Base Sepolia | `84532`  | `https://sepolia.base.org` | `https://sepolia.basescan.org` |
 
-The public mainnet RPC is rate-limited and rejects large `eth_getLogs` spans, hence the default
+Base Mainnet made one block every 2 s until block 53,556,127; from Denim's activation there
+(2026-11-05 18:00:01 UTC) it makes five a second, 200 ms apart, never skipping a slot (18,000 an
+hour), and Flashblocks stopped. Header `timestamp`s stay whole seconds, so about five blocks share
+one. `BASE_BLOCK_SCHEDULE` (`packages/chain/src/schedule.ts`) records both eras, checked on chain in
+[docs/research/base-contracts.md §2.13](docs/research/base-contracts.md#213-block-schedule-denims-200-ms-blocks-2026-11-05).
+
+The public mainnet RPC is rate-limited and rejects large `eth_getLogs` spans (Base's `eth_getLogs`
+page still says to keep ranges under 2,000 blocks, 400 s of chain since Denim), hence the default
 `DEPTHWATCH_LOG_CHUNK` of 2000 blocks. Rate limits and gateway failures are retried with capped
 backoff, then fail as an ordinary `RetryExhaustedError`; a logs endpoint that cannot serve the chunk
 (Alchemy's free tier: 10 blocks) stops with `LogRangeLimitError` after the first request of each log
 scan (one per DEX for `volume`) rather than crawling, and works with `DEPTHWATCH_LOG_CHUNK=10` for
-small scans such as `volume`; `discover --seed` finds the reference-token pools from factory views
-without any `eth_getLogs` (README "Running on a free RPC"). `classifyLogsError`
-(`packages/chain/src/internal/logErrors.ts`) reads the provider's text from the JSON-RPC error's
-message and, for a -32602 only, its `data` (Tenderly's public gateway and Pocket answer -32602
-"invalid params" with the reason only in `data`): a stated maximum (`statedMax`; Tenderly: 1,000
-blocks) at or above the floor splits ranges to it, and a refused result count or viem's
-`ResponseBodyTooLargeError` (an answer over 10 MiB) halves them. The Refresh site workflow reads
-logs from the optional `DEPTHWATCH_LOGS_RPC_URL` secret, then from Tenderly's public gateway at
-250-block chunks ([docs/DEPLOY.md](docs/DEPLOY.md#the-logs-endpoint)). Base Sepolia is not indexed;
-if testnet settings are ever needed, take them from Base's Sepolia documentation, not from
-third-party chain lists.
+short scans only (24 h of `volume` is at least 43,200 requests per event source at 10 since Denim);
+`discover --seed` finds the reference-token pools from factory views without any `eth_getLogs`
+(README "Running on a free RPC"). `classifyLogsError` (`packages/chain/src/internal/logErrors.ts`)
+reads the provider's text from the JSON-RPC error's message and, for a -32602 only, its `data`
+(Tenderly's public gateway and Pocket answer -32602 "invalid params" with the reason only in
+`data`): a stated maximum (`statedMax`; Tenderly: 1,000 blocks) at or above the floor splits ranges
+to it, and a refused result count or viem's `ResponseBodyTooLargeError` (an answer over 10 MiB)
+halves them. The Refresh site workflow reads logs from the optional `DEPTHWATCH_LOGS_RPC_URL`
+secret, then from Tenderly's public gateway at 1,000-block chunks
+([docs/DEPLOY.md](docs/DEPLOY.md#the-logs-endpoint)). Base Sepolia is not indexed; if testnet
+settings are ever needed, take them from Base's Sepolia documentation, not from third-party chain
+lists.
 
 ## Where to look things up
 

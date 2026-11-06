@@ -38,7 +38,10 @@ import {
   type SyntheticWorld,
 } from './syntheticTypes.js'
 
-/** Blocks per hour (2 s blocks) and the in-hour offsets swaps may use (1 … 1798). */
+/**
+ * Blocks per hour of the synthetic world's 2 s blocks (Base's before Denim; 18 000 an hour since)
+ * and the in-hour offsets swaps may use (1 … 1798).
+ */
 const BLOCKS_PER_HOUR = HOUR_SECONDS / 2
 const SWAP_OFFSETS = BLOCKS_PER_HOUR - 2
 

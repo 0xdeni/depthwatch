@@ -179,7 +179,9 @@ as a different pool, not as a change to the old one.
   `scoredAt` is when its score was computed; `latestSnapshotAt` / `latestBlock` in
   `GET /api/health` are the newest snapshot of any pool and `snapshotAgeSeconds` its age by the
   server's clock, and `latestScoredAt` is the newest score (a pass writes it after its
-  snapshots). Compare them with the current time before relying on a number.
+  snapshots). Compare them with the current time before relying on a number. A gap in block
+  numbers is not a duration: Base made a block every 2 s until block 53,556,127 and makes one
+  every 200 ms since (2026-11-05 18:00:01 UTC), so compare timestamps.
 - **`null` means not known (yet), never zero.**
 - **Which pools appear**: the pipeline tracks the top pools by TVL (200 unless the operator set
   `--top` / `DEPTHWATCH_TOP_POOLS`; Uniswap v4 pools are ranked by ±2 % depth instead), plus
@@ -539,9 +541,9 @@ Say the trade is: buy token X with N USD worth of token Y on Base.
    `token1Usd` come from Depthwatch's own price graph (`GET /api/tokens/:address` shows `via`).
    A pool with `latest.priceDeviationBps` of 500 or more quotes a stale price: skip it.
 8. **Verify onchain, then execute elsewhere.** Every number describes the pool at
-   `latest.blockNumber`, and the pool's state can change with every Base block. Before trading,
-   read the pool's current state or a DEX quote through an RPC endpoint, and set a slippage
-   limit from that, not from Depthwatch.
+   `latest.blockNumber`, and the pool's state can change with every Base block, five a second (a
+   snapshot 30 minutes old is 9,000 blocks behind). Before trading, read the pool's current state
+   or a DEX quote through an RPC endpoint, and set a slippage limit from that, not from Depthwatch.
 
 ## Errors
 

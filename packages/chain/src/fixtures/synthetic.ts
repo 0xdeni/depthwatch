@@ -4,7 +4,8 @@
  *
  * Contents: token metadata, factory/PoolManager creation logs, state at `latest` and at
  * `latestBlock`, ~24 h of Swap logs per pool, NFPM/PositionManager position logs and reads, and a
- * block clock (2 s per block) so any block ≤ latest resolves. With an epoch, the same contents
+ * block clock (2 s per block, Base's spacing before Denim; the default anchor is before block
+ * 53 556 127) so any block ≤ latest resolves. With an epoch, the same contents
  * describe the time-varying world at that moment (syntheticTime.ts, syntheticHistory.ts).
  */
 import { type Address, NATIVE_ETH } from '@depthwatch/core'

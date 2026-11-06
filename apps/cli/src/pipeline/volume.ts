@@ -1,18 +1,20 @@
 /**
  * `volume`: Swap events of every tracked pool over the last N hours, bucketed per hour.
  *
- * Blocks ≈ hours × 1 800 on Base (2 s blocks); a first scan starts one extra hour early so the
- * first complete hour bucket is never cut short, and swaps before the first whole hour are dropped.
- * USD volume counts |amount| of one priced side per swap — the USD stablecoin side when there is
- * one, else token1 (the quote), else token0 — valued with the prices the snapshot step stored.
+ * The window runs from the first block of the hour that held the time N hours before the head
+ * (`ChainReader.blockAtOrAfter`: Base's block schedule confirmed by headers, so 2 s blocks before
+ * Denim and 200 ms blocks after it are both exact; a day is 432 000 blocks of 200 ms), so its
+ * first hour bucket is complete and nothing before it is read. USD volume counts |amount| of one
+ * priced side per swap — the USD stablecoin side when there is one, else token1 (the quote), else
+ * token0 — valued with the prices the snapshot step stored.
  *
  * Incremental: each pool's coverage (`volume:<pool>:lastBlock`, the last block in its buckets, and
  * `volume:<pool>:fromTs`, the first hour from which they are complete) lets the next pass start at
- * the first block of the hour that holds `lastBlock` (exact on Base's 2 s blocks, less
- * VOLUME_JITTER_BLOCKS): that hour, cut short by the last pass, comes back complete, the hours
- * before it are kept as stored, and a pass costs the blocks since that hour instead of the whole
- * window. A pool without coverage of the window (newly tracked, `--hours` wider than before, or
- * coverage older than the window) gets the whole window. Each log scan (one per `Swap` event
+ * the first block of the hour that holds `lastBlock` (its header's hour, then `blockAtOrAfter`):
+ * that hour, cut short by the last pass, comes back complete, the hours before it are kept as
+ * stored, and a pass costs the blocks since that hour instead of the whole window. A pool without
+ * coverage of the window (newly tracked, `--hours` wider than before, or coverage older than the
+ * window) gets the whole window. Each log scan (one per `Swap` event
  * source: Uniswap v3 and both Slipstreams share one, Aerodrome v2 and Aero v2 another) is read
  * once, from the earliest start of its pools, since a log request costs the same for one pool or
  * many. The kept buckets of the window are revalued from their token totals at the current
@@ -23,23 +25,29 @@
  */
 import { type SwapScanProgress, swapScanGroups, swapScanOf } from '@depthwatch/chain'
 import type { Address, Dex, PoolMeta, SwapEvent, VolumeBucket } from '@depthwatch/core'
-import { maxBigint, minBigint, rawToHuman } from '@depthwatch/core'
+import { minBigint, rawToHuman } from '@depthwatch/core'
 import type { Database } from '@depthwatch/db'
-import {
-  BLOCKS_PER_HOUR,
-  HOUR_SECONDS,
-  type PipelineContext,
-  syncKeys,
-  throwIfStopped,
-} from './context.js'
+import { HOUR_SECONDS, type PipelineContext, syncKeys, throwIfStopped } from './context.js'
 import { chunkProgress, createProgressReporter } from './progress.js'
+import {
+  type CoverageHour,
+  coverageHour,
+  coverageOf,
+  hourStartOf,
+  planVolumeScan,
+  VOLUME_WINDOWS_BY_TIME,
+  type VolumeScan,
+} from './volumePlan.js'
 
-/** Blocks read before the first block of a rescanned hour: slack for block-time jitter. */
-export const VOLUME_JITTER_BLOCKS = 300n
-/** Extra blocks scanned before the window (one hour of alignment slack plus block-time jitter). */
-export const VOLUME_MARGIN_BLOCKS = BLOCKS_PER_HOUR + VOLUME_JITTER_BLOCKS
-/** Base's block time in seconds (3 600 s / BLOCKS_PER_HOUR). */
-const BLOCK_SECONDS = BigInt(HOUR_SECONDS) / BLOCKS_PER_HOUR
+export {
+  type CoverageHour,
+  coverageHour,
+  hourStartOf,
+  planVolumeScan,
+  VOLUME_WINDOWS_BY_TIME,
+  type VolumeCoverage,
+  type VolumeScan,
+} from './volumePlan.js'
 
 export interface VolumeOptions {
   hours?: number
@@ -100,10 +108,6 @@ function earliest(values: readonly number[], fallback: number): number {
   let min: number | undefined
   for (const value of values) if (min === undefined || value < min) min = value
   return min ?? fallback
-}
-
-export function hourStartOf(timestamp: number): number {
-  return Math.floor(timestamp / HOUR_SECONDS) * HOUR_SECONDS
 }
 
 const abs = (x: bigint): bigint => (x < 0n ? -x : x)
@@ -171,62 +175,6 @@ export function bucketSwaps(
   return { buckets: sorted, dropped }
 }
 
-/** What one pool's buckets hold: blocks up to `lastBlock`, complete from hour `fromTs` on. */
-export interface VolumeCoverage {
-  lastBlock: bigint
-  fromTs: number
-}
-
-/** Where one pool's scan starts, and the hours it rewrites. */
-export interface VolumeScan {
-  /** First block to read. */
-  fromBlock: bigint
-  /** Swaps before this hour are dropped: the stored buckets of earlier hours are complete. */
-  keepFromTs: number
-  /** First hour of the pool's complete buckets once this scan is stored. */
-  coveredFromTs: number
-}
-
-export interface Head {
-  number: bigint
-  timestamp: number
-}
-
-/**
- * The scan of one pool for the window `{ fromBlock, fromTs }` (see the header): the whole window,
- * or, when `coverage` reaches back to the window's first hour, from the hour of its `lastBlock`.
- */
-export function planVolumeScan(
-  window: { fromBlock: bigint; fromTs: number },
-  head: Head,
-  coverage: VolumeCoverage | undefined,
-): VolumeScan {
-  const whole = {
-    fromBlock: window.fromBlock,
-    keepFromTs: window.fromTs,
-    coveredFromTs: window.fromTs,
-  }
-  if (coverage === undefined || coverage.fromTs > window.fromTs) return whole
-  const last = minBigint(coverage.lastBlock, head.number)
-  const headTs = BigInt(head.timestamp)
-  const hour = hourStartOf(Number(headTs - (head.number - last) * BLOCK_SECONDS))
-  if (hour <= window.fromTs) return whole
-  // The first block whose timestamp is ≥ hour, on 2 s blocks counted back from the head.
-  const first = head.number - (headTs - BigInt(hour)) / BLOCK_SECONDS
-  return {
-    fromBlock: maxBigint(window.fromBlock, first - VOLUME_JITTER_BLOCKS),
-    keepFromTs: hour,
-    coveredFromTs: coverage.fromTs,
-  }
-}
-
-function coverageOf(db: Database, poolId: string): VolumeCoverage | undefined {
-  const lastBlock = db.syncState.getBigInt(syncKeys.volumeLastBlock(poolId))
-  const fromTs = db.syncState.get(syncKeys.volumeFromTs(poolId))
-  if (lastBlock === undefined || fromTs === undefined || !/^\d+$/.test(fromTs)) return undefined
-  return { lastBlock, fromTs: Number(fromTs) }
-}
-
 /**
  * The tracked pools grouped by first block: each log scan (one per `Swap` event source, see chain
  * `swapScanOf`) reads once, from its pools' earliest start.
@@ -291,16 +239,22 @@ export async function volumeStep(
   const hours = opts.hours ?? ctx.config.hours
   const latest = await chain.getLatestBlock()
   const tracked = db.pools.list({ tracked: true })
-  const window = {
-    fromBlock: maxBigint(
-      0n,
-      latest.number - BigInt(hours) * BLOCKS_PER_HOUR - VOLUME_MARGIN_BLOCKS,
-    ),
-    fromTs: hourStartOf(latest.timestamp - hours * HOUR_SECONDS),
+  const fromTs = hourStartOf(latest.timestamp - hours * HOUR_SECONDS)
+  const window = { fromBlock: await chain.blockAtOrAfter(fromTs, latest.number), fromTs }
+  const starts = new Map<bigint, CoverageHour | undefined>()
+  const scans = new Map<string, VolumeScan>()
+  const byTime = db.syncState.get(syncKeys.volumeWindows()) === VOLUME_WINDOWS_BY_TIME
+  for (const pool of tracked) {
+    const coverage = coverageOf(db, pool.id, byTime)
+    if (
+      coverage !== undefined &&
+      coverage.fromTs <= window.fromTs &&
+      !starts.has(coverage.lastBlock)
+    )
+      starts.set(coverage.lastBlock, await coverageHour(chain, window, latest, coverage.lastBlock))
+    const start = coverage === undefined ? undefined : starts.get(coverage.lastBlock)
+    scans.set(pool.id, planVolumeScan(window, coverage, start))
   }
-  const scans = new Map(
-    tracked.map((pool) => [pool.id, planVolumeScan(window, latest, coverageOf(db, pool.id))]),
-  )
   const groups = scanGroups(tracked, scans)
   const keepFrom = (poolId: string) => scans.get(poolId)?.keepFromTs ?? window.fromTs
   const result: VolumeResult = {
@@ -391,6 +345,7 @@ export async function volumeStep(
     }
     db.syncState.setBigInt(syncKeys.volume(), latest.number)
     db.syncState.set(syncKeys.volumeHeadTs(), String(latest.timestamp))
+    db.syncState.set(syncKeys.volumeWindows(), VOLUME_WINDOWS_BY_TIME)
   })
   result.buckets = buckets.length
   log.info('stored hourly volume', {

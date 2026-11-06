@@ -48,6 +48,7 @@ export {
   wordTickBounds,
 } from './internal/ticks.js'
 export * from './reader.js'
+export * from './schedule.js'
 export {
   type BackoffEvent,
   type CreationProbe,

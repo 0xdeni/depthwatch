@@ -1,9 +1,10 @@
 /**
  * `ChainReader.seedPools`: pool discovery without `eth_getLogs`, for endpoints that cannot serve
  * factory log scans (Alchemy's free tier: 10-block ranges). Each DEX is asked directly for the
- * pools of a token list (./candidates.ts, ./aero.ts: a dozen multicalls in all at the seed block), then each
- * pool's creation block is found by binary search over archive state (./createdAt.ts, about 26
- * requests per pool, skipped for pools whose creation block is already known), in batches whose
+ * pools of a token list (./candidates.ts, ./aero.ts: a dozen multicalls in all at the seed block),
+ * then each pool's creation block is found by binary search over archive state (./createdAt.ts,
+ * about 26 to 28 requests per pool, the log2 of the height, which grows 432,000 blocks a day since
+ * Denim; skipped for pools whose creation block is already known), in batches whose
  * pools are handed to `onPools` as each one completes. The PoolMeta are the ones log discovery
  * produces for the same pools. Pairs outside the token list, hooked v4 pools and
  * non-standard v4 tiers are not found this way. The DEX seeders run independently: one whose

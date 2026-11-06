@@ -6,7 +6,8 @@
  * The defaults fit Alchemy's free tier (about 30 M compute units a month) for the main endpoint
  * with `eth_getLogs` on a second endpoint (`DEPTHWATCH_LOGS_RPC_URL`, Base's public RPC from the
  * server's own IP), about 200 tracked pools and about 580 known ones: docs/ARCHITECTURE.md
- * "Running as a service" has the arithmetic.
+ * "Running as a service" has the arithmetic. Since Denim (200 ms blocks, 432 000 a day) every log
+ * scan reads ten times as many blocks an hour as before, all of them on that second endpoint.
  */
 import { type Env, parseDuration, pick } from '../configValues.js'
 

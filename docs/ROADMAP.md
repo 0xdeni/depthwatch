@@ -50,9 +50,11 @@ fixture for at least one pool per DEX decodes correctly.
 
 Acceptance: a fresh clone with an RPC URL reaches a populated dashboard with
 `discover --seed → snapshot → volume → score → serve` in under 30 minutes for the top 200 pools
-(a first factory-log `discover` is about 97,000 `eth_getLogs` at 2,000-block chunks, hours on a
-public endpoint, and is outside that budget); all API routes respond in under 200 ms on a 7-day
-database; the dashboard has no backend-specific code (`VITE_MOCK=1` still works).
+(a first factory-log `discover` is about 126,000 `eth_getLogs` at 2,000-block chunks at a head of
+53.6 M on 5 November 2026, hours on a public endpoint, and is outside that budget; since Denim's
+200 ms blocks the chain grows 432,000 blocks a day, about 216 more requests a day per factory
+scan); all API routes respond in under 200 ms on a 7-day database; the dashboard has no
+backend-specific code (`VITE_MOCK=1` still works).
 
 ### Week 4: validation at scale and public deployment
 
@@ -90,15 +92,22 @@ Acceptance: a factory outside `addresses.ts` produces a warning in the pass that
 the `allPools` mode stores every pool of the Aero factories with its creation block; a pool with
 the initial fee enabled gets depth and spread with that fee on the first swap.
 
-### After Layer 1: near-real-time depth with Flashblocks
+### After Layer 1: depth that follows each 200 ms block
 
-Flashblocks (sub-block preconfirmations, about 200 ms) have been live on Base mainnet since July
-2025. Depth today is computed per block from a confirmed state. The Flashblocks item is: read
-pending state from a Flashblocks-aware endpoint for the top pools and publish depth that reflects
-the preconfirmed state, with the block-confirmed value kept as the record of truth.
+Flashblocks (sub-block preconfirmations, about 200 ms), live on Base mainnet from July 2025, stopped
+at Denim's activation on 5 November 2026 (block 53,556,127, 18:00:01 UTC): Base now makes a
+canonical block every 200 ms, and its migration guide moves pending-state reads and Flashblocks
+streams to canonical blocks, with no equivalent of preconfirmed state
+(<https://docs.base.org/upgrades/denim/migrate-from-flashblocks.md>;
+[research/base-contracts.md §2.13](research/base-contracts.md#213-block-schedule-denims-200-ms-blocks-2026-11-05)).
+There is no preconfirmed state to read or label any more. Depth today is computed from one block
+per pass: 9,000 blocks apart at `start`'s default 30 minutes, 1,500 at a 5-minute `run`. The item
+is: for the top pools, follow each new block and publish depth as of the latest one. A full state
+read per pool and block would be five reads a second per pool.
 
-Acceptance: for the top 20 pools, the dashboard shows a ±2 % depth value that is at most 1 s behind
-the preconfirmed state, labelled as preconfirmed; stored snapshots remain block-confirmed.
+Acceptance: for the top 20 pools, the dashboard shows a ±2 % depth value that is at most 1 s (five
+blocks) behind the chain's head, labelled with its block number; stored snapshots keep the pass
+cadence and remain the record.
 
 ## Layer 2: Market-maker scorecards (weeks 5–8)
 

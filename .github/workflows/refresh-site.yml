@@ -117,8 +117,10 @@ jobs:
         #    give 1 GB of answers a day per IP (https://docs.tenderly.co/node-rpc/overview.md,
         #    "Public endpoint limits") and call public endpoints rate-limited, production use
         #    taking a dedicated node (https://docs.tenderly.co/platform/supported-networks.md).
-        #    250-block chunks keep the densest window measured under both limits and under viem's
-        #    10 MiB answer limit.
+        #    Since Denim (2026-11-05 18:00 UTC) Base makes five blocks a second, so three hours are
+        #    54,000 blocks: 1,000-block chunks, 200 s of chain each, hold fewer logs than the
+        #    250-block chunks of 2 s blocks (500 s) that kept the densest window measured under
+        #    both limits and under viem's 10 MiB answer limit, for a quarter of the requests.
         # Base's public RPC is not tried: it allows 5 eth_getLogs a second per IP, runners share
         # IPs, and on 29 October 2026 it refused the runner's first request (HTTP 429, -32011).
         # A try past its time gets SIGKILL, which timeout sends to its whole process group. With
@@ -138,7 +140,7 @@ jobs:
               "trying Tenderly's public gateway."
           fi
           echo "Volume through Tenderly's public gateway"
-          DEPTHWATCH_LOGS_RPC_URL=https://gateway.tenderly.co/public/base pass 420s 250
+          DEPTHWATCH_LOGS_RPC_URL=https://gateway.tenderly.co/public/base pass 420s 1000
       - name: Score
         run: pnpm depthwatch score
       - name: Prune

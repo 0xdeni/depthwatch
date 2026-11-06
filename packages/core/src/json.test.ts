@@ -27,6 +27,17 @@ describe('json helpers', () => {
     expect(revived.s).toBe('123')
   })
 
+  it("revives a stock reading's bigints and leaves its nulls", () => {
+    for (const key of ['feedRoundId', 'feedAnswer', 'oracleMultiplierWad', 'tokenMultiplierWad'])
+      expect(BIGINT_KEYS.has(key)).toBe(true)
+    const wire = { feedRoundId: '7', feedAnswer: null, tokenMultiplierWad: '1000000000000000000' }
+    expect(reviveBigints(wire, BIGINT_KEYS)).toEqual({
+      feedRoundId: 7n,
+      feedAnswer: null,
+      tokenMultiplierWad: 10n ** 18n,
+    })
+  })
+
   it('rejects non-integer strings under bigint keys', () => {
     expect(() => reviveBigints({ liquidity: 'abc' }, BIGINT_KEYS)).toThrow(/liquidity/)
   })

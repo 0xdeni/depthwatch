@@ -16,11 +16,13 @@ import { PoolDetail } from './pages/PoolDetail.js'
 import { Pools } from './pages/Pools.js'
 import { Scorecard } from './pages/Scorecard.js'
 import { Scorecards } from './pages/Scorecards.js'
+import { Stock } from './pages/Stock.js'
+import { Stocks } from './pages/Stocks.js'
 import { Token } from './pages/Token.js'
 
 /**
  * One retry for failures that may pass on a second try (network, 5xx). An API 4xx answer (a pool,
- * token or mandate that does not exist, a rejected parameter) is final, so its state shows at once.
+ * token, stock or mandate that does not exist, a rejected parameter) is final, so its state shows at once.
  */
 export function shouldRetry(failureCount: number, error: unknown): boolean {
   if (error instanceof ApiError && error.status >= 400 && error.status < 500) return false
@@ -96,6 +98,8 @@ export function AppRoutes() {
         <Route path="/" element={<Home />} />
         <Route path="/pools" element={<Pools />} />
         <Route path="/pools/:id" element={<PoolDetail />} />
+        <Route path="/stocks" element={<Stocks />} />
+        <Route path="/stocks/:token" element={<Stock />} />
         <Route path="/gaps" element={<Gaps />} />
         <Route path="/tokens/:address" element={<Token />} />
         <Route path="/mm" element={<Scorecards />} />

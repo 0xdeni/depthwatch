@@ -52,7 +52,8 @@ export const PERSISTENCE_WINDOWS_HOURS = Object.freeze({ day: 24, week: 168 })
 /**
  * Score of one pool from its snapshot series (ascending), newest snapshot and 24 h volume. `pool`
  * gives its kind (which concentration basis applies) and its `hooks` (a hooked Uniswap v4 pool is
- * unrated with reason `hooked`).
+ * unrated with reason `hooked`); the newest snapshot's `reference` says whether the pool's stock's
+ * transfers are paused (unrated with reason `transfers-paused`).
  */
 export function scorePool(
   poolId: string,
@@ -79,6 +80,9 @@ export function scorePool(
     poolKind: pool.kind,
     persistence: persistence24h,
     hooked: isHookedPool(pool),
+    // A stock pool whose stock's transfers are paused at the snapshot's block: no swap reaches its
+    // depth (docs/METRICS.md, "Stock tradability"). Unknown is not a pause.
+    transfersPaused: latest.reference?.transfersPaused === true,
   })
   return {
     poolId,

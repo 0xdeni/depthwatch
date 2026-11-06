@@ -152,6 +152,23 @@ export function useScorecardSamples(id: string, window: SampleWindow) {
   })
 }
 
+/** `GET /api/stocks`: every stock of the stock list, deepest first. */
+export function useStocks() {
+  const api = useApi()
+  return useQuery({ queryKey: ['stocks'], queryFn: () => api.stocks() })
+}
+
+/** `GET /api/stocks/:token`, keyed by the lowercase address. */
+export function useStock(address: string) {
+  const api = useApi()
+  const token = address.toLowerCase()
+  return useQuery({
+    queryKey: ['stock', token],
+    queryFn: () => api.stock(token),
+    enabled: token.length > 0,
+  })
+}
+
 /** `GET /api/mm/:id/badge.svg` as text, for the embed preview. */
 export function useBadge(id: string) {
   const api = useApi()

@@ -1,8 +1,10 @@
 /**
  * The bottom dock (docs/design/visual-v4.md §5.1, PH3): only in an installed app on a phone
  * (`display-mode: standalone`), where it replaces the tab strip. Gray 100, radius 20 at the top,
- * four 48 px tabs, the current one Base Blue with white text, padded by the bottom safe area and
- * sticky at the bottom of the app column. A browser tab never shows it.
+ * five 48 px tabs, the current one Base Blue with white text, padded by the bottom safe area and
+ * sticky at the bottom of the app column. A browser tab never shows it. Scorecards and
+ * Methodology show their short labels ("Scores", "Method") and keep the full name as the link's
+ * accessible name.
  */
 import { Link, useLocation } from 'react-router-dom'
 import { isCurrent, NAV_ITEMS } from './Nav.js'

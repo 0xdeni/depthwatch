@@ -1,7 +1,8 @@
 /**
  * The SQL the score queries share, and the per-DEX totals of `GET /api/stats`: counts, the ±2 %
- * depth sum without stale quotes (docs/METRICS.md, "Stale quotes"), the known 24 h volume sum and
- * the health median over rated pools.
+ * depth sum without stale quotes and pools whose stock's transfers are paused (docs/METRICS.md,
+ * "Stale quotes" and "Stock tradability"), the known 24 h volume sum and the health median over
+ * rated pools.
  */
 import { DEXES, type Dex, STALE_QUOTE_MIN_DEVIATION_BPS } from '@depthwatch/core'
 import type { SqlContext } from '../context.js'
@@ -24,6 +25,16 @@ export const LATEST_JOIN = `LEFT JOIN snapshots sn ON sn.id = (
  */
 export const STALE_SQL = `COALESCE(sn.price_deviation_bps >= ${STALE_QUOTE_MIN_DEVIATION_BPS}, 0) = 1`
 
+/**
+ * Whether the score `s` is unrated because the pool's stock's transfers are paused (core's
+ * `rateDepth`, docs/METRICS.md "Stock tradability"): no swap can use its depth. A row without a
+ * reason (rated, or scored before reasons existed) is not paused.
+ */
+export const PAUSED_SQL = `COALESCE(json_extract(s.health_json, '$.unratedReason') = 'transfers-paused', 0) = 1`
+
+/** Whether the pool's ±2 % depth is left out of the depth sums: a stale quote or a paused stock. */
+export const LEFT_OUT_SQL = `(${STALE_SQL} OR ${PAUSED_SQL})`
+
 export interface DexStats {
   dex: Dex
   /** Pools discovered for the dex. */
@@ -33,9 +44,9 @@ export interface DexStats {
   scored: number
   /** Scored pools that are rated (docs/METRICS.md, "Rated and unrated pools"). */
   rated: number
-  /** Sum over scored pools whose newest snapshot is not a stale quote. */
+  /** Sum over scored pools whose newest snapshot is not a stale quote, transfers not paused. */
   depth2UsdSum: number
-  /** Scored pools the depth sum covers: a known ±2 % depth and no stale quote. */
+  /** Scored pools the depth sum covers: a known ±2 % depth, no stale quote, no paused stock. */
   depthKnownPools: number
   /** Sum over scored pools with a known 24 h volume; null when none has one (unknown is not 0). */
   volume24hUsdSum: number | null
@@ -90,7 +101,7 @@ export function statsByDex(ctx: SqlContext): DexStats[] {
   const healthByDex = new Map<string, number[]>()
   const scoreRows = ctx.all(
     `SELECT p.dex AS dex, s.health_total AS health, s.depth2_usd AS depth2,
-        s.volume_24h_usd AS volume, ${RATED_SQL} AS rated, ${STALE_SQL} AS stale
+        s.volume_24h_usd AS volume, ${RATED_SQL} AS rated, ${LEFT_OUT_SQL} AS left_out
       FROM scores s CROSS JOIN pools p ON p.id = s.pool_id ${LATEST_JOIN}
       ORDER BY p.dex, s.health_total`,
   )
@@ -98,10 +109,10 @@ export function statsByDex(ctx: SqlContext): DexStats[] {
     const dex = colText(row, 'dex')
     const entry = statsFor(dex)
     entry.scored += 1
-    // A stale quote's depth is measured at a price nobody trades: it stays out of the sum, and
-    // the pools the sum covers are counted with it.
+    // A stale quote's depth is measured at a price nobody trades, and a paused stock's pool can
+    // trade at none: both stay out of the sum, and the pools the sum covers are counted with it.
     const depth2 = colNumberOrNull(row, 'depth2')
-    if (colNumber(row, 'stale') !== 1 && depth2 !== null) {
+    if (colNumber(row, 'left_out') !== 1 && depth2 !== null) {
       entry.depth2UsdSum += depth2
       entry.depthKnownPools += 1
     }

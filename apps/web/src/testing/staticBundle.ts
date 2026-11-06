@@ -53,6 +53,12 @@ export async function bundleFromClient(
     }
     badges[mandate.id] = await client.badge(mandate.id)
   }
+  const { items: stocks } = await client.stocks()
+  const stockDetails: NonNullable<StaticBundle['stockDetails']> = {}
+  for (const { stock } of stocks) {
+    const address = stock.token.address.toLowerCase()
+    stockDetails[address] = await client.stock(address)
+  }
   return {
     v: 1,
     generatedAt: opts.generatedAt,
@@ -70,5 +76,7 @@ export async function bundleFromClient(
     scorecardDetails,
     samples,
     badges,
+    stocks,
+    stockDetails,
   }
 }

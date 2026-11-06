@@ -1,12 +1,13 @@
 /**
  * Stale quotes (docs/METRICS.md, "Stale quotes"): a pool whose newest snapshot quotes a price 5 %
  * or more from its tokens' USD cross keeps its score, but its depth stays out of the per-DEX depth
- * sums and a depth sort puts it after the other pools in both directions.
+ * sums and a depth sort puts it after the other pools in both directions. A pool unrated because
+ * its stock's transfers are paused ("Stock tradability") leaves the same sums, and sorts in place.
  */
 import { type PoolMeta, STALE_QUOTE_MIN_DEVIATION_BPS } from '@depthwatch/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type Database, openDatabase } from '../database.js'
-import { fixturePool, fixtureScore, fixtureSnapshot } from '../fixtures.js'
+import { fixturePool, fixturePoolReference, fixtureScore, fixtureSnapshot } from '../fixtures.js'
 
 const ids = (rows: Array<{ pool: PoolMeta }>) => rows.map((row) => row.pool.id)
 
@@ -78,5 +79,37 @@ describe('stale quotes in the score queries', () => {
     ])
     // Other sorts are unchanged: health ties are broken by pool id.
     expect(ids(db.scores.topBy('health').items)).toEqual([DEEP.id, STALE.id, THIN.id, OLD.id])
+  })
+
+  it("leaves a pool whose stock's transfers are paused out of the depth sums, as a stale quote", () => {
+    const PAUSED = fixturePool({ id: 'uniswap-v3:0x00000000000000000000000000000000000000d5' })
+    db.pools.upsertMany([PAUSED])
+    const reference = fixturePoolReference({ transfersPaused: true })
+    db.snapshots.insert(fixtureSnapshot({ poolId: PAUSED.id, depth2Usd: 80_000, reference }))
+    const paused = { poolId: PAUSED.id, depth2Usd: 80_000, healthTotal: 50 }
+    db.scores.upsert(fixtureScore({ ...paused, unratedReason: 'transfers-paused' }))
+
+    const [row] = db.scores.statsByDex()
+    expect(row).toMatchObject({ scored: 5, rated: 4, depth2UsdSum: 1_007_000, depthKnownPools: 3 })
+    // A token's depth leaves it out too (every pool here is WETH / USDC).
+    expect(db.scores.tokenDepth(DEEP.token0.address)).toEqual({
+      depth2UsdTotal: 1_007_000,
+      depthKnownPools: 3,
+    })
+    // Its quote is not stale: a depth sort keeps it in its place.
+    expect(ids(db.scores.topBy('depth').items)).toEqual([
+      DEEP.id,
+      PAUSED.id,
+      OLD.id,
+      THIN.id,
+      STALE.id,
+    ])
+    // Any other unrated reason stays in the sums.
+    db.scores.upsert(fixtureScore({ ...paused, unratedReason: 'one-sided' }))
+    expect(db.scores.statsByDex()[0]).toMatchObject({
+      depth2UsdSum: 1_087_000,
+      depthKnownPools: 4,
+    })
+    expect(db.scores.tokenDepth(DEEP.token1.address).depth2UsdTotal).toBe(1_087_000)
   })
 })

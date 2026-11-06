@@ -26,6 +26,7 @@ import type {
   MmSample,
   PersistenceMetrics,
   PoolMeta,
+  PoolReference,
   PoolSnapshot,
   PublicMandate,
   PublicScorecardSummary,
@@ -35,12 +36,14 @@ import type {
   UnratedReason,
   UptimeWindow,
 } from '@depthwatch/core'
+import type { StockApi, StockDetail, StockSummary } from './stockTypes.js'
 
 /** A token on the wire: `label` tells apart tokens sharing a symbol (absent from older servers). */
 export type TokenDto = TokenInfo & { label?: string }
 export type PoolMetaDto = Jsonified<
   Omit<PoolMeta, 'token0' | 'token1'> & { token0: TokenDto; token1: TokenDto }
 >
+/** `reference` (core `PoolReference`, no bigint): a stock pool against its stock's reading. */
 export type PoolSnapshotDto = Jsonified<PoolSnapshot>
 export type DepthLevelDto = Jsonified<DepthLevel>
 export type {
@@ -53,6 +56,7 @@ export type {
   MandateKpis,
   MmAttribution,
   PersistenceMetrics,
+  PoolReference,
   ScorecardStatus,
   SpreadPoint,
   UnratedReason,
@@ -120,9 +124,12 @@ export interface DexStatsDto {
   scored: number
   /** Scored pools that are rated: both ±2 % sides known, the thinner one at least $5,000. */
   rated: number
-  /** Sum of ±2 % depth (USD) over scored pools, stale quotes (`PoolSummary.staleQuote`) left out. */
+  /**
+   * Sum of ±2 % depth (USD) over scored pools, stale quotes (`PoolSummary.staleQuote`) and pools
+   * unrated `transfers-paused` left out.
+   */
   depth2Usd: number
-  /** Scored pools with a known ±2 % depth and no stale quote: the ones `depth2Usd` sums. */
+  /** Scored pools with a known ±2 % depth, not stale, not paused: the ones `depth2Usd` sums. */
   depthKnownPools: number
   /** Sum over scored pools with a known volume; null when none has one. */
   volume24hUsd: number | null
@@ -334,11 +341,11 @@ export interface TokenDetail {
   /** Every discovered pool containing the token, scored or not. */
   poolCount: number
   /**
-   * `depth2Usd` summed over every scored pool containing the token with a known depth and no stale
-   * quote, ignoring limit/offset; null when none has one.
+   * `depth2Usd` summed over every scored pool containing the token with a known depth, no stale
+   * quote and transfers not paused, ignoring limit/offset; null when none has one.
    */
   depth2UsdTotal: number | null
-  /** Scored pools of the token with a known depth and no stale quote: the ones `depth2UsdTotal` sums. */
+  /** Its scored pools with a known depth, not stale, not paused: the ones `depth2UsdTotal` sums. */
   depthKnownPools: number
 }
 
@@ -411,9 +418,9 @@ export interface SamplesQuery {
 /**
  * Everything the UI needs from the backend. Implemented by the HTTP client and the mock client.
  * The dashboard never writes through the API: the admin routes (`POST /api/mm`,
- * `DELETE /api/mm/:id`) are not part of it.
+ * `DELETE /api/mm/:id`) are not part of it. The stock routes are `StockApi` (stockTypes.ts).
  */
-export interface ApiClient {
+export interface ApiClient extends StockApi {
   health(): Promise<HealthResponse>
   stats(): Promise<StatsResponse>
   pools(query?: PoolsQuery): Promise<PoolsResponse>
@@ -479,4 +486,8 @@ export interface StaticBundle {
   samples: Record<string, { '24h': SamplesResponse; '7d': SamplesResponse; '30d': SamplesResponse }>
   /** `/api/mm/:id/badge.svg` per mandate: the SVG text. */
   badges: Record<string, string>
+  /** `/api/stocks`: every stored stock; absent from older bundles, read as `{ items: [] }`. */
+  stocks?: StockSummary[]
+  /** `/api/stocks/:token` per stock, key = lowercase address; absent from older bundles. */
+  stockDetails?: Record<string, StockDetail>
 }

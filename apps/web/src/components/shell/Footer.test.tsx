@@ -2,7 +2,8 @@
  * The footer's promise follows the trade switch the page loaded with: the panel's non-custodial
  * promise while the switch is on for a venue whose route is not on hold (`tradeSwitchOn`),
  * read-only otherwise, so the switch can be turned on without a release that rewrites the footer.
- * The spec (docs/design/visual-v4.md §5.1) quotes both.
+ * The spec (docs/design/visual-v4.md §5.1) quotes both. The tokenized stocks' eligibility line
+ * follows the promise as a paragraph of its own on every page (docs/design/stocks-api.md §3).
  */
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -15,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppRoutes, Providers } from '../../App.js'
 import { createMockClient } from '../../api/mock.js'
 import { tradeSwitchOn } from '../../lib/tradeSwitch.js'
-import { FOOTER_PROMISE, FOOTER_PROMISE_TRADE } from './Footer.js'
+import { FOOTER_PROMISE, FOOTER_PROMISE_TRADE, FOOTER_STOCKS } from './Footer.js'
 
 const NOW = 1_760_000_000
 const V3 = 'uniswap-v3:0xd0b53d9277642d899df5c87a3966a349a798f224'
@@ -100,6 +101,27 @@ describe('the footer promise and the trade switch', () => {
     expect(promise()).toMatch(/^Open source and read-only\./)
   })
 
+  it('carries the stocks’ eligibility line after the promise, on every page and in every state', () => {
+    for (const [path, env] of [
+      ['/methodology', {}],
+      ['/pools', { trade: ON }],
+      ['/gaps', { mock: true }],
+    ] as const) {
+      renderAt(path, env)
+      const paragraphs = [...screen.getByRole('contentinfo').querySelectorAll('p')]
+      const texts = paragraphs.map((p) => p.textContent)
+      expect(texts, path).toContain(FOOTER_STOCKS)
+      // Its own paragraph, after the promise, which stays word for word.
+      expect(texts.indexOf(FOOTER_STOCKS)).toBeGreaterThan(
+        texts.findIndex((t) => t?.startsWith('Open source')),
+      )
+      cleanup()
+    }
+    expect(FOOTER_STOCKS).toBe(
+      'Coinbase tokenized stocks are only available to persons in eligible jurisdictions outside of the U.S. Depthwatch measures their markets; it does not offer, route or recommend trades in them.',
+    )
+  })
+
   it('is quoted in both states by its spec, visual-v4.md §5.1', () => {
     const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', '..')
     const spec = readFileSync(join(root, 'docs', 'design', 'visual-v4.md'), 'utf8')
@@ -108,6 +130,8 @@ describe('the footer promise and the trade switch', () => {
       .replace(/\s+/g, ' ')
     expect(footer).toContain(`"${FOOTER_PROMISE}"`)
     expect(footer).toContain(`"${FOOTER_PROMISE_TRADE}"`)
+    expect(footer).toContain(`"${FOOTER_STOCKS}"`)
+    expect(footer).toContain('`FOOTER_STOCKS`')
     expect(footer).toContain('`tradeSwitchOn`')
     expect(footer).not.toMatch(/Built on Base/)
   })

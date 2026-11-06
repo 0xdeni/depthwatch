@@ -1,0 +1,289 @@
+/* Stocks and Stock (docs/design/stocks-api.md §3): the list's title section, band and rows over
+   the band; the stock's title section, the reference panel on the band, the facts row, the
+   sections sheet and the about panel. Page-local classes carry the `stk-` prefix; the band,
+   blocks, facts, tables, status words and chips come from styles/ and components/. Rhythm as on
+   Token: back link, 8 to the eyebrow, 12 to the title, 12 to the name, 16 to the chips. */
+
+/* ---------- The list: band and caption ---------- */
+/* The list's eight columns from 1024 px, shared by its header and its rows. */
+.stk {
+  --stk-cols: minmax(8.5rem, 1.25fr) repeat(4, minmax(0, 0.8fr)) minmax(0, 1.35fr) minmax(0, 1fr)
+    minmax(0, 0.8fr);
+}
+.stk-lead-row {
+  display: grid;
+  gap: var(--s4) var(--s7);
+}
+@media (min-width: 64em) {
+  .stk-lead-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+}
+.stk-elig {
+  max-width: 60ch;
+}
+.stk-skel-answer {
+  font-size: var(--t-answer);
+  max-width: 26ch;
+}
+.stk-skel-title {
+  margin-top: var(--s5);
+}
+.stk-caption {
+  padding-top: 0;
+}
+
+/* ---------- The list: one row per stock ---------- */
+/* The header names the columns once from 1024 px, where each cell's own name is visually hidden;
+   below, every cell shows its name under its value and the first row carries the 2 px rule. */
+.stk-head {
+  display: none;
+}
+@media (max-width: 63.99em) {
+  .stk-list > li:first-child {
+    border-top: 2px solid var(--text-1);
+  }
+}
+@media (min-width: 64em) {
+  .stk-head {
+    display: grid;
+    grid-template-columns: var(--stk-cols);
+    column-gap: var(--s4);
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--text-1);
+    font-size: var(--t-small);
+    font-weight: 650;
+    line-height: 1.3;
+    color: var(--text-2);
+  }
+  .stk-k {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+/* Every cell carries its label under its value; eight columns from 1024 px, the stock on its own
+   line and four columns from 600 px, two on phones. */
+.rl-row.stk-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--s3) var(--s4);
+  padding-block: var(--s4);
+}
+.stk-who {
+  grid-column: 1 / -1;
+}
+.stk-who .pp {
+  white-space: normal;
+}
+.stk-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  margin-top: 2px;
+}
+.stk-cell {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+}
+.stk-v {
+  font-size: var(--t-data);
+  font-weight: 750;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.stk-cell .small {
+  overflow-wrap: anywhere;
+}
+/* A stock with no scored pool: one cell in place of the depth, spread, deviation and venues. */
+.stk-cell.stk-none {
+  grid-column: 1 / -1;
+}
+@media (min-width: 37.5em) {
+  .rl-row.stk-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .stk-dev,
+  .stk-vcell {
+    grid-column: span 2;
+  }
+}
+@media (min-width: 64em) {
+  .rl-row.stk-row {
+    grid-template-columns: var(--stk-cols);
+    column-gap: var(--s4);
+  }
+  .stk-who {
+    grid-column: auto;
+  }
+  .stk-cell.stk-none {
+    grid-column: 3 / -1;
+  }
+  .stk-dev,
+  .stk-vcell {
+    grid-column: auto;
+  }
+}
+
+/* ---------- Venue bar: the largest venue in ink, the second in text-2, the rest hatched ---------- */
+.stk-venues {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.stk-vbar {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.stk-venues.is-large .stk-vbar {
+  height: 32px;
+  gap: 3px;
+  margin-top: 0;
+  border-radius: 0;
+}
+.stk-vbar i {
+  flex: 0 0 auto;
+  height: 100%;
+}
+.stk-vbar .v1 {
+  background: var(--text-1);
+}
+.stk-vbar .v2 {
+  background: var(--text-2);
+}
+.stk-vbar .v3 {
+  flex: 1 1 0;
+  background: repeating-linear-gradient(135deg, var(--line-2) 0 2px, transparent 2px 7px);
+}
+.stk-venues.is-large .legend {
+  margin-top: var(--s2);
+}
+@media (forced-colors: active) {
+  .stk-vbar i {
+    forced-color-adjust: none;
+  }
+}
+
+/* ---------- Stock: title section ---------- */
+.stk-eb {
+  margin-top: var(--s2);
+}
+.stk-ttl-main {
+  min-width: 0;
+}
+.stk-title {
+  overflow-wrap: anywhere;
+}
+.stk-name {
+  margin-top: var(--s3);
+  font-size: var(--t-pair);
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--text-2);
+}
+.stk-chips.is-title {
+  margin-top: var(--s4);
+  gap: var(--s2);
+}
+.stk-error {
+  margin-top: var(--s5);
+}
+
+/* ---------- Stock: the reference panel on the band ---------- */
+.stk-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 72ch;
+  margin-top: var(--s4);
+  padding: var(--s3) var(--s4);
+  border-radius: var(--r-ctl);
+  background: var(--g100);
+  color: var(--on-ink);
+  font-size: var(--t-data);
+  font-weight: 650;
+  line-height: 1.4;
+}
+.stk-banner svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  margin-top: 4px;
+  color: var(--bad);
+}
+.stk-ref {
+  display: grid;
+  gap: var(--s4) var(--s7);
+  margin-top: var(--s4);
+}
+@media (min-width: 64em) {
+  .stk-ref {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    align-items: start;
+  }
+}
+.stk-ref-v {
+  font-size: var(--t-kpi);
+  line-height: 0.92;
+  white-space: nowrap;
+}
+.stk-ref-at {
+  margin-top: var(--s2);
+  font-size: var(--t-data);
+  font-weight: 650;
+}
+.stk-ref-why {
+  display: grid;
+  justify-items: start;
+  gap: var(--s3);
+}
+.stk-ref-why .lead {
+  max-width: 56ch;
+}
+.stk-ref-why .stk-elig {
+  color: var(--on-band-2);
+}
+
+/* ---------- Stock: facts, sheet and about ---------- */
+.stk-rest {
+  margin-top: var(--s5);
+}
+.stk-devc {
+  display: grid;
+  gap: 2px;
+  min-width: 11rem;
+  max-width: 16rem;
+  white-space: normal;
+}
+.stk-flags {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  white-space: nowrap;
+}
+.stk-pools td {
+  vertical-align: top;
+}
+/* The pools table takes the sheet's whole width: its head sits above it, not beside it. */
+@media (min-width: 64em) {
+  .sec.stk-pools-sec {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.stk-pools .cell-pool {
+  min-width: 9.5rem;
+}
+.stk-pools .cell-pool :is(.pp, .pd) {
+  white-space: normal;
+  overflow: visible;
+}

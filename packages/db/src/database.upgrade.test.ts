@@ -14,6 +14,7 @@ import {
   fixtureMmAlert,
   fixtureMmSample,
   fixturePool,
+  fixturePoolReference,
   fixtureSnapshot,
   fixtureToken,
 } from './fixtures.js'
@@ -29,6 +30,10 @@ function names(db: Database, type: 'table' | 'index'): string[] {
     .all(type)
     .map((row) => String(row.name))
 }
+
+/** Undoes version 8 (the stock tables, `snapshots.reference_json`) as a version-7 build left it. */
+const UNDO_V8 =
+  'DROP TABLE stock_readings; DROP TABLE stocks; ALTER TABLE snapshots DROP COLUMN reference_json'
 
 describe('openDatabase on a file of an older schema', () => {
   const open: Database[] = []
@@ -58,6 +63,7 @@ describe('openDatabase on a file of an older schema', () => {
     fresh.raw.exec('DROP INDEX snapshots_pool_block')
     fresh.raw.exec('ALTER TABLE snapshots DROP COLUMN price_deviation_bps')
     fresh.raw.exec('ALTER TABLE snapshots DROP COLUMN fee_pips')
+    fresh.raw.exec(UNDO_V8)
     fresh.raw.prepare('DELETE FROM schema_version WHERE version > 1').run()
     expect(currentVersion(fresh.raw)).toBe(1)
     expect(names(fresh, 'table')).not.toContain('mandates')
@@ -78,6 +84,7 @@ describe('openDatabase on a file of an older schema', () => {
       { version: 5, applied_at: NOW + 5 },
       { version: 6, applied_at: NOW + 5 },
       { version: 7, applied_at: NOW + 5 },
+      { version: 8, applied_at: NOW + 5 },
     ])
     expect(upgraded.tokens.get(fixtureToken().address)).toEqual(fixtureToken())
     upgraded.mandates.upsert(fixtureMandate())
@@ -114,6 +121,7 @@ describe('openDatabase on a file of an older schema', () => {
     v2.raw.exec('DROP INDEX mm_samples_timestamp; DROP INDEX mm_alerts_timestamp')
     v2.raw.exec('ALTER TABLE snapshots DROP COLUMN price_deviation_bps')
     v2.raw.exec('ALTER TABLE snapshots DROP COLUMN fee_pips')
+    v2.raw.exec(UNDO_V8)
     v2.close()
 
     const upgraded = openDatabase(path, { now: () => NOW + 5 })
@@ -167,6 +175,7 @@ describe('openDatabase on a file of an older schema', () => {
     fresh.raw.exec('DROP INDEX mm_samples_timestamp; DROP INDEX mm_alerts_timestamp')
     fresh.raw.exec('ALTER TABLE snapshots DROP COLUMN price_deviation_bps')
     fresh.raw.exec('ALTER TABLE snapshots DROP COLUMN fee_pips')
+    fresh.raw.exec(UNDO_V8)
     fresh.raw.prepare('DELETE FROM schema_version WHERE version > 2').run()
     expect(currentVersion(fresh.raw)).toBe(2)
     fresh.close()
@@ -198,6 +207,7 @@ describe('openDatabase on a file of an older schema', () => {
     const snapshot = fixtureSnapshot()
     fresh.raw.exec('ALTER TABLE snapshots DROP COLUMN price_deviation_bps')
     fresh.raw.exec('ALTER TABLE snapshots DROP COLUMN fee_pips')
+    fresh.raw.exec(UNDO_V8)
     fresh.raw.prepare('DELETE FROM schema_version WHERE version > 4').run()
     fresh.raw
       .prepare(
@@ -265,6 +275,7 @@ describe('openDatabase on a file of an older schema', () => {
       `UPDATE snapshots SET owner_top1_share = json_extract(concentration_json, '$.owners.top1Share')`,
     )
     fresh.raw.exec('ALTER TABLE snapshots DROP COLUMN fee_pips')
+    fresh.raw.exec(UNDO_V8)
     fresh.raw.prepare('DELETE FROM schema_version WHERE version > 5').run()
     fresh.close()
 
@@ -290,6 +301,7 @@ describe('openDatabase on a file of an older schema', () => {
     fresh.pools.upsertMany([pool])
     fresh.snapshots.insert(snapshot)
     fresh.raw.exec('ALTER TABLE snapshots DROP COLUMN fee_pips')
+    fresh.raw.exec(UNDO_V8)
     fresh.raw.prepare('DELETE FROM schema_version WHERE version > 6').run()
     expect(currentVersion(fresh.raw)).toBe(6)
     fresh.close()
@@ -306,6 +318,44 @@ describe('openDatabase on a file of an older schema', () => {
       feePips: 2055,
     })
     expect(upgraded.snapshots.latestForPool(pool.id)?.feePips).toBe(2055)
+  })
+
+  it('upgrades a version-7 database: its snapshots read no reference, the stock tables are new', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'depthwatch-db-'))
+    tempDirs.push(dir)
+    const path = join(dir, 'v7.sqlite')
+
+    // A version-7 file: a snapshot stored before `reference_json` and the stock tables existed.
+    const fresh = openDatabase(path, { now: () => NOW })
+    const snapshot = fixtureSnapshot()
+    fresh.snapshots.insert(snapshot)
+    fresh.raw.exec(UNDO_V8)
+    fresh.raw.prepare('DELETE FROM schema_version WHERE version > 7').run()
+    expect(currentVersion(fresh.raw)).toBe(7)
+    expect(names(fresh, 'table')).not.toContain('stock_readings')
+    fresh.close()
+
+    const upgraded = openDatabase(path, { now: () => NOW + 7 })
+    open.push(upgraded)
+    expect(upgraded.migration).toEqual({ from: 7, to: SCHEMA_VERSION })
+    expect(names(upgraded, 'table')).toEqual(names(newDatabase(), 'table'))
+    expect(names(upgraded, 'index')).toEqual(names(newDatabase(), 'index'))
+    expect(upgraded.snapshots.latestForPool(snapshot.poolId)).toEqual({
+      ...snapshot,
+      reference: null,
+    })
+    expect(upgraded.snapshots.latestReferences([snapshot.poolId])).toEqual(
+      new Map([[snapshot.poolId, null]]),
+    )
+    expect([upgraded.stocks.count(), upgraded.stockReadings.count()]).toEqual([0, 0])
+    const reference = fixturePoolReference()
+    upgraded.snapshots.insert({
+      ...snapshot,
+      blockNumber: snapshot.blockNumber + 1n,
+      timestamp: snapshot.timestamp + 1,
+      reference,
+    })
+    expect(upgraded.snapshots.latestForPool(snapshot.poolId)?.reference).toEqual(reference)
   })
 
   it('refuses a database written by a newer schema', () => {

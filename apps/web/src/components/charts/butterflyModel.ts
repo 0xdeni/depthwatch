@@ -7,10 +7,13 @@
  * all depth. A side is null when its token has no USD price; it draws as nothing and reads "—",
  * never as 0. A stale quote (`PoolSummary.staleQuote`, docs/METRICS.md "Stale quotes") keeps its
  * row, but its depth is measured at a price nobody trades, so it stays out of the totals, the
- * segments, the shares and the scale, as it does in the API's depth sums.
+ * segments, the shares and the scale, as it does in the API's depth sums; so does a pool whose
+ * stock's transfers are paused (unrated `transfers-paused`, "Stock tradability"), which no swap
+ * can use.
  */
 import type { Dex } from '@depthwatch/core'
 import type { PoolSummary } from '../../api/types.js'
+import { countsInDepthSums, transfersPaused } from '../../lib/depthSums.js'
 import { dexLabel, feeText, NB, pairLabel, shareOf, usd } from '../../lib/format.js'
 import { ticks } from '../../lib/scale.js'
 
@@ -71,10 +74,12 @@ export interface ButterflyRow {
   /** Fractions of the shared scale. */
   sellW: number
   buyW: number
-  /** This pool's share of the scope's two-sided depth; null for a stale quote (left out of it). */
+  /** This pool's share of the scope's two-sided depth; null when left out of it (stale, paused). */
   share: number | null
   /** The pool quotes a stale price: drawn, but outside every total. */
   stale: boolean
+  /** The pool's stock has its transfers paused: drawn, but outside every total. */
+  paused: boolean
   /** `PoolSummary.priceDeviationBps`, which says how far off a stale quote is. */
   deviationBps: number | null
 }
@@ -108,7 +113,7 @@ export interface ButterflyModel {
     sellW: number
     buyW: number
   } | null
-  /** The pools the totals cover: every pool in scope but the stale quotes. */
+  /** The pools the totals cover: every pool in scope but the stale quotes and the paused ones. */
   poolCount: number
 }
 
@@ -123,13 +128,13 @@ export function butterflyModel(
   rows: readonly PoolSummary[],
   all: readonly PoolSummary[],
 ): ButterflyModel {
-  const counted = all.filter((p) => !p.staleQuote)
+  const counted = all.filter(countsInDepthSums)
   const total = {
     sell: sum(counted.map((p) => p.depth2DownUsd)),
     buy: sum(counted.map((p) => p.depth2UpUsd)),
   }
   const max = Math.max(total.sell, total.buy)
-  // A stale row can hold more than every counted pool together: it stops at the scale's end.
+  // A row left out can hold more than every counted pool together: it stops at the scale's end.
   const frac = (v: number | null) => (max > 0 && v !== null ? Math.min(1, Math.max(0, v) / max) : 0)
   const both = total.sell + total.buy
   const shareOfAll = (p: PoolSummary) => (both > 0 ? depthOf(p) / both : 0)
@@ -165,8 +170,9 @@ export function butterflyModel(
       buy: p.depth2UpUsd,
       sellW: frac(p.depth2DownUsd),
       buyW: frac(p.depth2UpUsd),
-      share: p.staleQuote ? null : shareOfAll(p),
+      share: countsInDepthSums(p) ? shareOfAll(p) : null,
       stale: p.staleQuote,
+      paused: transfersPaused(p),
       deviationBps: p.priceDeviationBps,
     })),
     total,
@@ -235,11 +241,13 @@ export function butterflyLabel(model: ButterflyModel, scope: string): string {
   return `${head}${conc} By pool: ${pools}.`
 }
 
-/** "5 % of Base", or for a stale quote "left out of Base’s total: stale price". */
+/**
+ * "5 % of Base", or for a pool left out "left out of Base’s total: stale price" (or "transfers
+ * paused", which a paused pool's stale quote does not hide).
+ */
 export function shareWords(row: ButterflyRow, scope: string): string {
-  return row.share === null
-    ? `left out of ${scope}’s total: stale price`
-    : `${shareOf(row.share)} of ${scope}`
+  if (row.share !== null) return `${shareOf(row.share)} of ${scope}`
+  return `left out of ${scope}’s total: ${row.paused ? 'transfers paused' : 'stale price'}`
 }
 
 /** A row link's accessible name: both sides and the share of the scope. */

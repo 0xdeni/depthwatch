@@ -6,7 +6,7 @@ Links below are relative to this file. On a Depthwatch server they resolve to `/
 
 ## Docs
 
-- [AGENTS.md](./AGENTS.md): conventions and units, every GET route with parameters and response fields, curl examples, how to pick a pool for a trade, errors, caching
+- [AGENTS.md](./AGENTS.md): conventions and units, every GET route with parameters and response fields, curl examples, how to pick a pool for a trade, how to read a stock's liquidity, errors, caching
 - [openapi.json](./openapi.json): OpenAPI 3.1 description of every GET route and its response schema
 - [Metric definitions](https://github.com/0xdeni/depthwatch/blob/main/docs/METRICS.md): formulas, null semantics and worked examples for every number
 - [Market-maker scorecards](https://github.com/0xdeni/depthwatch/blob/main/docs/SCORECARDS.md): mandates, attribution, uptime and badges
@@ -17,6 +17,7 @@ Links below are relative to this file. On a Depthwatch server they resolve to `/
 - [Pools](./api/pools): scored pools with their ±2 % depth per side, ranked by health, depth, volume, gap score or TVL; filter by DEX, token or pool text, minimum volume and rated or unrated
 - [Gaps](./api/gaps): pools with real 24 h volume on thin ±2 % depth, highest gap score first
 - [Stats](./api/stats): pools, depth and volume totals per DEX
+- [Stocks](./api/stocks): the tokenized stocks of base.org/stocks with their ±2 % depth, $10k spread, venue shares and each pool's deviation from the stock's Chainlink feed, passed on with the feed's status and age; measured, never offered: Coinbase tokenized stocks are only available to persons in eligible jurisdictions outside of the U.S.
 - [Scorecards](./api/mm): market-maker mandates with uptime against their depth and spread KPIs
 
 ## Optional

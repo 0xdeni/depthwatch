@@ -5,6 +5,7 @@
  * `fetch` (no network).
  */
 import {
+  BASE_STOCKS,
   createFakeRpcFetch,
   createFixture,
   type Fixture,
@@ -27,6 +28,8 @@ function seedWorld(): Fixture {
   setClock(fixture, { latestBlock: 45_000_000n, latestTimestamp: 1_800_000_000 })
   registerSeedWorld(fixture, {
     addresses: resolveAddresses(),
+    // `main`'s reader seeds the ten stocks as cross tokens; none of them has a pool here.
+    crossTokens: BASE_STOCKS.tokens,
     pools: [
       {
         dex: 'uniswap-v3',

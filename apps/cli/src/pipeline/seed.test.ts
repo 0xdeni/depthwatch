@@ -1,4 +1,5 @@
 import {
+  BASE_STOCKS,
   createChainReader,
   createFixture,
   createFixtureTransport,
@@ -53,12 +54,21 @@ const POOLS: SeedWorldPool[] = [
 
 type Fail = (method: string, n: number, params: unknown) => Error | undefined
 
+/**
+ * The reader's default stock list, which the seed asks as cross tokens (seed.stocks.test.ts tests
+ * their pools); none of the stocks has a pool in these worlds.
+ */
+const STOCKS = BASE_STOCKS.tokens
+/** Uniswap v3 candidates: (3 ERC-20 pairs of the references + 10 stocks × 3 ERC-20s) × 7 tiers. */
+const V3_CANDIDATES = (3 + STOCKS.length * 3) * 7
+
 /** A protocol's own token, not among the reference tokens, and its Uniswap v3 pool with WETH. */
 const PROJECT: TokenInfo = { address: addr(0xbeef), symbol: 'PRJ', name: 'Project', decimals: 18 }
 const PROJECT_POOL = addr(0x3002)
 /** The seed world with PROJECT among its tokens; the reader's reference list stays without it. */
 const PROJECT_WORLD = {
   addresses: resolveAddresses({ referenceTokens: [...addresses.referenceTokens, PROJECT] }),
+  crossTokens: STOCKS,
   pools: [
     ...POOLS,
     {
@@ -75,7 +85,7 @@ const PROJECT_WORLD = {
 function counted(
   counts: Map<string, number>,
   fail: Fail = () => undefined,
-  world: Parameters<typeof registerSeedWorld>[1] = { addresses, pools: POOLS },
+  world: Parameters<typeof registerSeedWorld>[1] = { addresses, crossTokens: STOCKS, pools: POOLS },
 ): Transport {
   const fixture = createFixture()
   setClock(fixture, { latestBlock: HEAD, latestTimestamp: 1_800_000_000 })
@@ -144,7 +154,9 @@ describe('seedStep', () => {
     )
     expect(
       first.lines.some((l) =>
-        /INFO {2}seeded dex=uniswap-v3 candidates=21 found=1 searched=1 total=1/.test(l),
+        l.includes(
+          `INFO  seeded dex=uniswap-v3 candidates=${V3_CANDIDATES} found=1 searched=1 total=1`,
+        ),
       ),
     ).toBe(true)
     expect(first.lines.some((l) => l.includes('INFO  creation blocks found pools=3/3'))).toBe(true)

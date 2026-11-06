@@ -25,6 +25,8 @@ import {
   createChainReader,
   createFixtureTransport,
   createSyntheticFixture,
+  STOCK_PROTOCOL,
+  type StockList,
   SYNTHETIC_DEFAULTS,
   SYNTHETIC_HISTORY,
   SYNTHETIC_OWNERS,
@@ -49,12 +51,26 @@ export const DEMO_LOG_CHUNK_SIZE = 100_000
 /** …and in one window per DEX (1 000 chunks = 100 M blocks): no progress lines to resume from. */
 export const DEMO_DISCOVER_WINDOW_CHUNKS = 1_000
 
-/** The chain of the synthetic world at `opts`, with the Aero start blocks of its anchor. */
+/**
+ * The demo world holds no tokenized stock (docs/design/stocks.md §8): its stock list is empty, so
+ * the snapshot step sends no stock read and stores no reading, and the stock routes answer empty.
+ */
+export const DEMO_STOCKS: StockList = Object.freeze({
+  tokens: [],
+  feeds: {},
+  oracleRegistry: STOCK_PROTOCOL.oracleRegistry,
+})
+
+/**
+ * The chain of the synthetic world at `opts`, with the Aero start blocks of its anchor and the
+ * demo's empty stock list.
+ */
 export function createDemoChain(opts: SyntheticOptions = {}): ChainReader {
   return createChainReader({
     transport: createFixtureTransport(createSyntheticFixture(opts)),
     addresses: syntheticAddresses(opts.latestBlock ?? SYNTHETIC_DEFAULTS.latestBlock),
     logChunkSize: DEMO_LOG_CHUNK_SIZE,
+    stocks: DEMO_STOCKS,
   })
 }
 

@@ -7,7 +7,8 @@
  *
  * Answers are deep copies: nothing the UI does to a response can change the bundle. The bundle
  * holds scored pools only, so a pool the server knows but has not scored (its `/api/pools/:id`
- * and history) and a token outside every scored pool answer 404 here.
+ * and history) and a token outside every scored pool answer 404 here. A bundle exported before
+ * the stock routes has no stock keys: it answers `{ items: [] }` and 404 `stock not found`.
  */
 import { GAP_FEED_MIN_VOLUME_USD, isMeaningfulGap } from '@depthwatch/core'
 import { sortValue } from '../lib/sort.js'
@@ -43,6 +44,7 @@ export const STATIC_BUNDLE_URL = './data/bundle.json'
 const POOL_NOT_FOUND = 'pool not found'
 const TOKEN_NOT_FOUND = 'token not found'
 const MANDATE_NOT_FOUND = 'mandate not found'
+const STOCK_NOT_FOUND = 'stock not found'
 const BAD_ADDRESS = 'invalid token address: expected 0x + 40 hex chars'
 
 /** Own-property lookup, so ids like `constructor` or `__proto__` are simply unknown. */
@@ -228,6 +230,17 @@ export function createStaticClient(bundle: StaticBundle): ApiClient {
       if (svg === undefined) throw new ApiError(404, MANDATE_NOT_FOUND)
       return svg
     },
+    async stocks() {
+      // The bundle keeps the API's order (deepest first, then ticker).
+      return copy({ items: bundle.stocks ?? [] })
+    },
+    async stock(address: string) {
+      const normalized = parseAddress(address)
+      if (normalized === undefined) throw new ApiError(400, BAD_ADDRESS)
+      const detail = own(bundle.stockDetails ?? {}, normalized)
+      if (!detail) throw new ApiError(404, STOCK_NOT_FOUND)
+      return copy(detail)
+    },
   }
 }
 
@@ -240,6 +253,8 @@ const RECORD_KEYS = [
   'badges',
 ] as const
 const ARRAY_KEYS = ['pools', 'gaps', 'scorecards'] as const
+/** Absent from a bundle exported before the stock routes; checked when present. */
+const OPTIONAL_KEYS = { stocks: 'array', stockDetails: 'object' } as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -260,6 +275,11 @@ export function assertStaticBundle(value: unknown): StaticBundle {
   if (!isRecord(value.health) || !isRecord(value.stats)) return fail('health or stats missing')
   for (const key of ARRAY_KEYS) if (!Array.isArray(value[key])) fail(`${key} is not an array`)
   for (const key of RECORD_KEYS) if (!isRecord(value[key])) fail(`${key} is not an object`)
+  for (const [key, kind] of Object.entries(OPTIONAL_KEYS)) {
+    const v = value[key]
+    if (v === undefined) continue
+    if (kind === 'array' ? !Array.isArray(v) : !isRecord(v)) fail(`${key} is not an ${kind}`)
+  }
   return value as unknown as StaticBundle
 }
 

@@ -3,10 +3,17 @@
  * every section filled; pages are walked to the end; the command writes the file for the demo
  * (in memory) and for a live database file, and never creates a database that is not there.
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createApp, SEED_NOW, type StaticBundle, seedDatabase } from '@depthwatch/api'
+import {
+  createApp,
+  createSeededDatabase,
+  SEED_NOW,
+  type StaticBundle,
+  seedDatabase,
+  seedStocks,
+} from '@depthwatch/api'
 import { SYNTHETIC_DEFAULTS } from '@depthwatch/chain'
 import { tradeOff } from '@depthwatch/core'
 import {
@@ -84,6 +91,9 @@ describe('buildStaticBundle over the demo (short history)', () => {
       expect(bundle.samples[id]?.['30d'].points).toHaveLength(4)
       expect(bundle.badges[id]).toMatch(/<svg[^>]*>[\s\S]*<\/svg>\s*$/)
     }
+    // The demo world tracks no stock: both keys are there, empty.
+    expect(bundle.stocks).toEqual([])
+    expect(bundle.stockDetails).toEqual({})
   })
 
   it('equals the API response of every route', async () => {
@@ -107,6 +117,7 @@ describe('buildStaticBundle over the demo (short history)', () => {
         expect(bundle.samples[id]?.[window]).toEqual(await get(`${path}/samples?window=${window}`))
       expect(bundle.badges[id]).toBe(await get(`${path}/badge.svg`))
     }
+    expect(bundle.stocks).toEqual(((await get('/api/stocks')) as { items: unknown }).items)
   })
 
   it('includes inactive mandates', async () => {
@@ -118,6 +129,27 @@ describe('buildStaticBundle over the demo (short history)', () => {
       expect(again.badges['demo-aero-usdc-aero']).toMatch(/<svg[^>]*>[\s\S]*<\/svg>\s*$/)
     } finally {
       db.mandates.setActive('demo-aero-usdc-aero', true)
+    }
+  })
+})
+
+describe('buildStaticBundle with stocks', () => {
+  it('exports /api/stocks and /api/stocks/:token of every stock, keyed by lowercase address', async () => {
+    const { db, seed } = createSeededDatabase()
+    try {
+      const { stocks } = seedStocks(db, seed)
+      const bundle = await buildStaticBundle(db, { now: seed.now, source: 'live' })
+      const get = (path: string) => api(db, seed.now, path)
+      expect(bundle.stocks).toEqual(((await get('/api/stocks')) as { items: unknown }).items)
+      const addresses = Object.values(stocks).map((s) => s.token.address.toLowerCase())
+      expect(Object.keys(bundle.stockDetails ?? {}).sort()).toEqual(addresses.sort())
+      for (const address of addresses)
+        expect(bundle.stockDetails?.[address]).toEqual(await get(`/api/stocks/${address}`))
+      expect(bundle.stockDetails?.[stocks.nvda.token.address]?.pools).toHaveLength(4)
+      // A stock's token page is exported like any token's.
+      expect(bundle.tokens[stocks.nvda.token.address]?.total).toBe(4)
+    } finally {
+      db.close()
     }
   })
 })
@@ -235,6 +267,38 @@ describe('exportCommand', () => {
       new ConfigError('--note needs text'),
     )
   })
+
+  it('--bundle keeps a bundle exported before the stock routes without their keys', async () => {
+    const db = openDatabase(IN_MEMORY)
+    let old: StaticBundle
+    try {
+      await runDemoPipeline({ db, config: loadConfig({}), historyPoints: 2 })
+      const {
+        stocks: _stocks,
+        stockDetails: _details,
+        ...rest
+      } = await buildStaticBundle(db, {
+        now: NOW,
+        source: 'demo',
+      })
+      old = rest
+    } finally {
+      db.close()
+    }
+    const from = join(dir, 'old.json')
+    const out = join(dir, 'again.json')
+    writeFileSync(from, JSON.stringify(old))
+    const result = await exportCommand({
+      config: loadConfig({}, parseCliArgs(['export', '--bundle', from, '--out', out]).flags),
+      log: silentLogger,
+      stdout: () => {},
+    })
+    const written = JSON.parse(readFileSync(out, 'utf8')) as StaticBundle
+    expect(written).toEqual(result.bundle)
+    expect(Object.hasOwn(written, 'stocks')).toBe(false)
+    expect(Object.hasOwn(written, 'stockDetails')).toBe(false)
+    expect(written.pools).toEqual(old.pools)
+  }, 30_000)
 
   it('refuses a database file that does not exist, creating nothing', async () => {
     const file = join(dir, 'missing.db')

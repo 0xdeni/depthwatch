@@ -58,15 +58,22 @@ describe('shell landmarks and wayfinding', () => {
     expect(main.getAttribute('tabindex')).toBe('-1')
   })
 
-  it('links the wordmark home and lists Pools, Gaps, Scorecards and Methodology in one nav', () => {
+  it('links the wordmark home and lists Pools, Stocks, Gaps, Scorecards and Methodology in one nav', () => {
     renderAt('/gaps')
     expect(screen.getAllByRole('navigation', { name: 'Primary' })).toHaveLength(1)
     const home = screen.getAllByRole('link', { name: 'Depthwatch home' })
     expect(home.map((a) => a.getAttribute('href'))).toEqual(['/', '/'])
     const links = within(nav()).getAllByRole('link')
-    expect(links.map((a) => a.textContent)).toEqual(['Pools', 'Gaps', 'Scorecards', 'Methodology'])
+    expect(links.map((a) => a.textContent)).toEqual([
+      'Pools',
+      'Stocks',
+      'Gaps',
+      'Scorecards',
+      'Methodology',
+    ])
     expect(links.map((a) => a.getAttribute('href'))).toEqual([
       '/pools',
+      '/stocks',
       '/gaps',
       '/mm',
       '/methodology',
@@ -86,6 +93,14 @@ describe('shell landmarks and wayfinding', () => {
     cleanup()
     renderAt('/')
     expect(current()).toEqual([])
+  })
+
+  it('makes Stocks current on the list and on a stock’s page, and nothing else', () => {
+    renderAt('/stocks')
+    expect(current()).toEqual(['Stocks'])
+    cleanup()
+    renderAt('/stocks/0xb26e766461630000000000000000000000000000')
+    expect(current()).toEqual(['Stocks'])
   })
 })
 
@@ -338,8 +353,17 @@ describe('the dock (§5.1, PH3)', () => {
     const dock = document.querySelector('nav.dock') as HTMLElement
     expect(dock.getAttribute('aria-label')).toBe('Primary')
     const tabs = within(dock).getAllByRole('link')
-    expect(tabs.map((a) => a.textContent)).toEqual(['Pools', 'Gaps', 'Scorecards', 'Method'])
-    expect(tabs.map((a) => a.getAttribute('aria-current'))).toEqual([null, 'page', null, null])
+    // Five tabs share 288 px at 320 px (57.6 px each): Scorecards and Methodology go short, and
+    // their links keep the full name.
+    expect(tabs.map((a) => a.textContent)).toEqual(['Pools', 'Stocks', 'Gaps', 'Scores', 'Method'])
+    expect(tabs.map((a) => a.getAttribute('aria-current'))).toEqual([
+      null,
+      null,
+      'page',
+      null,
+      null,
+    ])
     expect(within(dock).getByRole('link', { name: 'Methodology' })).toBeTruthy()
+    expect(within(dock).getByRole('link', { name: 'Scorecards' })).toBeTruthy()
   })
 })

@@ -22,5 +22,7 @@ export function createPendingClient(ready: Promise<ApiClient>): ApiClient {
     scorecard: (id) => ready.then((c) => c.scorecard(id)),
     scorecardSamples: (id, query) => ready.then((c) => c.scorecardSamples(id, query)),
     badge: (id) => ready.then((c) => c.badge(id)),
+    stocks: () => ready.then((c) => c.stocks()),
+    stock: (address) => ready.then((c) => c.stock(address)),
   }
 }

@@ -5,6 +5,7 @@ import { healthRoutes } from './health.js'
 import { mmRoutes } from './mm.js'
 import { poolsRoutes } from './pools.js'
 import { statsRoutes } from './stats.js'
+import { stocksRoutes } from './stocks.js'
 import { tokensRoutes } from './tokens.js'
 
 /** Everything under `/api`. */
@@ -15,6 +16,7 @@ export function createApiRouter(ctx: ApiContext): Hono {
   api.route('/pools', poolsRoutes(ctx))
   api.route('/gaps', gapsRoutes(ctx))
   api.route('/tokens', tokensRoutes(ctx))
+  api.route('/stocks', stocksRoutes(ctx))
   api.route('/mm', mmRoutes(ctx))
   return api
 }

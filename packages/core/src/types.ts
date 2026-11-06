@@ -9,6 +9,8 @@
  * - Pool ids are `${dex}:${address|poolId}` and unique across DEXes.
  */
 
+import type { PoolReference } from './stocks/types.js'
+
 export type Address = `0x${string}`
 export type Hex = `0x${string}`
 
@@ -262,10 +264,11 @@ export type HealthGrade = 'A' | 'B' | 'C' | 'D' | 'F'
 /**
  * Why a pool has no grade (docs/METRICS.md, "Rated and unrated pools"), tested in this order:
  * `hooked` for a pool with a hook (`isHookedPool`; not modelled: no depth, spread or concentration),
+ * `transfers-paused` for a stock pool whose stock's transfers are paused (every swap reverts),
  * `unpriced` when a side's USD depth is unknown, `one-sided` when the deeper side holds the rating
  * floor and the thinner does not, `thin` when neither does.
  */
-export type UnratedReason = 'hooked' | 'unpriced' | 'one-sided' | 'thin'
+export type UnratedReason = 'hooked' | 'transfers-paused' | 'unpriced' | 'one-sided' | 'thin'
 
 /**
  * What the concentration component was scored from (docs/METRICS.md, "Concentration (max 20)"):
@@ -308,6 +311,8 @@ export interface HealthInputs {
   persistence: PersistenceMetrics | null
   /** A pool with a hook (`isHookedPool`): unrated with reason `hooked`. Default false. */
   hooked?: boolean
+  /** A stock pool whose stock's transfers are paused: unrated, `transfers-paused`. Default false. */
+  transfersPaused?: boolean
 }
 
 export interface GapMetrics {
@@ -363,6 +368,8 @@ export interface PoolSnapshot {
   priceDeviationBps: number | null
   /** LP fee in pips its depth and spread used (v4: the LP fee); null when stored before schema 7. */
   feePips: number | null
+  /** Set against its stock's reading ("Reference deviation"); null: no stock, or before schema 8. */
+  reference: PoolReference | null
 }
 
 /**

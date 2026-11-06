@@ -1,9 +1,10 @@
 /**
  * Retention over an in-memory database with rows on both sides of every cutoff: what goes, what
- * stays, the cursors of untracked pools, the coverage start of tracked ones, the batches, the
- * daily gate and the stop signal.
+ * stays (the stock readings, whatever their age), the cursors of untracked pools, the coverage
+ * start of tracked ones, the batches, the daily gate and the stop signal.
  */
 import { createChainReader, createFixture, createFixtureTransport } from '@depthwatch/chain'
+import { evaluateStockReading, makeStock, stockRawRead } from '@depthwatch/core'
 import {
   type Database,
   fixtureAddress,
@@ -168,6 +169,33 @@ describe('pruneStep', () => {
     )
     expect(result).toMatchObject({ keepDays: 35, snapshots: 10, batches: 3 })
     expect(db.snapshots.count()).toBe(0)
+  })
+
+  it('never prunes the stock readings or the stock list', async () => {
+    const { db, ctx } = context()
+    const stock = makeStock('NVDAc')
+    db.stocks.replaceAll([stock], NOW - 400 * DAY)
+    const ages = [400, 40, 1]
+    db.stockReadings.insertMany(
+      ages.map((days) => {
+        const timestamp = NOW - days * DAY
+        const raw = stockRawRead(stock, 19_950_000_000n, timestamp - 1_800)
+        return {
+          reading: evaluateStockReading(stock, raw, { blockNumber: blockAt(timestamp), timestamp }),
+          passDepth: null,
+        }
+      }),
+    )
+    snapshotsAt(db, [40])
+    const result = await pruneStep(ctx, { keepDays: 1 })
+    expect(result.snapshots).toBe(2)
+    expect(db.stockReadings.count()).toBe(ages.length)
+    expect(
+      db.stockReadings
+        .seriesFor(stock.token.address, 0)
+        .map((r) => (NOW - r.reading.timestamp) / DAY),
+    ).toEqual(ages)
+    expect(db.stocks.list().map((s) => s.ticker)).toEqual(['NVDA'])
   })
 
   it('stores nothing more once the stop signal has aborted', async () => {

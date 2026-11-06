@@ -165,6 +165,8 @@ export function buildSnapshot(spec: SnapshotSpec): PoolSnapshot {
     spreads: buildSpreads(spec.price, spec.spread10kBps, spec.maxFeasibleUsd),
     concentration: buildConcentration(spec.pool.kind, spec.ownerTop1Share),
     priceDeviationBps: priceDeviationBps(spec.price, spec.token0Usd, spec.token1Usd),
+    // No pool of the seed holds a stock.
+    reference: null,
   }
 }
 

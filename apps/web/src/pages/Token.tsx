@@ -4,14 +4,15 @@
  * "TOKEN", the symbol with its name, the answer at right), then the band with the depth butterfly
  * of the token's pools on its own scale (closed by "All of WETH"), the facts as an ink block over
  * the band's lower edge, the pools table sheet (`sort`, `dir`, `cols`, `rows` in the URL) and
- * about this token as a panel.
+ * about this token as a panel. A token of the stock list (`GET /api/stocks`) shows its price as
+ * the valuation price, with the label of docs/design/stocks-api.md §3.
  */
 import { useQueryClient } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useDataNow } from '../api/context.js'
 import { ApiError } from '../api/errors.js'
-import { useGaps, usePoolMetas, useToken } from '../api/hooks.js'
+import { useGaps, usePoolMetas, useStocks, useToken } from '../api/hooks.js'
 import type { PoolMetaDto, TokenDetail } from '../api/types.js'
 import type { ButterflyGap } from '../components/charts/DepthButterfly.js'
 import { MEANINGFUL_GAP_TURNOVER } from '../components/charts/TurnoverGlyph.js'
@@ -73,6 +74,11 @@ function TokenView({
   const known = new Map<string, PoolMetaDto>(detail.pools.map((p) => [p.pool.id, p.pool]))
   const fetched = usePoolMetas(detail.via.filter((s) => isPoolId(s) && !known.has(s)))
   const metas = new Map([...known, ...fetched])
+  const stocks = useStocks()
+  const address = token.address.toLowerCase()
+  const isStock = (stocks.data?.items ?? []).some(
+    (s) => s.stock.token.address.toLowerCase() === address,
+  )
   return (
     <div className="token">
       <title>{`${tokenText(token)} – Depthwatch`}</title>
@@ -85,7 +91,7 @@ function TokenView({
         }
       />
       <TokenBand symbol={tokenText(token)} pools={pools} gap={gap} />
-      <TokenFacts detail={detail} metas={metas} />
+      <TokenFacts detail={detail} metas={metas} stock={isStock} />
       {pools.length ? (
         <TokenPools
           pools={pools}

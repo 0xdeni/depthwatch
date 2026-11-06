@@ -1,6 +1,8 @@
 /**
- * Seeded discovery per DEX: pools of a token list found without logs, by asking each DEX directly
- * at one block, every read through Multicall3.
+ * Seeded discovery per DEX: pools of a pair list found without logs, by asking each DEX directly
+ * at one block, every read through Multicall3. The pairs are every pair of a token list plus, for
+ * cross tokens (the stocks), each cross token with each token of the list (`seedPairs`); a pair
+ * with native ETH is asked of Uniswap v4 only.
  *
  * - Uniswap v3: `feeAmountTickSpacing(fee)` for the candidate tiers (a tier answered with 0 is not
  *   enabled), then `getPool(token0, token1, fee)` for every pair and enabled tier.
@@ -65,25 +67,62 @@ export interface DexSeed {
   build(createdAt: ReadonlyMap<string, bigint>): Promise<PoolMeta[]>
 }
 
+/** Two distinct lowercase addresses, ordered as the factories order them (token0 < token1). */
+export type SeedPair = readonly [Address, Address]
+
+/** A seeder asks its DEX for every pair of `pairs` (`seedPairs`), each pair once. */
 export type DexSeeder = (
   ctx: ReaderContext,
   blockNumber: bigint,
-  tokens: readonly Address[],
+  pairs: readonly SeedPair[],
 ) => Promise<DexSeed>
 
+const ordered = (a: Address, b: Address): SeedPair => (a < b ? [a, b] : [b, a])
+
+function byPair(x: SeedPair, y: SeedPair): number {
+  if (x[0] !== y[0]) return x[0] < y[0] ? -1 : 1
+  return x[1] === y[1] ? 0 : x[1] < y[1] ? -1 : 1
+}
+
 /** Every pair of distinct addresses, ordered as the factories order them (token0 < token1). */
-export function sortedPairs(addresses: readonly Address[]): Array<readonly [Address, Address]> {
+export function sortedPairs(addresses: readonly Address[]): SeedPair[] {
   const list = [...new Set(addresses.map(lowercase))].sort()
-  const out: Array<readonly [Address, Address]> = []
+  const out: SeedPair[] = []
   list.forEach((a, i) => {
     for (const b of list.slice(i + 1)) out.push([a, b])
   })
   return out
 }
 
-/** The tokens other than native ETH, which only Uniswap v4 pairs. */
-export const erc20s = (tokens: readonly Address[]) =>
-  tokens.filter((t) => lowercase(t) !== NATIVE_ETH)
+/** Each cross token with each token of `tokens` (never with another cross token), each sorted. */
+export function crossPairs(
+  crossTokens: readonly Address[],
+  tokens: readonly Address[],
+): SeedPair[] {
+  const list = [...new Set(tokens.map(lowercase))]
+  return [...new Set(crossTokens.map(lowercase))].flatMap((cross) =>
+    list.filter((t) => t !== cross).map((t) => ordered(cross, t)),
+  )
+}
+
+/**
+ * The pairs a seed asks for: `sortedPairs(tokens)` plus `crossPairs(crossTokens, tokens)`, each
+ * once, in (token0, token1) order. Stocks are cross tokens: each is paired with every reference
+ * token and with no other stock, so the list grows linearly with the stocks.
+ */
+export function seedPairs(
+  tokens: readonly Address[],
+  crossTokens: readonly Address[] = [],
+): SeedPair[] {
+  const out = new Map<string, SeedPair>()
+  for (const pair of [...sortedPairs(tokens), ...crossPairs(crossTokens, tokens)])
+    out.set(`${pair[0]}|${pair[1]}`, pair)
+  return [...out.values()].sort(byPair)
+}
+
+/** The pairs without native ETH, which only Uniswap v4 pairs. */
+export const erc20Pairs = (pairs: readonly SeedPair[]): SeedPair[] =>
+  pairs.filter(([a, b]) => a !== NATIVE_ETH && b !== NATIVE_ETH)
 
 /** A factory's `getPool` answer: the pool, or undefined for address(0); a failed call throws. */
 export function poolAddress(result: CallResult | undefined, what: string): Address | undefined {
@@ -110,7 +149,7 @@ export const codeTarget = (id: string, address: Address, lowerBound: bigint): Cr
   lowerBound,
 })
 
-export const seedUniswapV3: DexSeeder = async (ctx, block, tokens) => {
+export const seedUniswapV3: DexSeeder = async (ctx, block, pairs) => {
   const { factory, startBlock } = ctx.addresses.uniswapV3
   const abi = uniswapV3FactoryAbi
   const spacings = await multicallBatched(
@@ -128,7 +167,7 @@ export const seedUniswapV3: DexSeeder = async (ctx, block, tokens) => {
     const tickSpacing = asNumber(expectResult(spacings[i], what), 'tickSpacing')
     return tickSpacing > 0 ? [{ fee, tickSpacing }] : []
   })
-  const keys = sortedPairs(erc20s(tokens)).flatMap(([token0, token1]) =>
+  const keys = erc20Pairs(pairs).flatMap(([token0, token1]) =>
     tiers.map((tier) => ({ token0, token1, ...tier })),
   )
   const results = await multicallBatched(
@@ -157,9 +196,9 @@ export const seedUniswapV3: DexSeeder = async (ctx, block, tokens) => {
   }
 }
 
-export const seedAerodromeV2: DexSeeder = async (ctx, block, tokens) => {
+export const seedAerodromeV2: DexSeeder = async (ctx, block, pairs) => {
   const { poolFactory, startBlock } = ctx.addresses.aerodromeV2
-  const keys = sortedPairs(erc20s(tokens)).flatMap(([token0, token1]) =>
+  const keys = erc20Pairs(pairs).flatMap(([token0, token1]) =>
     [false, true].map((stable) => ({ token0, token1, stable })),
   )
   const results = await multicallBatched(
@@ -193,7 +232,7 @@ export const seedAerodromeV2: DexSeeder = async (ctx, block, tokens) => {
 export function slipstreamSeeder<D extends SlipstreamDeployment>(
   family: SlipstreamFamily<D>,
 ): DexSeeder {
-  return async (ctx, block, tokens) => {
+  return async (ctx, block, pairs) => {
     const deployments = family.deployments(ctx)
     const abi = aerodromeCLFactoryAbi
     const enabled = await multicallBatched(
@@ -201,11 +240,11 @@ export function slipstreamSeeder<D extends SlipstreamDeployment>(
       deployments.map((d) => ({ address: d.factory, abi, functionName: 'tickSpacings' })),
       block,
     )
-    const pairs = sortedPairs(erc20s(tokens))
+    const erc20 = erc20Pairs(pairs)
     const keys = deployments.flatMap((deployment, i) => {
       const what = `${family.dex} ${deployment.name} tickSpacings()`
       const spacings = asTuple(expectResult(enabled[i], what), what).map((s) => asNumber(s, what))
-      return pairs.flatMap(([token0, token1]) =>
+      return erc20.flatMap(([token0, token1]) =>
         spacings.map((tickSpacing) => ({ deployment, token0, token1, tickSpacing })),
       )
     })
@@ -253,9 +292,9 @@ export function slipstreamSeeder<D extends SlipstreamDeployment>(
 /** Aerodrome Slipstream: the Slipstream seeder over `aerodromeSlipstream`'s deployments. */
 export const seedSlipstream: DexSeeder = slipstreamSeeder(aerodromeSlipstreamFamily)
 
-export const seedUniswapV4: DexSeeder = async (ctx, block, tokens) => {
+export const seedUniswapV4: DexSeeder = async (ctx, block, pairs) => {
   const { stateView, startBlock } = ctx.addresses.uniswapV4
-  const keys = sortedPairs(tokens).flatMap(([currency0, currency1]) =>
+  const keys = pairs.flatMap(([currency0, currency1]) =>
     UNISWAP_V4_STANDARD_KEYS.map(({ fee, tickSpacing }) => {
       const key = { currency0, currency1, fee, tickSpacing, hooks: ZERO_ADDRESS }
       return { ...key, id: computePoolId(key) }

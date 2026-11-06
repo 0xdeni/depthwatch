@@ -21,6 +21,7 @@ import type {
   PublicScorecardSummary,
   UnratedReason,
 } from '@depthwatch/core'
+import type { StockPoolRow, StockSummary } from './stockDto.js'
 import type { LabelledPool, LabelledToken } from './tokenLabels.js'
 
 /**
@@ -89,9 +90,12 @@ export interface DexStatsDto {
   scored: number
   /** Scored pools that are rated: both ±2 % sides known, the thinner one at least $5,000. */
   rated: number
-  /** Sum of ±2 % depth (USD) over scored pools, stale quotes (`PoolSummary.staleQuote`) left out. */
+  /**
+   * Sum of ±2 % depth (USD) over scored pools, stale quotes (`PoolSummary.staleQuote`) and pools
+   * unrated `transfers-paused` left out.
+   */
   depth2Usd: number
-  /** Scored pools with a known ±2 % depth and no stale quote: the ones `depth2Usd` sums. */
+  /** Scored pools with a known ±2 % depth, not stale, not paused: the ones `depth2Usd` sums. */
   depthKnownPools: number
   /** Sum of 24 h volume (USD) over scored pools with a known volume; null when none has one. */
   volume24hUsd: number | null
@@ -249,13 +253,32 @@ export interface TokenDetail {
   /** Every discovered pool containing the token, scored or not. */
   poolCount: number
   /**
-   * `depth2Usd` summed over every scored pool containing the token with a known depth and no stale
-   * quote, ignoring limit/offset (docs/METRICS.md, "A token's depth"); null when none has one.
+   * `depth2Usd` summed over every scored pool containing the token with a known depth, no stale
+   * quote and transfers not paused, ignoring limit/offset (docs/METRICS.md, "A token's depth"); null
+   * when none has one.
    */
   depth2UsdTotal: number | null
-  /** Scored pools of the token with a known depth and no stale quote: the ones `depth2UsdTotal` sums. */
+  /** Its scored pools with a known depth, not stale, not paused: the ones `depth2UsdTotal` sums. */
   depthKnownPools: number
 }
+
+// ---------------------------------------------------------------------------------------------
+// Tokenized stocks (docs/design/stocks-api.md §1; the rows are in stockDto.ts)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * `GET /api/stocks`: every stock of the stored stock list, with pools or not, by
+ * `depth2BuyUsd + depth2SellUsd` descending (unknown last), then ticker.
+ */
+export interface StocksResponse {
+  items: StockSummary[]
+}
+
+/**
+ * `GET /api/stocks/:token`: the stock's summary plus every scored pool of it, the counted pools
+ * first, then the larger thinner side (unknown last), then the pool id.
+ */
+export type StockDetail = StockSummary & { pools: StockPoolRow[] }
 
 // ---------------------------------------------------------------------------------------------
 // Market-maker scorecards (docs/design/scorecards.md §6)
@@ -358,4 +381,14 @@ export interface StaticBundle {
   samples: Record<string, { '24h': SamplesResponse; '7d': SamplesResponse; '30d': SamplesResponse }>
   /** `/api/mm/:id/badge.svg` per mandate: the SVG text. */
   badges: Record<string, string>
+  /**
+   * `/api/stocks`: every stored stock. Absent from bundles exported before the stock routes,
+   * which the static dashboard reads as no stock (`{ items: [] }`).
+   */
+  stocks?: StockSummary[]
+  /**
+   * `/api/stocks/:token` per stock of `stocks`; key = lowercase address. Absent from older
+   * bundles, where every stock is `stock not found`.
+   */
+  stockDetails?: Record<string, StockDetail>
 }

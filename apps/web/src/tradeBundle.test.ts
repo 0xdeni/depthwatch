@@ -23,10 +23,12 @@ const WALLET_STRINGS = [MARKER, 'eip6963:requestProvider', 'eth_requestAccounts'
 /**
  * Bytes of minified JavaScript a page may load at boot. Before the panel: 567,150 (server) and
  * 573,910 (static: entry 320,228 + staticBoot 253,682). With it: 577,038 and 583,070 (the section,
- * its gate and the compiled-in routes and allowlist it reads). The budget leaves about 2 % for
- * growth; the panel's own chunk is about 182 KB with viem, so a leak of it into boot fails here.
+ * its gate and the compiled-in routes and allowlist it reads); 578,257 and 584,358 before the
+ * stock pages, 604,213 and 610,568 with them (`/stocks`, `/stocks/:token` and their words,
+ * docs/design/stocks-api.md §3). The budget leaves about 2 % for growth; the panel's own chunk is
+ * about 182 KB with viem, so a leak of it into boot fails here.
  */
-const BOOT_BUDGET = { server: 590_000, static: 596_000 }
+const BOOT_BUDGET = { server: 616_000, static: 623_000 }
 
 type OutputChunk = Rollup.OutputChunk
 

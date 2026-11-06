@@ -5,6 +5,7 @@
  * on the way in. Non-2xx responses become `ApiError`s carrying the API's `{ error, issues? }`.
  */
 import { ApiError, ApiUnavailableError } from './errors.js'
+import type { StockDetail, StocksResponse } from './stockTypes.js'
 import type {
   ApiClient,
   ErrorIssue,
@@ -60,6 +61,11 @@ export function poolPath(id: string): string {
 /** Path of a token resource; the API lowercases too, but lowercase here keeps cache keys stable. */
 export function tokenPath(address: string): string {
   return `/tokens/${encodeURIComponent(address.trim().toLowerCase())}`
+}
+
+/** Path of a stock resource, lowercased like `tokenPath`: the address is the stock's identity. */
+export function stockPath(address: string): string {
+  return `/stocks/${encodeURIComponent(address.trim().toLowerCase())}`
 }
 
 /** Path of a scorecard resource. Mandate ids are slugs; encoding keeps a stray id harmless. */
@@ -157,6 +163,8 @@ export function createHttpClient(opts: HttpClientOptions = {}): ApiClient {
     scorecardSamples: (id: string, query: SamplesQuery = {}) =>
       get<SamplesResponse>(`${mmPath(id)}/samples`, { window: query.window, limit: query.limit }),
     badge: (id: string) => getText(badgePath(id), 'image/svg+xml'),
+    stocks: () => get<StocksResponse>('/stocks'),
+    stock: (address: string) => get<StockDetail>(stockPath(address)),
   }
 }
 

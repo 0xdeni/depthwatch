@@ -105,12 +105,17 @@ interface StaticBundle {
   scorecardDetails: Record<string, ScorecardDetail>
   samples: Record<string, { '24h': SamplesResponse; '7d': SamplesResponse; '30d': SamplesResponse }>
   badges: Record<string, string> // SVG text per mandate id
+  stocks?: StockSummary[] // /api/stocks; absent from older bundles = no stock
+  stockDetails?: Record<string, StockDetail> // /api/stocks/:token, key = lowercase address
 }
 ```
 
 Built by `apps/cli/src/export.ts` `buildStaticBundle(db, { now, source })` **through the real
 API** (`createApp(db, { now }).request(...)` for each route), so the static site shows exactly
-what the server would.
+what the server would. The two stock keys (docs/design/stocks-api.md §2) are optional so that a
+bundle exported before the stock routes still parses: the static client then answers
+`{ items: [] }` and 404 `stock not found`. Every export writes them (the demo's empty, since the
+demo world has no stock), and `export --bundle` keeps an older bundle without them.
 
 ### CLI
 

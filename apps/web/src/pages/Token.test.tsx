@@ -292,6 +292,8 @@ describe('token helpers', () => {
       depth2Usd: up + down,
       depth2UpUsd: up,
       depth2DownUsd: down,
+      staleQuote: false,
+      health: { unratedReason: null },
     }) as unknown as PoolSummary
 
   it('sees each pool from the token: where it is token1, the stored sides swap', () => {
@@ -355,6 +357,11 @@ describe('token helpers', () => {
     const deeper = pool('s', '0xaa', '0xcc', 30_000_000, 30_000_000)
     const stale = { ...deeper, pool: { ...deeper.pool, dex: 'uniswap-v3' }, staleQuote: true }
     expect(poolsTakeaway([stale, ...loaded] as PoolSummary[], 'WETH', detail)).toBe(
+      `A / B on Uniswap v3 holds 25${NB}% of WETH’s depth.`,
+    )
+    // Nor is a pool whose stock's transfers are paused (docs/METRICS.md, "Stock tradability").
+    const paused = { ...stale, staleQuote: false, health: { unratedReason: 'transfers-paused' } }
+    expect(poolsTakeaway([paused, ...loaded] as PoolSummary[], 'WETH', detail)).toBe(
       `A / B on Uniswap v3 holds 25${NB}% of WETH’s depth.`,
     )
     expect(poolsTakeaway(loaded, 'WETH', { total: 1, depth2UsdTotal: 10_000_000 })).toBe(

@@ -10,7 +10,9 @@ over HTTP.
 Typical use: an agent about to trade on Base checks how deep the pool is on the side it will
 trade and what a round trip costs at its size, then verifies onchain and executes elsewhere.
 This API does not execute, route or quote trades, Depthwatch holds no funds, and its USD prices
-are a valuation convention, not an oracle.
+are a valuation convention, not an oracle. For the tokenized stocks of base.org/stocks it also
+sets each pool against the stock's Chainlink feed, as a measurement only:
+[How to read a stock's liquidity](#how-to-read-a-stocks-liquidity).
 
 Every Depthwatch server (`depthwatch serve`, `depthwatch start`, `depthwatch demo`) serves three
 documents for agents: `GET /AGENTS.md` (this file), `GET /llms.txt` (a short index) and `GET
@@ -52,7 +54,8 @@ The project status is MVP: the math is unit-tested against hand-computed values,
 from a live deployment have not yet been validated against Base mainnet at scale. Which pools a
 deployment covers depends on how its operator discovers them: factory log scans find every pool
 of the six DEXes, `depthwatch discover --seed` only the pools between the reference tokens (the
-major Base tokens plus any the operator adds). A pool missing from `/api/pools` may simply not be
+major Base tokens plus any the operator adds) and those of each tokenized stock with them. A pool
+missing from `/api/pools` may simply not be
 indexed; `GET /api/stats` counts the pools found, tracked and scored.
 
 Aerodrome moved to a new platform, Aero, on 2026-10-21: new factories, a new AERO token and new
@@ -159,13 +162,17 @@ as a different pool, not as a change to the old one.
   both ±2 % sides known and the thinner at least $5,000 (`rated: true`); only they have a **grade**:
   A ≥ 80, B ≥ 65, C ≥ 50, D ≥ 35, else F. The others have `grade: null`, keep their `total`, and say
   why in `unratedReason`: `thin` (neither side holds $5,000), `one-sided` (the deeper side does, the
-  thinner does not), `unpriced` (a side has no USD price) or `hooked` (a pool with a swap hook
+  thinner does not), `unpriced` (a side has no USD price), `hooked` (a pool with a swap hook
   Depthwatch does not model, `pool.hooks` a non-zero address: a Uniswap v4 pool with a hook, or an
   Aero Slipstream pool off the reviewed swap hook or charging each block's first swap an initial
   fee; its swaps the pool's state does not describe, so no depth, spread or concentration is
-  computed, those are empty or `null`, and the pool is not used to price tokens). `null` and the
-  zero address `0x0000000000000000000000000000000000000000`, which every Uniswap v4 pool without a
-  hook stores, mean no hook: such a pool is modelled and rated like any other.
+  computed, those are empty or `null`, and the pool is not used to price tokens) or
+  `transfers-paused` (a pool of a tokenized stock whose transfers are paused at the snapshot's
+  block, so every swap in it reverts; its depth and spread are published as measured and, like a
+  stale quote's, left out of the depth sums). `hooked` is tested first, then `transfers-paused`,
+  then the sides. `null` and the zero address
+  `0x0000000000000000000000000000000000000000`, which every Uniswap v4 pool without a hook stores,
+  mean no hook: such a pool is modelled and rated like any other.
 - **Gap score**: `turnoverRatio = volume24hUsd / depth2Usd`;
   `gapScore = 100 × clamp(log10(turnoverRatio) / 2, 0, 1)`: 0 at a turnover of 1× or less, 50 at
   10×, 100 at 100× or more. A high gap score means a day's volume is large next to the ±2 %
@@ -190,6 +197,29 @@ as a different pool, not as a change to the old one.
   tracked pools are snapshotted and scored, and the listings (`/api/pools`, `/api/gaps`,
   `/api/tokens/:address`) contain scored pools only. Any discovered pool answers on
   `GET /api/pools/:id`, with `null` metrics until it is scored.
+- **Tokenized stocks** (`/api/stocks`): a stock is a token of the server's stock list, the Coinbase
+  tokenized stocks of base.org/stocks (B20 tokens of 8 decimals). Identify a stock by address,
+  never by symbol: Base's documentation says "Tokens should be identified by address rather than
+  ticker or symbol. Metadata is mutable onchain". `depth2BuyUsd` and `depth2SellUsd` are oriented
+  to the stock, not to token0: buy is the ±2 % side whose input is the quote (`depth2UpUsd` where
+  the stock is token0, `depth2DownUsd` where it is token1), sell the side whose input is the stock.
+  Each stock pool's newest snapshot carries `reference`:
+  `deviationBps = (poolUsd / referenceUsd − 1) × 10,000`, positive when the pool prices the stock
+  above Chainlink's answer; `toleranceBps` is the feed's deviation threshold (50 bps for the ten
+  feeds) plus the pool's fee in bps, published as its two parts too (`deviationThresholdBps`,
+  `feeBps`), and `withinTolerance: true` means the deviation is no larger
+  than the feed's band and the fee explain, which is no sign of mispricing. A reading's `referenceStatus` is the first that
+  applies of `no-feed`, `unread` (a required call failed), `paused` (the oracle registry's
+  corporate-action flag), `invalid`, `held` and `live`; only a `live` reading is compared with a
+  pool. `held` is a two-part rule: `feedAgeSeconds` above the feed's heartbeat plus 3,600 s
+  (90,000 s for the ten feeds), or the block inside the weekly close (Friday 20:00 to Sunday 20:00
+  New York time) with a round from before the close began. `feedAgeSeconds` is the chain's
+  seconds since the feed's latest round, published with every reading and every reference: a
+  weekday holiday reads `live` with a large age. **Not an oracle**: `referenceUsd` is Chainlink's
+  answer passed on with its status and age; a stock's `usd` (`GET /api/tokens/:address`) and a
+  stock pool's `token0Usd` / `token1Usd` are the price graph's valuation convention, used for
+  depth and TVL. Neither is a price to settle, mark or liquidate against, and Depthwatch publishes
+  no stock price.
 
 ## Routes
 
@@ -218,11 +248,12 @@ for an hour (`depthwatch start` snapshots every 30 minutes by default).
 Totals per DEX and overall. `byDex` has one row per DEX in the fixed order `uniswap-v3`,
 `uniswap-v4`, `aerodrome-v2`, `aerodrome-slipstream`, `aero-v2`, `aero-slipstream` (zeros for a DEX
 without pools): `dex`, `pools` (discovered), `tracked`, `scored`, `rated` (scored pools that are
-rated), `depth2Usd` (sum of ±2 % depth over scored pools, stale quotes left out), `depthKnownPools`
-(the scored pools that sum covers: a known depth and no stale quote), `volume24hUsd` (sum over
-scored pools with a known volume; `null` when none has one), `medianHealth` (median health total
-over rated pools only, `null` when none is rated). `totals` has the same fields without `dex`, its
-`medianHealth` taken over all rated pools.
+rated), `depth2Usd` (sum of ±2 % depth over scored pools, stale quotes and pools unrated
+`transfers-paused` left out), `depthKnownPools` (the scored pools that sum covers: a known depth,
+no stale quote, transfers not paused), `volume24hUsd` (sum over scored pools with a known volume;
+`null` when none has one), `medianHealth` (median health total over rated pools only, `null` when
+none is rated). `totals` has the same fields without `dex`, its `medianHealth` taken over all
+rated pools.
 
 ### `GET /api/pools`
 
@@ -263,7 +294,10 @@ One pool, scored or not; 404 `pool not found` for an unknown id. Fields:
   side), `depthUsd` (USD per level and side), `spreads` (`notionalUsd` 1000 / 10000 / 100000 /
   1000000, `spreadBps`, `feasible`, `buyAvgPrice`, `sellAvgPrice`; snapshots stored before the
   $1M point have the first three), `concentration`, `priceDeviationBps`, `feePips` (the LP fee
-  this snapshot's depth and spread used; `null` in snapshots stored before it).
+  this snapshot's depth and spread used; `null` in snapshots stored before it), `reference` (a
+  stock pool against its stock's Chainlink reading at the snapshot's block, see
+  [`GET /api/stocks/:token`](#get-apistockstoken); `null` for a pool without a stock and in
+  snapshots stored before it).
 - `score`: `total`, `grade` (`null` when unrated), `rated`, `unratedReason`,
   `concentrationBasis`, `components` (`depth`, `spread`, `concentration`, `persistence`), `notes`;
   `gap`: `volume24hUsd`, `depth2Usd`, `turnoverRatio`, `gapScore`.
@@ -324,8 +358,54 @@ any other non-pool source; empty for an anchor stable or an unpriced token),
 `priceUpdatedAt`, `pools` (`PoolSummary[]`, sorted as requested), `total` (scored pools with the
 token, ignoring `limit` / `offset`), `poolCount` (every discovered pool with the token, scored or
 not), `depth2UsdTotal` (the ±2 % depth, `depth2Usd`, summed over every scored pool of the token
-with a known depth and no stale quote, whatever the page; `null` when none has one) and
-`depthKnownPools` (how many pools that sum covers). A pool counts in full for each of its two tokens.
+with a known depth, no stale quote and transfers not paused, whatever the page; `null` when none
+has one) and `depthKnownPools` (how many pools that sum covers). A pool counts in full for each of
+its two tokens.
+
+### `GET /api/stocks`
+
+The tokenized stocks of the server's stock list, with pools or without, deepest first: by
+`depth2BuyUsd + depth2SellUsd` descending, `null` last, then by `ticker`. No parameters. Response:
+`{ items: StockSummary[] }`; `items` is empty when the server tracks no stock (`depthwatch demo`
+tracks none). `StockSummary` fields:
+- `stock`: `token` (`address`, `symbol`, `name`, `decimals`, `label`), `ticker` (from the feed's
+  description, "Coinbase <ticker>") and `feed` (`address` of the Chainlink proxy, `decimals`,
+  `heartbeatSeconds`, `deviationThresholdBps`, `hours`: `24/5` or `24/7`; `null` without a feed).
+- `reading`: the newest stored reading, `null` before the first: `token`, `blockNumber`,
+  `timestamp`, `referenceStatus`, `referenceUsd` (`null` unless `live`, `held` or `paused`),
+  `feedAgeSeconds`, the raw round (`feedRoundId`, `feedAnswer`, `feedUpdatedAt`),
+  `oracleMultiplierWad` and `oraclePaused` (Coinbase's oracle registry), `tokenMultiplierWad`
+  (the token's `multiplier()`, shares per token in WAD, never applied to the answer),
+  `pausedFeatures` (`transfer`, `mint`, `burn`, `seize`; `null` when the call failed),
+  `transfersPaused` and `error` (the failed calls, or why the reading is `invalid`).
+- The aggregates over the stock's scored pools (docs/METRICS.md, "Stock aggregates"): `poolCount`;
+  `tvlUsd` with `tvlKnownPools` (a lower bound while a Uniswap v4 pool's TVL is unknown);
+  `depth2BuyUsd` and `depth2SellUsd` with `sidesKnownPools` (the counted pools with both sides
+  known); `spread10kBps` with `spread10kPoolId` (the lowest feasible $10k round trip among the
+  counted pools); `volume24hUsd` with `volumeKnownPools` (every pool, counted or not); `venues`
+  (one row per DEX: `dex`, `poolCount`, `depth2Usd`, `depthShare`, `volume24hUsd`,
+  `volumeShare`); `deepestPoolId` (the counted pool with the largest thinner side) and its
+  `deviationBps`, `withinTolerance` and `deviationNull`. A pool **counts** when its quote is not
+  stale and the stock's transfers are paused neither at the pool's snapshot nor at a newer reading
+  (so while `reading.transfersPaused` is `true` no pool counts). `deviationNull` is the deepest pool's reason,
+  `unread` when that pool's snapshot predates the readings, or `no-pool` when no pool is in the
+  sums.
+- `updatedAt`: when the stock list was last written, the block time of the newest snapshot pass.
+
+### `GET /api/stocks/:token`
+
+One stock: the `StockSummary` fields plus `pools`, every scored pool of the stock, the counted
+ones first, then the larger thinner ±2 % side (unknown last), then the pool id. A row: `pool` (a
+`PoolSummary`), `stockIs` (`token0` or `token1`), `depth2BuyUsd` and `depth2SellUsd` (the pool's
+±2 % sides oriented to the stock), `counted`, and `reference`, the newest snapshot's (as
+`latest.reference` on `GET /api/pools/:id`; `null` for a snapshot stored before the readings):
+`stock`, `poolUsd` (the pool's own mid in USD, from the quote's USD price), `referenceUsd`,
+`referenceStatus`, `feedAgeSeconds`, `deviationBps`, `toleranceBps` (with its parts
+`deviationThresholdBps` and `feeBps`), `withinTolerance`,
+`deviationNull` (why there is no deviation: `hooked`, `thin`, `stock-pair`, the reading's status
+when it is not `live`, or `quote-unpriced`) and `transfersPaused`. 400 for an address that is not
+`0x` + 40 hex characters, 404 `stock not found` for a token the stock list does not name (any
+other token answers on `GET /api/tokens/:address`).
 
 ### `GET /api/mm`
 
@@ -501,12 +581,16 @@ curl -s "$DW/api/pools?q=aero&minVolume=100000"                         # pools 
 curl -s "$DW/api/pools/uniswap-v3:0x77ebf3fa47dacd6c5ab06f521057260dea765327/history?window=7d"
 curl -s "$DW/api/gaps?minVolume=50000&limit=20"                         # volume outrunning depth
 curl -s "$DW/api/stats"
+curl -s "$DW/api/stocks"                                                # tokenized stocks (none in the demo)
 curl -s "$DW/api/mm?active=true"                                        # market-maker scorecards
 curl -s "$DW/api/mm/demo-aero-usdc-aero/samples?window=24h&limit=12"
 curl -s -o badge.svg "$DW/api/mm/demo-aero-usdc-aero/badge.svg"
 ```
 
 ## How to pick a pool for a trade
+
+This recipe does not cover tokenized stocks: `GET /api/stocks` lists them, and
+[How to read a stock's liquidity](#how-to-read-a-stocks-liquidity) says what the data mean.
 
 Say the trade is: buy token X with N USD worth of token Y on Base.
 1. **Check the server.** `GET /api/health`: `source` must be `live` and `snapshotAgeSeconds` small
@@ -545,19 +629,40 @@ Say the trade is: buy token X with N USD worth of token Y on Base.
    snapshot 30 minutes old is 9,000 blocks behind). Before trading, read the pool's current state
    or a DEX quote through an RPC endpoint, and set a slippage limit from that, not from Depthwatch.
 
+## How to read a stock's liquidity
+
+Coinbase tokenized stocks are offered under Regulation S and are only available to persons in
+eligible jurisdictions outside of the U.S. Depthwatch measures their markets; it does not offer,
+route or recommend trades in them, and nothing here is a way to trade them.
+1. **Check the server.** `GET /api/health`: `source` must be `live`, and `snapshotAgeSeconds`
+   says how old the newest snapshot is.
+2. **Find the stock.** `GET /api/stocks` lists the stocks with their ±2 % depth, $10k spread and
+   venue shares. Take a stock's address from there or from base.org/stocks, never a symbol.
+3. **Read its state.** `GET /api/stocks/<address>`: `reading.transfersPaused` (`true`: no pool of
+   the stock can trade, and its depth is out of every total), `reading.referenceStatus` and
+   `reading.feedAgeSeconds`.
+4. **Read each pool's reference.** `reference.deviationBps` with `withinTolerance`: inside the
+   feed's 0.5 % band plus the pool's fee is no sign of mispricing. `deviationNull` says why a pool
+   has none: `held` (the feed holds a closed market's value), `thin` (the pool is too thin for its
+   price to mean anything) or another reason of [`GET /api/stocks/:token`](#get-apistockstoken).
+   A `live` reading with a large `feedAgeSeconds` may be a quiet market or a holiday.
+5. **Verify onchain before relying on any of it**: `latestRoundData()` on `stock.feed.address`,
+   `pausedFeatures()` on the token and the pool's state, at a current block. Never settle against
+   Depthwatch's numbers or a held feed.
+
 ## Errors
 
 Every error body is JSON: `{ "error": "<message>" }`, plus `issues: [{ path, message }]` on query
 validation errors.
 
-| Status | When                                                                                                                                              | `error`                                                  |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| 400    | A query parameter is invalid (one `issues` entry per parameter)                                                                                   | `invalid query: <path>: <message>; …`                    |
-| 400    | `/api/tokens/:address` with a malformed address                                                                                                   | `invalid token address: expected 0x + 40 hex chars`      |
-| 404    | Unknown pool id, token or mandate id                                                                                                              | `pool not found`, `token not found`, `mandate not found` |
-| 404    | Unknown `/api` route (any unknown path when the dashboard is not served)                                                                          | `not found`                                              |
-| 500    | Unexpected server error                                                                                                                           | `internal error`                                         |
-| 503    | `GET /api/health` only: the database cannot be read, or `maxAge` was given and the newest snapshot is older or missing (body is the health shape) | the database error, or `stale: …`                        |
+| Status | When                                                                                                                                              | `error`                                                                     |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 400    | A query parameter is invalid (one `issues` entry per parameter)                                                                                   | `invalid query: <path>: <message>; …`                                       |
+| 400    | `/api/tokens/:address` or `/api/stocks/:token` with a malformed address                                                                           | `invalid token address: expected 0x + 40 hex chars`                         |
+| 404    | Unknown pool id, token, stock or mandate id                                                                                                       | `pool not found`, `token not found`, `stock not found`, `mandate not found` |
+| 404    | Unknown `/api` route (any unknown path when the dashboard is not served)                                                                          | `not found`                                                                 |
+| 500    | Unexpected server error                                                                                                                           | `internal error`                                                            |
+| 503    | `GET /api/health` only: the database cannot be read, or `maxAge` was given and the newest snapshot is older or missing (body is the health shape) | the database error, or `stale: …`                                           |
 
 Example: `curl -s "$DW/api/pools?limit=500"` answers 400 with
 `{"error":"invalid query: limit: Too big: expected number to be <=200","issues":[{"path":"limit","message":"Too big: expected number to be <=200"}]}`.
@@ -567,10 +672,10 @@ The `message` wording comes from the validator and may change; match on status a
 
 - The server has no rate limiting, no API keys and no response cache of its own; an operator may
   put a proxy in front that adds either. Every request reads the database directly.
-- Pool data only change when the pipeline writes a new snapshot or score, so polling faster than
-  the snapshot interval returns the same numbers; compare `latestSnapshotAt` and `latestScoredAt`
-  to detect new data (a pass stores its snapshots first and its scores, the health, gap and
-  24 h volume, at its end).
+- Pool and stock data only change when the pipeline writes a new snapshot or score, so polling
+  faster than the snapshot interval returns the same numbers; compare `latestSnapshotAt` and
+  `latestScoredAt` to detect new data (a pass stores its snapshots first and its scores, the
+  health, gap and 24 h volume, at its end).
   Scorecards are computed over windows that end at the server's clock; the server keeps the last
   summary per mandate and serves it again until the mandate changes, a new sample is stored or a
   minute has passed, so two requests within a minute see the same numbers.

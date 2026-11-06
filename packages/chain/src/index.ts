@@ -16,6 +16,7 @@ export * from './addresses.js'
 export * from './fixtures/builders.js'
 export * from './fixtures/fakeRpc.js'
 export * from './fixtures/seedWorld.js'
+export * from './fixtures/stocks.js'
 export * from './fixtures/synthetic.js'
 export { errorSummary, requestMethods } from './internal/errorText.js'
 export {
@@ -39,6 +40,11 @@ export {
   poolConfigFix,
 } from './internal/poolErrors.js'
 export {
+  STOCK_READ_CALLS,
+  type StockReadCall,
+  type StockReadResult,
+} from './internal/stocks.js'
+export {
   bitmapPosition,
   coveragePct,
   ticksForPctMove,
@@ -54,20 +60,24 @@ export {
   type CreationProbe,
   type CreationSearchProgress,
   type CreationTarget,
+  crossPairs,
   DEFAULT_SEED_BATCH,
   DEFAULT_SEED_CONCURRENCY,
   probesFor,
   type SeedDexFailure,
   type SeedDexResult,
+  type SeedPair,
   type SeedPoolsOptions,
   type SeedProgress,
   type SeedResult,
+  seedPairs,
   slot0SqrtPrice,
   sortedPairs,
   UNISWAP_V3_CANDIDATE_FEES,
   UNISWAP_V4_STANDARD_KEYS,
   v4Slot0Slot,
 } from './seed/index.js'
+export * from './stocks.js'
 export * from './transport/fixture.js'
 export * from './transport/key.js'
 export * from './transport/observed.js'

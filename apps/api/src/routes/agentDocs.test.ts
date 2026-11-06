@@ -8,7 +8,8 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { type Database, IN_MEMORY, openDatabase } from '@depthwatch/db'
+import { makeStock } from '@depthwatch/core'
+import { type Database, fixturePoolReference, IN_MEMORY, openDatabase } from '@depthwatch/db'
 import type { Hono } from 'hono'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
@@ -20,6 +21,7 @@ import {
   SEED_MM_OK_ID,
   type Seed,
 } from '../testing/seed.js'
+import { seedStocks } from '../testing/stocks.js'
 import { AGENT_DOCS, AGENT_DOCS_DIR, readAgentDoc } from './agentDocs.js'
 
 interface Operation {
@@ -246,8 +248,72 @@ describe('agent documents', () => {
       }
     })
 
+    it("a stock pool's newest snapshot with its reference, live and held", async () => {
+      const { db: stocked, seed: world } = createSeededDatabase()
+      try {
+        const live = fixturePoolReference()
+        const held = fixturePoolReference({
+          referenceStatus: 'held',
+          feedAgeSeconds: 65_000,
+          deviationBps: null,
+          toleranceBps: null,
+          deviationThresholdBps: null,
+          feeBps: null,
+          withinTolerance: null,
+          deviationNull: 'held',
+          transfersPaused: null,
+        })
+        const cases = [
+          [world.pools.wethUsdcV3, live],
+          [world.pools.wethAeroSlip, held],
+        ] as const
+        const served = createApp(stocked, { now: () => world.now })
+        for (const [pool, reference] of cases) {
+          const latest = stocked.snapshots.latestForPool(pool.id)
+          if (!latest) throw new Error(`the seed has no snapshot for ${pool.id}`)
+          const next = { ...latest, blockNumber: latest.blockNumber + 1n, reference }
+          stocked.snapshots.insert({ ...next, timestamp: world.now })
+          const path = `/api/pools/${pool.id}`
+          expect(await conforms(served, path, 200), path).toEqual([])
+          const body = (await (await served.request(path)).json()) as { latest: unknown }
+          expect(body.latest).toMatchObject({ reference })
+        }
+      } finally {
+        stocked.close()
+      }
+    })
+
+    it('stock routes over the stock seed (live, held, paused, no pool, no feed, no reading)', async () => {
+      const { db: stocked, seed: world } = createSeededDatabase()
+      try {
+        const { stocks, pools } = seedStocks(stocked, world)
+        const unread = makeStock('MSFTc')
+        stocked.stocks.replaceAll([...Object.values(stocks), unread], world.now)
+        const served = createApp(stocked, { now: () => world.now })
+        const paths = [
+          '/api/stocks',
+          ...[...Object.values(stocks), unread].map((s) => `/api/stocks/${s.token.address}`),
+          ...Object.values(pools).map((pool) => `/api/pools/${pool.id}`),
+          `/api/tokens/${stocks.nvda.token.address}`,
+          `/api/pools?q=${stocks.tsla.token.address}`,
+          '/api/stats',
+        ]
+        for (const path of paths) expect(await conforms(served, path, 200), path).toEqual([])
+      } finally {
+        stocked.close()
+      }
+    })
+
     it('an empty database (nulls everywhere)', async () => {
-      for (const path of ['/api/health', '/api/stats', '/api/pools', '/api/gaps', '/api/mm']) {
+      const paths = [
+        '/api/health',
+        '/api/stats',
+        '/api/pools',
+        '/api/gaps',
+        '/api/mm',
+        '/api/stocks',
+      ]
+      for (const path of paths) {
         expect(await conforms(app, path, 200), path).toEqual([])
       }
     })
@@ -259,6 +325,8 @@ describe('agent documents', () => {
         ['/api/pools/uniswap-v3:0xmissing/history?window=1y', 400],
         ['/api/tokens/0x12', 400],
         ['/api/tokens/0x00000000000000000000000000000000000000aa', 404],
+        ['/api/stocks/0x12', 400],
+        ['/api/stocks/0x00000000000000000000000000000000000000aa', 404],
         ['/api/mm/missing-mandate', 404],
         ['/api/mm/missing-mandate/badge.svg', 404],
       ]

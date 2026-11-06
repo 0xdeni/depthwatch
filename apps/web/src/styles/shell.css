@@ -282,8 +282,8 @@
     display: none;
   }
 }
-/* Below 360 px the tab strip scrolls; its trailing edge fades to say so. */
-@media (max-width: 22.49em) {
+/* Below about 425 px (five tabs and two gutters) the strip scrolls; its trailing edge fades. */
+@media (max-width: 26.56em) {
   .nav {
     mask-image: linear-gradient(to right, #000 calc(100% - var(--gutter)), transparent);
   }
@@ -293,13 +293,13 @@
   .appbar .nav {
     display: none;
   }
-  /* The dock: Gray 100, four 48 px tabs, sticky at the bottom of the app column. */
+  /* The dock: Gray 100, five 48 px tabs, sticky at the bottom of the app column. */
   .dock {
     position: sticky;
     bottom: 0;
     z-index: 45;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 4px;
     padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
     background: var(--g100);
@@ -364,6 +364,10 @@ main:is(:has(.skel-stack), :root:active-view-transition *) {
 .foot .mark {
   width: 28px;
   height: 28px;
+}
+.foot-text {
+  display: grid;
+  gap: var(--s3);
 }
 .foot-say {
   max-width: 52ch;

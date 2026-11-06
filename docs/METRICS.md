@@ -4,7 +4,8 @@ This page is the single definition of every number Depthwatch publishes. Each me
 implemented once, in `packages/core`, and `packages/core/src/metrics/workedExamples.test.ts` (the
 health score's in `workedExamples.health.test.ts`, the effective spread's in
 `workedExamples.spread.test.ts`, the swap checks' in
-`packages/core/src/trade/workedExamples.test.ts`) reproduces the worked examples below to the digit
+`packages/core/src/trade/workedExamples.test.ts`, the stock metrics' in
+`packages/core/src/stocks/workedExamples.test.ts`) reproduces the worked examples below to the digit
 (raw amounts to the wei, USD and bps figures to the two decimals printed here). If the dashboard,
 the API and this page ever disagree, this page and the core tests are what gets fixed first.
 
@@ -144,9 +145,10 @@ $1.2M on each side, so `depth2Usd = $2.4M`.
 
 **A token's depth.** `depth2UsdTotal` (`GET /api/tokens/:address`) is the sum of `depth2Usd` (the
 score's, else the newest snapshot's, as the pool lists show it) over every scored pool containing
-the token whose depth is known and whose quote is not stale (see [Stale quotes](#stale-quotes)),
-whatever page of the pools is listed; `depthKnownPools` counts those pools. A pool counts in full
-for each of its two tokens. `null` when no such pool has a known depth (unknown is not 0).
+the token whose depth is known, whose quote is not stale (see [Stale quotes](#stale-quotes)) and
+whose stock's transfers are not paused (see [Stock tradability](#stock-tradability)), whatever page
+of the pools is listed; `depthKnownPools` counts those pools. A pool counts in full for each of its
+two tokens. `null` when no such pool has a known depth (unknown is not 0).
 Example: three WETH pools with `depth2Usd` $2.4M, $50,408.82 and `null` → `depth2UsdTotal =
 $2,450,408.82`, `depthKnownPools = 2`; a fourth WETH pool with a stale quote changes neither.
 
@@ -426,6 +428,9 @@ unrated, `grade` is `null` and `unratedReason` says why, tested in this order:
   its snapshot ("swap hook changed", "initial fee enabled") until `depthwatch discover --seed`
   reads it again, which it does for every stored Aero Slipstream pool, seeded pair or not; the
   pool is then `hooked`, or modelled again when its initial fee was turned off.
+- `transfers-paused`: a stock pool whose stock's transfers (`TRANSFER`) are paused at the
+  snapshot's block, so that every swap in it reverts; it also leaves the depth sums. See
+  [Stock tradability](#stock-tradability).
 - `unpriced`: a side's USD depth is `null` (its token has no USD price, or the snapshot has no
   ±2 % level).
 - `one-sided`: both sides are known, the deeper one holds at least the floor and the thinner one
@@ -543,8 +548,9 @@ the 50 rated pools of the first live database they give 7 A, 18 B, 9 C, 14 D and
 values; the letter shown beside it is `healthGrade(median)`. The stats also carry `rated`, the
 number of rated pools, next to `scored`. `medianHealth` is `null` when no pool is rated. Unrated
 pools stay in every list, in the gaps feed and in the depth and volume sums (only a
-[stale quote](#stale-quotes) leaves the depth sums); sorting by health puts them after the rated
-ones in both directions.
+[stale quote](#stale-quotes) and a pool whose stock has its transfers paused
+([Stock tradability](#stock-tradability)) leave the depth sums); sorting by health puts them after
+the rated ones in both directions.
 
 Example: five scored pools with totals 85, 70, 55 (rated) and 20, 12 (unrated): `rated = 3`,
 `scored = 5`, `medianHealth = 70` (B). The median over all five would have been 55.
@@ -722,6 +728,309 @@ pool is no route and BRETT is priced through WETH at $0.0047.
 
 This is a valuation convention for depth and volume, not an oracle.
 
+## Reference deviation
+
+**Question.** How far is a pool's price for a tokenized stock from the stock's reference value,
+and is that reference live?
+
+A **stock** is a token of the stock list the pipeline stores (`stocks`, written by the snapshot
+step from `packages/chain/src/stocks.ts`: the ten Coinbase Tokenized Stocks of base.org/stocks,
+B20 Asset tokens of 8 decimals, [docs/research/base-contracts.md
+`## stocks`](research/base-contracts.md#stocks)); a **stock pool** is a pool holding one. The
+reference is the stock's Chainlink "Coinbase <ticker>" feed, read on chain at the snapshot's block
+([docs/design/stocks.md](design/stocks.md)). "§2.14" below is [docs/research/base-contracts.md
+§2.14](research/base-contracts.md#214-tokenized-stocks-and-their-chainlink-feeds-2026-11-05),
+where every on-chain figure of these sections was read.
+
+**Not an oracle.** Depthwatch publishes how far each pool is from the reference. It sets no
+stock price for anyone to settle, mark or liquidate against. Three numbers carry a stock's dollar
+value, and none is such a price:
+- `referenceUsd` is Chainlink's answer, passed on as read, always beside its `referenceStatus`
+  and `feedAgeSeconds`.
+- `poolUsd` is one pool's own mid in dollars, the measured side of that pool's deviation, never
+  combined across pools.
+- A stock's USD price in the price graph (a snapshot's `token0Usd` or `token1Usd`, the `usd` of
+  `GET /api/tokens/:address`) is the [USD prices](#usd-prices) valuation convention, applied to a
+  stock as to any token so that its TVL and depth can be stated in dollars. The stock pages and
+  the served AGENTS.md label it so.
+
+There is no aggregate, median or time-weighted stock price, and no pool is compared with a
+reference that is not `live`.
+
+### The reading (per stock and snapshot block)
+
+At the snapshot's block `B`, timestamp `T`, one multicall reads, for every stock of the stock
+list, with pools or without:
+- the feed proxy's `latestRoundData()` (`roundId`, `answer`, `updatedAt`), `decimals()` and
+  `description()`, and the oracle registry's `getOracleParams(stock)` (a multiplier and a paused
+  flag): the four **required calls**;
+- the stock's own `multiplier()` and `pausedFeatures()`, which only feed
+  [Stock tradability](#stock-tradability).
+
+From them:
+- `feedAgeSeconds = T − updatedAt`, whole seconds, both times from the chain (no wall clock);
+  `null` when the stock has no feed, a required call failed, or `updatedAt` is 0 or after `T`
+  (the `invalid` cases below: an age is never negative).
+- `referenceUsd = answer / 10^decimals`, USD per stock token. The Coinbase feeds answer USD per
+  token, the share price times the token's multiplier truncated to 8 decimals (§2.14), which is
+  the unit of a pool's price: the multiplier is never applied to the answer.
+- `referenceStatus`, the first that applies:
+  - `no-feed`: the stock list records no feed for the stock.
+  - `unread`: a required call failed, reverted or did not decode (`getOracleParams` reverts for a
+    token the oracle registry does not know). A failed `multiplier()` or `pausedFeatures()`
+    changes no status: a failed `multiplier()` leaves `tokenMultiplierWad` `null`, a failed
+    `pausedFeatures()` leaves `pausedFeatures` and `transfersPaused` `null`.
+  - `paused`: the oracle registry's paused flag is set (a corporate action: the feed holds its
+    last good value until the price and the multiplier both reflect it).
+  - `invalid`: `answer ≤ 0`, `updatedAt` is 0 or after `T`, `decimals()` is not the recorded
+    one, or `description()` is not `Coinbase <ticker>` (a proxy recorded for the wrong stock).
+  - `held`: the feed holds a closed market's value (Off-hours, below).
+  - `live`: otherwise.
+
+`referenceUsd` is published for `live`, `held` and `paused` (what the feed answers, beside its
+status) and is `null` for the other three.
+
+_The oracle registry's interface._ `paused` rests on an ABI that no document gives. Base's
+list-tokenized-stocks page describes the oracle registry as "a single contract (separate from the
+tokens) that returns both values for a token in one call" and names no function; the name
+`getOracleParams(address)` comes from earlier research, and its selector 0xd4197e82 is in the
+contract's bytecode. At block 53,663,272 it answered `(uint256, bool)`, the multiplier equal to
+each stock's own `multiplier()` and the flag false, and reverted for USDC and for an unregistered
+B20 address (§2.14). An answer that does not decode as `(uint256, bool)` is `unread`, never
+`live`; no paused answer has been observed.
+
+**Off-hours.** The ten feeds are 24/5 feeds. Chainlink's page runs them through the US equity
+"regular, pre-market, post-market, and overnight sessions"; when those markets are closed "the
+feed holds the last close", and "These feeds do not have heartbeats during off-hours"
+(<https://docs.chain.link/data-feeds/tokenized-equity-feeds/coinbase.md>, which gives no clock
+times). The chain gives them: the sessions run from Sunday 20:00 to Friday 20:00 America/New_York.
+None of the ten feeds' 15,903 rounds from 2026-08-05 to 2026-11-05 fell between Friday 20:00 and
+Sunday 20:00 New York time, and every weekend gap but Labor Day's ended 19 to 99 s after Sunday
+20:00 (§2.14). A 24/5 reading is `held` when either part holds:
+- **Age:** `feedAgeSeconds > heartbeatSeconds + REFERENCE_AGE_GRACE_SECONDS`, which is 86,400 +
+  3,600 = 90,000 s for the ten feeds.
+- **Weekly close:** `T` lies in a weekly close, `[Friday 20:00, Sunday 20:00)` America/New_York,
+  and `updatedAt` is before that close began.
+
+The weekly close is a fixed rule computed in pure code (`weeklyCloseAt(T)`), not a maintained
+calendar. New York is on UTC−4 from the second Sunday of March at 07:00 UTC to the first Sunday of
+November at 06:00 UTC and on UTC−5 otherwise (the US daylight-saving rule since 2007), so a close
+begins at Saturday 00:00 or 01:00 UTC and lasts 48 h, 49 h across November's change and 47 h
+across March's. Holidays fall to the age part alone. A 24/7 feed (none of the ten) is held by its
+age alone.
+
+Younger than 90,000 s and outside a weekly close, a held value cannot be told from a quiet
+market: the status is `live`, and `feedAgeSeconds`, published with every reading and every
+deviation, shows how old the answer is. That is the case of a weekday holiday: over Labor Day
+(Monday 2026-09-07) the sessions resumed at 20:00 New York time on the holiday itself (§2.14). If
+Thanksgiving (Thursday 2026-11-26) follows that pattern, its gap is about 24 h plus the feed's
+quiet tail before it, and the age part holds only what lies beyond 25 h, if anything.
+
+**Worked example** (NVDA's feed, `updatedAt` Friday 2026-10-30 19:51:03 UTC, 15:51 New York time,
+its last round before that weekend, §2.14):
+- Read on Friday at 23:00:00 UTC (19:00 New York time): age 11,337 s, before the close: `live`
+  (the post-market session is open).
+- Read on Saturday 2026-10-31 at 14:00:00 UTC (10:00 New York time): age 65,337 s, under 90,000,
+  but `T` lies in the close that began at Saturday 00:00 UTC (Friday 20:00 EDT), after
+  `updatedAt`: `held`. By age alone it would read `live` until Saturday 20:51:03 UTC.
+- Read on Sunday 2026-11-01 at 22:00:00 UTC (17:00 EST, in the close that ends at Monday
+  01:00 UTC): age 180,537 s, held by both parts.
+- Read on Monday 2026-11-02 at 01:00:30 UTC, after the close and before the feed's first new
+  round: age 191,367 s, held by its age until that round.
+- At exactly 90,000 s, on a weekday outside a close, the status is still `live`.
+
+_Why one hour of grace, and the weekly close._ In those 15,903 rounds the longest gap with no
+Saturday inside it was 86,418 s, the heartbeat plus 18 s, and every gap across a weekend or a
+holiday was at least 172,968 s (§2.14). A grace of 3,600 s is 200 times the largest overshoot seen
+and calls no weekday held; a shorter threshold calls quiet weekdays closed (212 weekday gaps were
+longer than 12 h, 14 longer than 20 h). Age alone holds a weekend only from 25 h after Friday's
+last round: 54.3 % of the 7,110.6 h inside the 130 weekend gaps, the rest of Saturday reading
+`live` against Friday's value. With the weekly close the rule holds 91.3 % of those hours and every
+second of each close, and still no weekday second: the hours left `live` are Friday's quiet tails,
+from a feed's last round to 20:00 New York time, while the market is open (§2.14).
+
+### The pool's USD price and the deviation
+
+For a stock pool with stock `S` and quote `Q` (the other token), with `price` the pool's mid at the
+snapshot's block (token1 per token0) and the USD prices of the same pass (see
+[USD prices](#usd-prices)):
+- `poolUsd`, USD per stock token at the pool's mid: `price × token1Usd` when `S` is token0,
+  `token0Usd / price` when `S` is token1. A stock's address (0xb200…) sorts after USDC's and
+  WETH's, so in most stock pools it is token1. Only the quote's USD price is used: the stock's own
+  comes from its widest pool, which would be 0 from it by construction (see
+  [Stale quotes](#stale-quotes)). `null` when the pool is hooked (its mid is not known to be a
+  price a swap gets), when `Q` has no USD price, or when `Q`'s price route (`via`) runs through a
+  pool holding `S` among all the pass's pools, tracked or not (every pool read for prices is an
+  edge of the graph), which would price the quote with the stock itself.
+- `deviationBps = (poolUsd / referenceUsd − 1) × 10,000`, signed: positive when the pool prices
+  the stock above its reference. Not rounded; shown to two decimals.
+- `toleranceBps = deviationThresholdBps + feePips / 100`: the feed's deviation threshold, 50 for
+  the ten (a feed publishes a round on a 0.5 % move or at its heartbeat: Base's feed table and
+  Chainlink's directory, `## stocks`), plus the pool's LP fee at the snapshot's block in bps
+  (`PoolSnapshot.feePips`). `null` when the fee is unknown (a snapshot stored before schema
+  version 7). Its two parts are published beside it, `deviationThresholdBps` and `feeBps =
+  feePips / 100`, both `null` when it is, so that the band's words take each part as published
+  rather than from the sum.
+- `withinTolerance = |deviationBps| ≤ toleranceBps`; `null` when either is `null`.
+
+_Why a tolerance._ While a feed is live its answer can sit up to its threshold from the market
+without a new round, and an arbitrage against the pool pays the pool's fee, so a pool at the market
+can show a deviation up to their sum with nothing mispriced. `withinTolerance = true` says the
+deviation is no larger than those two explain. `false` says the pool and the feed's last round
+disagree by more: the pool may be off the market, or the market moved since that round faster than
+the next one landed (`feedAgeSeconds` says how long ago it was). The dashboard and the agent
+documents word a deviation inside the band as "within the feed's 0.5 % band plus the pool's fee",
+never as a mispricing.
+
+`deviationBps`, `toleranceBps` and `withinTolerance` are `null` when the first reason that applies,
+published as `deviationNull`, is:
+- `hooked`: a hooked pool (see [Rated and unrated pools](#rated-and-unrated-pools)): its mid is not
+  known to be a price a swap gets.
+- `thin`: the pool's thinner ±2 % side is not known to hold `HEALTH_RATING_MIN_SIDE_USD` ($5,000):
+  it holds less, or a side has no USD value. A pool too thin to rate holds a price that no one
+  need correct, however far it is from the feed: of the 13 AMZNc/USDC and NVDAc/USDC pools the
+  factories returned at block 53,663,272, 7 held under 2 USDC (§2.14).
+- `stock-pair`: both tokens are stocks. The quote's USD price is then another stock's price-graph
+  price, so the deviation would set one stock's feed against another stock's DEX price. Such a
+  pool's reference carries token0's stock and its reading.
+- `no-feed`, `unread`, `paused`, `invalid` or `held`: the reading's status. A held or paused answer
+  is no market price, so no pool is compared with it; its `referenceUsd` and `feedAgeSeconds` are
+  still published.
+- `quote-unpriced`: `poolUsd` is `null` because the quote's USD price is routed through a pool of
+  `S` itself (a quote with no USD price at all is already `thin`: its sides have no USD value).
+
+A pool therefore gets a deviation only when its depth would rate it; a pool unrated for
+`transfers-paused` alone keeps its deviation, which describes its price though no trade can use it.
+`priceDeviationBps` applies to stock pools as to any other; it compares a pool with Depthwatch's
+price graph, this one with the feed.
+
+**Worked example.** An NVDAc/USDC Slipstream pool at a 0.05 % fee (`feePips = 500`): USDC is
+token0 (6 decimals), NVDAc token1 (8), `price = 0.005` NVDAc per USDC, USDC = $1, $40,000 on its
+thinner ±2 % side. On a Wednesday the feed answers `19950000000` (8 decimals), updated 1,800 s
+before the block; the oracle registry is not paused.
+- `poolUsd = 1 / 0.005 = $200.00`, `referenceUsd = $199.50`, `feedAgeSeconds = 1,800`: `live`.
+- `deviationBps = (200 / 199.5 − 1) × 10,000 = +25.06`, `toleranceBps = 50 + 500 / 100 = 55`:
+  `withinTolerance = true`, within the feed's 0.5 % band plus the pool's fee.
+- Had the feed answered `19700000000` ($197.00): `(200 / 197 − 1) × 10,000 = +152.28` bps, above
+  55: `withinTolerance = false`.
+- An NVDAc/cbBTC pool at 0.30 % pricing 0.002 cbBTC per NVDAc (NVDAc is token0 there), cbBTC at
+  $100,000: `poolUsd = 0.002 × 100,000 = $200.00`, the same +25.06 bps, `toleranceBps = 80`.
+- The first pool with $3,000 on its thinner side: `null` (`thin`). The first pool on a Saturday:
+  `null` (`held`), `referenceUsd = $199.50` still published.
+- Applying the multiplier to the answer, as for a per-share feed, would understate every deviation
+  by about `(m − 1) × 10,000` bps: 5.38 bps for NVDAc's multiplier of 1.000538 (§2.14). A test of
+  `packages/core` pins that it is never applied.
+
+On chain at block 53,663,272 (2026-11-05 23:57:10 UTC) the Aero Slipstream NVDAc/USDC pool
+`0xf668…c8ec` priced NVDAc at $180.4632 and the feed answered 180.26191788, 1,268 s old: +11.17
+bps (§2.14), inside the feed's 50 bps band before the pool's fee is even added.
+
+### Stock tradability
+
+`transfersPaused` says whether the stock's `pausedFeatures()` at the snapshot's block holds
+`TRANSFER` (ordinal 0; `PausableFeature` ordinals TRANSFER 0, MINT 1, BURN 2, SEIZE 3:
+<https://docs.base.org/specifications/b20/reference/interfaces/ib20/is-paused.md>). The other
+features are published and change nothing here: minting and redeeming are the issuer's flow, not
+the market's. While `TRANSFER` is paused every swap in every pool of the stock reverts
+(`ContractPaused`), since a swap moves the token. It is read with every snapshot: a pause takes
+effect at the block it is set and leaves the pools' state unchanged. `null` when `pausedFeatures()`
+failed or did not decode: unknown is not a pause. A pool of two stocks is paused when either is.
+The oracle registry's paused flag is no token pause: during a corporate action the feed freezes
+while transfers go on.
+
+A stock pool whose snapshot has `transfersPaused = true` is unrated with reason
+`transfers-paused`, tested after `hooked` and before `unpriced`. Its depth, spread and deviation
+are published as measured, since they describe the pool, but no trade can use them, so, like a
+stale quote, it is left out of the depth sums (`GET /api/stats`, the Home headline, a token's
+`depth2UsdTotal`, the depth butterfly's totals and shares) and out of the stock's aggregates
+below.
+
+## Stock aggregates
+
+**Question.** For one stock, across every pool that trades it: how much depth is there, what does
+a trade cost, on which venues, and how far is the deepest pool from the reference?
+
+The stock's pools are the scored pools holding it, each as the pool lists show it (its newest
+snapshot and score: `tvlUsd`, the ±2 % sides, the $10k spread under the cap, `staleQuote`,
+`volume24hUsd`, and the snapshot's reference deviation). A pool **counts** when its quote is not
+stale, its snapshot's `transfersPaused` is not `true`, and no newer reading of its stock (of
+either stock, in a pool of two) has `transfersPaused = true`: a stale or paused pool's depth and
+spread are measured at a price, or in a pool, that no trade reaches. A pool's newest snapshot can
+be older than the stock's newest reading (its state read failed on the pass that read the stock),
+and a pause takes effect at the block it is set, so the newer reading decides; one that finds the
+transfers resumed lifts no snapshot's pause, and such a pool counts again from its next snapshot.
+
+**The stock's sides.** A pool's ±2 % levels are its own (token1 per token0). For the stock:
+- `buyUsd` is the side whose input is the quote: `depth2UpUsd` when the stock is token0,
+  `depth2DownUsd` when it is token1.
+- `sellUsd` is the other side, the stock as input, valued at the stock's USD price.
+
+In a pool whose stock is token1, the down level (−2 % of token1 per token0) raises the stock's
+price by 2.04 % (`1 / 0.98 − 1`) and the up level lowers it by 1.96 %: the levels are the pool's,
+not simulated again.
+
+**Aggregates** (`summarizeStock`):
+- `poolCount`: the stock's pools.
+- `tvlUsd`: Σ `tvlUsd` of the pools whose TVL is known (`tvlKnownPools`); `null` when none is. A
+  Uniswap v4 pool's TVL is unknown (see [TVL](#tvl)), so a sum without it is a lower bound.
+- `depth2BuyUsd`, `depth2SellUsd`: Σ `buyUsd` and Σ `sellUsd` over the counted pools whose two
+  sides are known (`sidesKnownPools`); both `null` when there is none.
+- `spread10kBps`: the lowest feasible $10k spread among the counted pools, with its pool
+  (`spread10kPoolId`, ties to the lower pool id); `null` when none is feasible. A round trip has
+  both legs, so no side applies.
+- `volume24hUsd`: Σ `volume24hUsd` of the pools whose volume is known (`volumeKnownPools`), counted
+  or not, since it is what traded; `null` when none is.
+- `venues`: one row per DEX (in `DEXES` order) holding at least one of the stock's pools, with
+  `poolCount`; `depth2Usd`, Σ (`buyUsd + sellUsd`) over its pools in the depth sums (`null` when
+  none is); `depthShare = depth2Usd / (depth2BuyUsd + depth2SellUsd)`, 0..1 (`null` when its
+  `depth2Usd` is `null` or the total is 0); `volume24hUsd`, Σ of its known volumes (`null` when
+  none is known); `volumeShare = volume24hUsd / Σ` of the venues' known volumes, 0..1 (`null` when
+  its volume is unknown or the total is 0).
+- `deepestPoolId`: among the pools in the depth sums, the one with the largest
+  `min(buyUsd, sellUsd)`, ties to the larger `buyUsd + sellUsd`, then to the lower pool id; `null`
+  when there is none. The thinner side decides, as for price routes: a pool deep on one side only
+  holds a price arbitrage has left behind.
+- `deviationBps`, `withinTolerance` and `deviationNull`: the deepest pool's (see
+  [Reference deviation](#reference-deviation)); without a deepest pool `deviationBps` and
+  `withinTolerance` are `null` and `deviationNull = 'no-pool'`. A deepest pool whose snapshot has no
+  reference (one stored before stock readings existed) gives `deviationNull = 'unread'`.
+
+The stock's reading (`referenceUsd`, `referenceStatus`, `feedAgeSeconds`, `transfersPaused`, the
+multiplier) is its newest. While the stock's transfers are paused (its newest reading's
+`transfersPaused` is `true`) none of its pools counts, however old its snapshot: its depth, spread
+and deviation read `null` (`no-pool`) and its TVL and volume are unchanged.
+
+**Two depth totals for one token.** A stock's token page and its stock page both show ±2 % depth,
+by two definitions. The token page's `depth2UsdTotal` ("A token's depth" under
+[Depth at ±p %](#depth-at-p-)) sums each pool's `depth2Usd`, both sides together, so a pool with
+one side unpriced counts with its known side, and `depthKnownPools` counts those pools. The stock
+page splits buy from sell, so both sums must cover the same pools: it counts only pools whose two
+sides are known, and its count is `sidesKnownPools`. The two totals agree when every counted pool
+of the stock has both sides priced, as it has whenever its quote and the stock are priced, and
+each pool's newest snapshot is at the stock's newest reading: the token page reads a pause from
+each pool's own score, so a pool whose snapshot predates a pause stays in its total until that
+pool is snapshotted again.
+
+**Worked example.** NVDAc is token1 in four pools (quotes USDC and, in P2, WETH):
+
+| Pool | DEX               | Up (sell) | Down (buy) | TVL        | $10k spread | 24 h volume | Stale |
+| ---- | ----------------- | --------- | ---------- | ---------- | ----------- | ----------- | ----- |
+| P1   | `aero-slipstream` | $260,000  | $250,000   | $1,500,000 | 30 bps      | $400,000    | no    |
+| P2   | `uniswap-v3`      | $40,000   | $50,000    | $200,000   | 120 bps     | $100,000    | no    |
+| P3   | `uniswap-v4`      | $10,000   | $10,000    | `null`     | 80 bps      | `null`      | no    |
+| P4   | `aero-v2`         | $3,000    | $0         | $5,000     | infeasible  | $0          | yes   |
+- `tvlUsd = $1,705,000` (`tvlKnownPools = 3`; a lower bound, P3's TVL is unknown).
+- `depth2BuyUsd = 250,000 + 50,000 + 10,000 = $310,000`, `depth2SellUsd = 260,000 + 40,000 +
+  10,000 = $310,000`, `sidesKnownPools = 3` (P4 is a stale quote).
+- `spread10kBps = 30` (P1); `volume24hUsd = $500,000` (`volumeKnownPools = 3`).
+- Venues: `aero-slipstream` $510,000 of depth (0.8226) and $400,000 of volume (0.8);
+  `uniswap-v3` $90,000 (0.1452) and $100,000 (0.2); `uniswap-v4` $20,000 (0.0323), volume `null`;
+  `aero-v2` depth `null` (its pool is stale) and volume $0 (0).
+- Deepest: P1, whose thinner side holds $250,000 against $40,000 and $10,000; the stock's
+  deviation is P1's: +25.06 bps, within tolerance, if P1 is the pool of the reference example.
+- Were NVDAc's transfers paused, no pool would count: depth, spread and deviation `null`
+  (`no-pool`), `tvlUsd` and `volume24hUsd` unchanged.
+
 ## Swap checks
 
 **Question.** Before a swap in the pool being viewed is signed: what is the least it can return,
@@ -823,6 +1132,9 @@ reproduced by anyone with an RPC endpoint and this page.
 | 24 h volume              | `packages/core/src/metrics/volume.ts`               | `volumeWindow`, `scoringVolumeWindow`, `computeVolume24hUsd`                                                                                                                |
 | USD prices               | `packages/core/src/pricing.ts`                      | `derivePrices` (edge weights in USD at relaxation); edges in `apps/cli/src/pipeline/prices.ts` (`buildPriceEdges`)                                                          |
 | Stale quotes             | `packages/core/src/metrics/depth.ts`                | `priceDeviationBps`, `isStaleQuote`, `STALE_QUOTE_MIN_DEVIATION_BPS`                                                                                                        |
+| Reference deviation      | `packages/core/src/stocks/reference.ts`             | `evaluateStockReading`, `referenceUsdPerToken`, `poolReference`, `quoteRouteAvoids`, `REFERENCE_AGE_GRACE_SECONDS`; `weeklyCloseAt` in `stocks/hours.ts`                    |
+| Stock tradability        | `packages/core/src/stocks/reference.ts`             | `decodePausedFeatures`, `isTransferPaused`; `rateDepth` (`transfersPaused`) in `metrics/health.ts`                                                                          |
+| Stock aggregates         | `packages/core/src/stocks/aggregate.ts`             | `summarizeStock`, `stockSides`, `countsInStockSums`                                                                                                                         |
 | Swap checks              | `packages/core/src/trade/`                          | `checkTrade`, `minAmountOut`, `validateSlippageBps`, `tradeDeadline`, `tradePriceImpact`, `tradePriceDeviation`, `tradeSizeAboveUsd`                                        |
 | Swap simulation          | `packages/core/src/swap/`                           | `simulateSwapExactIn`, `simulateSwapToPrice`, `midPrice`, `swapFeePips`, `v4SwapFeePips`                                                                                    |
 | Dynamic fees             | `packages/core/src/dex.ts`                          | `hasDynamicFee`, `DYNAMIC_FEE_DEXES`                                                                                                                                        |

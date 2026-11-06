@@ -22,6 +22,7 @@ import {
   type MmSample,
   type PersistenceMetrics,
   type PoolMeta,
+  type PoolReference,
   type PoolSnapshot,
   type Position,
   priceDeviationBps,
@@ -161,6 +162,8 @@ export function fixtureSnapshot(overrides: SnapshotFixtureOverrides = {}): PoolS
     concentration: fixtureConcentration(ownerTop1Share),
     // The fee of `fixturePool()`, which the snapshot's depth and spread would have used.
     feePips: 500,
+    // `fixturePool()` holds no stock.
+    reference: null,
     ...rest,
   }
   // Core's measure of the fixture's own price and USD prices unless the overrides name one.
@@ -169,6 +172,29 @@ export function fixtureSnapshot(overrides: SnapshotFixtureOverrides = {}): PoolS
       ? rest.priceDeviationBps
       : priceDeviationBps(snapshot.price, snapshot.token0Usd, snapshot.token1Usd)
   return { ...snapshot, priceDeviationBps: deviation }
+}
+
+/**
+ * A stock pool's reference: the worked example of docs/METRICS.md, "The pool's USD price and the
+ * deviation" (a 0.05 % pool at $200.00 against a live $199.50 read 1,800 s ago: +25.06 bps, within
+ * the 55 bps tolerance), transfers not paused.
+ */
+export function fixturePoolReference(overrides: Partial<PoolReference> = {}): PoolReference {
+  return {
+    stock: fixtureAddress(0xb20),
+    poolUsd: 200,
+    referenceUsd: 199.5,
+    referenceStatus: 'live',
+    feedAgeSeconds: 1_800,
+    deviationBps: (200 / 199.5 - 1) * 10_000,
+    toleranceBps: 55,
+    deviationThresholdBps: 50,
+    feeBps: 5,
+    withinTolerance: true,
+    deviationNull: null,
+    transfersPaused: false,
+    ...overrides,
+  }
 }
 
 export function healthGrade(total: number): HealthGrade {

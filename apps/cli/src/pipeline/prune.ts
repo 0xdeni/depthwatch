@@ -15,6 +15,10 @@
  * - the `volume:<pool>:*` cursors of pools that are no longer tracked (tracked again, the pool
  *   reads the whole window, as a newly tracked one does).
  *
+ * Stock readings (`stock_readings`) are never pruned (docs/design/stocks.md §4): ten rows a pass,
+ * about 30,000 a year at a 3 h cadence, and with their pass depth the only record of a stock's
+ * depth that outlives the snapshots. The stock list (`stocks`) is rewritten by every snapshot.
+ *
  * Snapshots are deleted in batches of `batch` rows, each its own transaction, so a day's rows never
  * hold the write lock for long. The loop yields to the event loop after each full batch, so under
  * `start` the API answers between batches and a stop signal that arrives meanwhile ends the loop

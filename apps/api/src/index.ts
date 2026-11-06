@@ -46,6 +46,8 @@ export type {
   ScorecardsResponse,
   StaticBundle,
   StatsResponse,
+  StockDetail,
+  StocksResponse,
   TokenDetail,
   TokenDto,
 } from './dto.js'
@@ -67,6 +69,7 @@ export type {
 export {
   DEFAULT_LIMIT,
   HISTORY_WINDOWS,
+  INVALID_ADDRESS,
   MAX_LIMIT,
   MAX_SAMPLES_LIMIT,
   POOL_SORTS,
@@ -89,6 +92,8 @@ export {
 export type { RunningServer, StartServerOptions } from './server.js'
 export { startServer } from './server.js'
 export { isApiPath, staticDirExists, wantsSpaFallback } from './static.js'
+export type { StockDto, StockPoolRow, StockReadingDto, StockSummary } from './stockDto.js'
+export { comparePoolRows, compareStocks, listStocks, stockDetail } from './stocks.js'
 export { toDexStats, toGapItem, toPoolSummary } from './summary.js'
 export type { Seed, SeedMandates, SeedOptions, SeedPools, SeedTokens } from './testing/seed.js'
 export {
@@ -104,5 +109,7 @@ export {
   SEED_TOSHI,
   seedDatabase,
 } from './testing/seed.js'
+export type { StockSeed } from './testing/stocks.js'
+export { seedStocks } from './testing/stocks.js'
 export type { LabelledPool, LabelledToken } from './tokenLabels.js'
 export { labelPool, labelToken } from './tokenLabels.js'

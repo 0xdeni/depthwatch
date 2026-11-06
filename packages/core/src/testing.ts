@@ -1,9 +1,11 @@
 /**
- * Test helpers exported for every package's tests: deterministic pool builders and a brute-force
- * reference simulator (many tiny exact-in swaps applied one after another).
+ * Test helpers exported for every package's tests: deterministic pool builders, stock builders and
+ * a brute-force reference simulator (many tiny exact-in swaps applied one after another).
  */
 
+import { WAD } from './math.js'
 import { aggregatePositionTicks, type PositionLiquidity } from './positionTicks.js'
+import type { StockFeedInfo, StockInfo, StockRawRead } from './stocks/types.js'
 import { liquidityAtTick } from './swap/concentrated.js'
 import { simulateSwapExactIn } from './swap/index.js'
 import { midPrice, type PriceDecimals, RAW_PRICE_DECIMALS } from './swap/midPrice.js'
@@ -106,6 +108,64 @@ export function makeToken(symbol: string, decimals: number, address?: Address): 
     symbol,
     name: symbol,
     decimals,
+  }
+}
+
+/** 40 hex digits: `prefix`, then the symbol's characters in hex, padded with zeros. */
+function symbolAddress(prefix: string, symbol: string): Address {
+  const hex = [...symbol.toLowerCase()].map((c) => c.charCodeAt(0).toString(16).padStart(2, '0'))
+  return `0x${(prefix + hex.join('')).padEnd(40, '0').slice(0, 40)}` as Address
+}
+
+/**
+ * A stock of the stock list: an 8-decimal token at `0xb2…` (after USDC's and WETH's addresses, as
+ * the B20 precompiles are) with a 24/5 feed of 8 decimals, a 86,400 s heartbeat and a 50 bps
+ * threshold, as the ten feeds have. The ticker is the symbol less a trailing "c"; `feed: null` is a
+ * stock without a feed.
+ */
+export function makeStock(
+  symbol: string,
+  opts: { address?: Address; feed?: Partial<StockFeedInfo> | null } = {},
+): StockInfo {
+  const feed: StockFeedInfo | null =
+    opts.feed === null
+      ? null
+      : {
+          address: symbolAddress('fe', symbol),
+          decimals: 8,
+          heartbeatSeconds: 86_400,
+          deviationThresholdBps: 50,
+          hours: '24/5',
+          ...opts.feed,
+        }
+  return {
+    token: makeToken(symbol, 8, opts.address ?? symbolAddress('b2', symbol)),
+    ticker: symbol.replace(/c$/, ''),
+    feed,
+  }
+}
+
+/**
+ * The answers of a sound reading of `stock` at a block: its feed's decimals and description, the
+ * oracle registry unpaused, both multipliers 1 (WAD) and no feature paused; `overrides` replace any.
+ */
+export function stockRawRead(
+  stock: StockInfo,
+  answer: bigint,
+  updatedAt: number,
+  overrides: Partial<StockRawRead> = {},
+): StockRawRead {
+  return {
+    roundId: 1n,
+    answer,
+    updatedAt,
+    decimals: stock.feed?.decimals ?? 8,
+    description: `Coinbase ${stock.ticker}`,
+    oracleMultiplierWad: WAD,
+    oraclePaused: false,
+    tokenMultiplierWad: WAD,
+    pausedOrdinals: [],
+    ...overrides,
   }
 }
 

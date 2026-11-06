@@ -28,12 +28,14 @@ import { type ChainAddresses, resolveAddresses } from './addresses.js'
 import type { BackoffEvent } from './internal/backoff.js'
 import { blockAtOrAfter, blockReads } from './internal/blocks.js'
 import type { LogRetryPolicy, ReaderContext } from './internal/context.js'
+import { readStocks, type StockReadResult } from './internal/stocks.js'
 import { type ReadSwapsOptions, readSwapScans } from './internal/swapScans.js'
 import { DEFAULT_TIMESTAMP_SPAN, fillTimestamps } from './internal/timestamps.js'
 import { readTokens as readTokensWithCache } from './internal/tokens.js'
 import type { PoolOverview } from './internal/types.js'
 import { BASE_BLOCK_SCHEDULE, type BlockSchedule } from './schedule.js'
 import { type SeedPoolsOptions, type SeedResult, seedPools } from './seed/index.js'
+import { BASE_STOCKS, resolveStockList, type StockList } from './stocks.js'
 import {
   abortableSleep,
   observeTransport,
@@ -98,6 +100,8 @@ export interface ChainReader {
   readonly chainId: typeof BASE_CHAIN_ID
   /** Resolved addresses (defaults merged with overrides, every address lowercased). */
   readonly addresses: ChainAddresses
+  /** The stock list (default BASE_STOCKS), every address lowercased (`resolveStockList`). */
+  readonly stocks: StockList
   getLatestBlock(): Promise<{ number: bigint; timestamp: number }>
   getBlockTimestamp(blockNumber: bigint): Promise<number>
   /**
@@ -120,6 +124,11 @@ export interface ChainReader {
    */
   refreshPoolMetas(pools: readonly PoolMeta[]): Promise<PoolMeta[]>
   readTokens(addresses: Address[]): Promise<TokenInfo[]>
+  /**
+   * Every stock's feed, oracle-registry and token answers at `blockNumber`, one multicall, in list
+   * order (internal/stocks.ts): a failed call nulls its fields, a failed request every `raw`.
+   */
+  readStocks(blockNumber: bigint): Promise<StockReadResult[]>
   /** One multicall-batched pass over all pools at `blockNumber` (default: latest). */
   readOverview(pools: PoolMeta[], blockNumber?: bigint): Promise<PoolOverview[]>
   /**
@@ -183,6 +192,8 @@ export interface CreateChainReaderOptions {
   /** Transport for `eth_getLogs` only; wins over `logsRpcUrl`. */
   logsTransport?: Transport
   addresses?: Partial<ChainAddresses>
+  /** The stock list `readStocks` reads (default BASE_STOCKS; validated as `addresses` is). */
+  stocks?: StockList
   /** Blocks per `eth_getLogs` request (default 10 000). */
   logChunkSize?: number | bigint
   /** Smallest span a rejected range is split to (default 100, see DEFAULT_MIN_LOG_RANGE). */
@@ -249,13 +260,9 @@ function groupByDex(pools: PoolMeta[]): Map<Dex, { pool: PoolMeta; index: number
   return groups
 }
 
-function compareEvents(a: SwapEvent, b: SwapEvent): number {
-  if (a.blockNumber !== b.blockNumber) return a.blockNumber < b.blockNumber ? -1 : 1
-  return a.logIndex - b.logIndex
-}
-
 export function createChainReader(opts: CreateChainReaderOptions = {}): ChainReader {
   const addresses = resolveAddresses(opts.addresses)
+  const stocks = resolveStockList(opts.stocks ?? BASE_STOCKS)
   const { onRequest, signal } = opts
   const logsInner = logsTransportOf(opts)
   const transport = observeTransport(
@@ -315,6 +322,7 @@ export function createChainReader(opts: CreateChainReaderOptions = {}): ChainRea
   return {
     chainId: BASE_CHAIN_ID,
     addresses,
+    stocks,
     getLatestBlock,
     getBlockTimestamp,
     blockAtOrAfter: (timestamp, toBlock) =>
@@ -336,6 +344,7 @@ export function createChainReader(opts: CreateChainReaderOptions = {}): ChainRea
       return metas.flat()
     },
     readTokens: (tokens) => readTokensWithCache(ctx, tokens),
+    readStocks: (blockNumber) => readStocks(ctx, stocks, blockNumber, signal),
     async readOverview(pools, blockNumber) {
       if (pools.length === 0) return []
       const block = await resolveBlock(blockNumber)
@@ -363,9 +372,7 @@ export function createChainReader(opts: CreateChainReaderOptions = {}): ChainRea
     readPositions: (pool, range) => ADAPTERS[pool.dex].positions(ctx, pool, range),
     async readSwaps(pools, fromBlock, toBlock, swapOpts) {
       if (pools.length === 0 || toBlock < fromBlock) return []
-      const events = (await readSwapScans(ctx, pools, fromBlock, toBlock, swapOpts)).sort(
-        compareEvents,
-      )
+      const events = await readSwapScans(ctx, pools, fromBlock, toBlock, swapOpts)
       await fillTimestamps(events, toBlock, timestampSpan, getBlockTimestamp, schedule)
       return events
     },

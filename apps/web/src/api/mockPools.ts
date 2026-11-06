@@ -72,8 +72,11 @@ const DEPTH_PCTS = [1, 2, 5] as const
 const SPREAD_NOTIONALS = [1_000, 10_000, 100_000] as const
 export const LATEST_BLOCK = '36123456'
 
-function rawToken(key: string): TokenInfo {
-  const seed = TOKENS[key]
+/** The tokens a pool seed names: `mock/tokens.json`, or the stock world's (`mockStocks.ts`). */
+export type TokenTable = Readonly<Record<string, TokenSeed>>
+
+function rawToken(key: string, tokens: TokenTable = TOKENS): TokenInfo {
+  const seed = tokens[key]
   if (!seed) throw new Error(`mock: unknown token ${key}`)
   return {
     address: seed.address as Address,
@@ -89,14 +92,14 @@ const SHARED = buildSharedSymbols(
 )
 
 /** The token of a `mock/tokens.json` key, labelled the way the API labels it (core `tokenLabel`). */
-export function tokenInfo(key: string): TokenDto {
-  const token = rawToken(key)
+export function tokenInfo(key: string, tokens: TokenTable = TOKENS): TokenDto {
+  const token = rawToken(key, tokens)
   return { ...token, label: tokenLabel(token, SHARED) }
 }
 
 /** The token's USD price; null when it has none (an unpriced token seeds `usd: 0`). */
-function tokenUsd(symbol: string): number | null {
-  const usd = TOKENS[symbol]?.usd ?? 0
+function tokenUsd(symbol: string, tokens: TokenTable = TOKENS): number | null {
+  const usd = tokens[symbol]?.usd ?? 0
   return usd > 0 ? usd : null
 }
 
@@ -124,15 +127,15 @@ export interface MockPool {
   volume24hUsd: number | null
 }
 
-function buildMeta(seed: PoolSeed): PoolMetaDto {
+function buildMeta(seed: PoolSeed, tokens: TokenTable): PoolMetaDto {
   return {
     id: seed.id,
     dex: seed.dex,
     kind: seed.kind,
     address: seed.address as Address | null,
     poolId: seed.poolId as Hex | null,
-    token0: tokenInfo(seed.token0),
-    token1: tokenInfo(seed.token1),
+    token0: tokenInfo(seed.token0, tokens),
+    token1: tokenInfo(seed.token1, tokens),
     feePips: seed.feePips,
     tickSpacing: seed.tickSpacing,
     stable: seed.stable,
@@ -144,10 +147,11 @@ function buildMeta(seed: PoolSeed): PoolMetaDto {
 function buildDepth(
   seed: PoolSeed,
   meta: PoolMetaDto,
+  tokens: TokenTable,
 ): { depth: DepthLevelDto[]; usd: DepthLevelUsd[] } {
   // The raw amounts need some price: an unpriced token is worth 1 here, and its side stays null.
-  const px0 = tokenUsd(seed.token0)
-  const px1 = tokenUsd(seed.token1)
+  const px0 = tokenUsd(seed.token0, tokens)
+  const px1 = tokenUsd(seed.token1, tokens)
   const usd0 = px0 ?? 1
   const usd1 = px1 ?? 1
   const unreached = new Set(seed.unreached ?? [])
@@ -233,14 +237,24 @@ export function snapshotAge(id: string): number {
   return (hash >>> 0) % 240
 }
 
-export function buildPool(seed: PoolSeed, now: number): MockPool {
-  const meta = buildMeta(seed)
-  const { depth, usd } = buildDepth(seed, meta)
+export interface BuildOptions {
+  /** The tokens the seed names; `mock/tokens.json` by default. */
+  tokens?: TokenTable
+  /** The pool's stock has its transfers paused (core `HealthInputs.transfersPaused`). */
+  transfersPaused?: boolean
+}
+
+export function buildPool(seed: PoolSeed, now: number, opts: BuildOptions = {}): MockPool {
+  const tokens = opts.tokens ?? TOKENS
+  const px0 = tokenUsd(seed.token0, tokens)
+  const px1 = tokenUsd(seed.token1, tokens)
+  const meta = buildMeta(seed, tokens)
+  const { depth, usd } = buildDepth(seed, meta, tokens)
   const spreads = buildSpreads(seed)
   const level2 = usd.find((l) => l.pct === 2)
   const depth2Usd = level2?.totalUsd ?? null
   // A pool with an unpriced token has no TVL or volume in dollars.
-  const unpriced = tokenUsd(seed.token0) === null || tokenUsd(seed.token1) === null
+  const unpriced = px0 === null || px1 === null
   const volume24hUsd = unpriced ? null : seed.volume24hUsd
   const spread10kBps = spreads.find((s) => s.notionalUsd === 10_000)?.spreadBps ?? null
   const concentration: ConcentrationMetrics = { bandPct: 5, ...seed.concentration }
@@ -255,6 +269,7 @@ export function buildPool(seed: PoolSeed, now: number): MockPool {
     rangeHhi: concentration.rangeHhi,
     poolKind: seed.kind,
     persistence: persistence24h,
+    transfersPaused: opts.transfersPaused,
   })
   const gap = computeGap(volume24hUsd, depth2Usd)
   const snapshot: PoolSnapshotDto = {
@@ -262,16 +277,18 @@ export function buildPool(seed: PoolSeed, now: number): MockPool {
     blockNumber: LATEST_BLOCK,
     timestamp: now - snapshotAge(seed.id),
     price: seed.price,
-    token0Usd: tokenUsd(seed.token0),
-    token1Usd: tokenUsd(seed.token1),
+    token0Usd: px0,
+    token1Usd: px1,
     tvlUsd: unpriced ? null : seed.tvlUsd,
     activeLiquidity: seed.activeLiquidity,
     depth,
     depthUsd: usd,
     spreads,
     concentration,
-    priceDeviationBps: priceDeviationBps(seed.price, tokenUsd(seed.token0), tokenUsd(seed.token1)),
+    priceDeviationBps: priceDeviationBps(seed.price, px0, px1),
     feePips: seed.feePips,
+    // A stock pool's reference is set by `mockStocks.ts`, which holds the stocks' readings.
+    reference: null,
   }
   return {
     seed,

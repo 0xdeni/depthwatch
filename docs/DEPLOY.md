@@ -279,11 +279,11 @@ while no server runs. This repository's copy has been at <https://depthwatch.pag
    `volume` step sends `eth_getLogs` to it first, then to Tenderly's public gateway
    ([The logs endpoint](#the-logs-endpoint)).
 3. **First run.** Actions, Refresh site, Run workflow (on `main`). The first run seeds the pools of
-   the reference tokens, creates the Pages project `depthwatch` and publishes it. Its publish step
-   prints the site's address (`It will be available at https://depthwatch.pages.dev/`, with a
-   suffix when that name is taken). The `Take a peek over at https://<id>.depthwatch.pages.dev`
-   line of every run is that run's own deployment, which never changes: share the address without
-   the `<id>.` part. This repository's first run, on 29 October 2026, took about 28 minutes in all.
+   the reference tokens and of the tokenized stocks, creates the Pages project `depthwatch` and
+   publishes it. Its publish step prints the site's address (`It will be available at
+   https://depthwatch.pages.dev/`, with a suffix when that name is taken). The `Take a peek over
+   at https://<id>.depthwatch.pages.dev` line of every run is that run's own deployment, which
+   never changes: share the address without the `<id>.` part. This repository's first run, on 29 October 2026, took about 28 minutes in all.
    The seed took 24 of them: 644 pools from 4,060 candidate pairs of the 15 reference tokens, about
    14,600 requests to date them, with Alchemy's free tier throttling the runner's bursts (2,360
    rate-limit backoffs, each retried). The same seed took 631 s on 28 October 2026
@@ -292,8 +292,22 @@ while no server runs. This repository's copy has been at <https://depthwatch.pag
    few minutes: pools already stored keep their creation block, so the seed costs only the factory
    reads.
 
-Each run snapshots the 200 tracked pools (about 14,000 Alchemy compute units, so about 3.4 M a month
-at eight runs a day) and keeps 8 days of history (`DEPTHWATCH_KEEP_DAYS=8`). The `volume` step sends
+**Tokenized stocks.** Every run's seed also asks each DEX for the pools of the ten tokenized stocks
+of base.org/stocks with the reference tokens, never of two stocks: 6,200 calls, about 13 multicalls
+more ([Seeded discovery](ARCHITECTURE.md#seeded-discovery-factory-views-and-archive-state)). The
+first run once the stocks change is on `main` finds their pools and dates each once, a binary
+search of about 26 requests a pool; later runs pay only the factory reads. Every snapshot then
+reads the ten stocks at its block, one multicall of 60 calls on `DEPTHWATCH_RPC_URL` (the
+Chainlink feeds are read onchain, from no data vendor), and tracks every stock pool ranked at
+$10,000 or more besides the 200. The copy's Stocks pages and stock pool pages show them, and every
+page's footer carries the eligibility line (Coinbase tokenized stocks are only available to persons
+in eligible jurisdictions outside of the U.S.); no stock enters the swap panel. No new
+secret or variable is needed. The readings are never pruned: ten rows a run, about 30,000 a year
+([stocks.md §4](design/stocks.md#4-pipeline-appscli)).
+
+Each run snapshots the 200 tracked pools and the stock pools (about 14,000 Alchemy compute units
+for the 200, so about 3.4 M a month at eight runs a day) and keeps 8 days of history
+(`DEPTHWATCH_KEEP_DAYS=8`). The `volume` step sends
 `eth_getLogs` to the optional secret `DEPTHWATCH_LOGS_RPC_URL` first, at 2,000-block chunks for at
 most 300 s, then to Tenderly's public gateway at 1,000-block chunks (250 before 5 November 2026) for
 at most 420 s. The database persists between runs, so a run reads the three hours since the last one
@@ -543,9 +557,14 @@ and works in a wallet's browser is unverified too.
 ## Upgrading
 
 A new build migrates the database when it first opens it, and an older build then refuses the
-file (`database schema version 7 is newer than this build (6); upgrade depthwatch`) before any
+file (`database schema version 8 is newer than this build (7); upgrade depthwatch`) before any
 step runs. Take a backup ([Backups](#backups)) before upgrading if you may need to roll back:
 rolling back means restoring that backup.
+
+The upgrade that stores tokenized stocks (schema version 8): the migration adds the `stocks` and
+`stock_readings` tables and a stock pool's reference to each snapshot
+([docs/design/stocks.md](design/stocks.md) §5). It rewrites no stored row: snapshots stored before
+it carry no reference.
 
 The upgrade that finds blocks by time (5 November 2026, Denim's 200 ms blocks; no schema change):
 - Earlier builds counted 2 s blocks (1,800 an hour) back from the head, so from Denim's block

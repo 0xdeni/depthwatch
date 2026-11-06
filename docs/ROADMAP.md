@@ -7,9 +7,10 @@ start of development. Acceptance criteria are written so that an outsider can ch
 ## Layer 1: Observatory MVP (weeks 1–4)
 
 Index Uniswap v3, Uniswap v4, Aerodrome v2, Aerodrome Slipstream, Aero v2 and Aero Slipstream pools
-on Base (every pool of those factories with log discovery, the pools between the reference tokens
-with `discover --seed`); publish depth at ±1/2/5 %, effective spread, LP concentration, liquidity
-persistence, a Liquidity Health Score and a liquidity gaps feed through a public API and dashboard.
+on Base (every pool of those factories with log discovery, the pools between the reference tokens,
+and those of the tokenized stocks with them, with `discover --seed`); publish depth at ±1/2/5 %,
+effective spread, LP concentration, liquidity persistence, a Liquidity Health Score and a liquidity
+gaps feed through a public API and dashboard.
 
 **2026-10-28.** Aerodrome moved to a new platform, Aero, on 2026-10-21: new v2 and Slipstream
 factories, a new AERO token and new gauges. Aero's venues are indexed as two DEXes of their own
@@ -109,6 +110,40 @@ Acceptance: for the top 20 pools, the dashboard shows a ±2 % depth value that i
 blocks) behind the chain's head, labelled with its block number; stored snapshots keep the pass
 cadence and remain the record.
 
+### After Layer 1: tokenized stocks
+
+**2026-11-06.** Base lists ten tokenized stocks on base.org/stocks (Coinbase tokenized stocks, B20
+tokens, each with a 24/5 Chainlink feed). Depthwatch measures their markets as it measures any pool,
+and adds what a stock needs: per stock the ±2 % buy and sell depth over its pools, the best $10k
+spread, the share of depth by venue, and each pool's deviation from the stock's Chainlink feed,
+published with the feed's status, its age and its tolerance (the feed's 0.5 % threshold plus the
+pool's fee) ([METRICS.md](METRICS.md#reference-deviation), "Reference deviation" and "Stock
+aggregates"; [design/stocks.md](design/stocks.md)). The feeds are read onchain at the snapshot
+block. Depthwatch publishes the deviations and labels its own USD price of a stock as the valuation
+price its depth and TVL use; it publishes no stock price of its own. Coinbase tokenized stocks are
+only available to persons in eligible jurisdictions outside of the U.S.: they never enter the swap
+panel, and no stock page links to a swap.
+- **Delivered.** `discover --seed` asks for each stock's pools with the reference tokens (6,200
+  factory calls for the ten, linear in the list); every stock pool ranked at $10,000 or more is
+  tracked whatever its rank; each snapshot reads the ten stocks in one multicall and stores one
+  reading per stock with its depth; a pool whose stock's transfers are paused is unrated
+  (`transfers-paused`) and left out of the depth sums; `GET /api/stocks` and
+  `GET /api/stocks/:token`, the Stocks pages, a stock pool's tokenized-stock section and the
+  eligibility line in every page's footer; the served AGENTS.md section "How to read a stock's
+  liquidity".
+- **Next** ([design/stocks.md](design/stocks.md#8-deferred-not-in-the-mvp) §8): a history route
+  per stock and the off-hours depth, computed from the stored readings (kept from the first pass
+  on, never pruned); a stock marker on the token page; `isAuthorized` as a second tradability
+  check per pool; a synthetic stock in the demo world; the issuer's other minted tokens, from a
+  first-party list only; a Methodology section for the stock metrics.
+
+Acceptance: a stored reading reproduces from its feed's `latestRoundData` and the token's reads at
+its block; a pool's deviation reproduces from its stored snapshot and that reading by METRICS.md's
+formula; the readings cover the weekends of 21–22 and 28–29 November 2026 and Thanksgiving (26
+November 2026), and the off-hours depth of
+[stocks-api.md §5](design/stocks-api.md#5-deferred-the-history-route-and-off-hours-depth) is
+computed from them.
+
 ## Layer 2: Market-maker scorecards (weeks 5–8)
 
 A project registers its market maker's addresses and the KPIs in its agreement; Depthwatch
@@ -185,7 +220,7 @@ These are deliberate and will be declined as feature requests:
   measure depth and never trades for itself. The dashboard's optional swap panel, off unless the
   site's operator switches it on, lets a visitor swap in the pool they are viewing, from their own
   wallet, straight to that pool's router; it never routes, splits a swap across pools or
-  recommends a pool.
+  recommends a pool. Tokenized stocks never enter it.
 - **No custody, no token, no trading capital, no fee added to swaps.** The swap panel never holds a
   visitor's funds; each swap carries Depthwatch's Builder Code (ERC-8021), which lets Base
   attribute the transaction onchain; the code adds no fee, only 29 bytes of calldata (a negligible
@@ -193,10 +228,13 @@ These are deliberate and will be declined as feature requests:
   the market maker's assets.
 - **No chains other than Base.** No multi-chain abstraction, no bridges.
 - **No price oracle.** USD prices are derived from pool prices for display and for valuing depth;
-  they carry no guarantee and must not be consumed as an oracle.
+  they carry no guarantee and must not be consumed as an oracle. For a tokenized stock, Chainlink's
+  answer is passed on with its status and age, and Depthwatch publishes no stock price of its own:
+  no aggregate, median or time-weighted price.
 - **No market making by Depthwatch itself.** The project measures market makers; it does not
   compete with them.
 - **No third-party data vendors.** Everything is computed from the chain through a standard
-  JSON-RPC endpoint so that any reading can be reproduced by anyone.
+  JSON-RPC endpoint so that any reading can be reproduced by anyone. The tokenized stocks'
+  Chainlink feeds are contracts on Base, read with `eth_call` at the snapshot block.
 - **No support for pools whose state cannot be read in full.** If a hook or custom pool makes
   depth unobservable from public state, the pool is listed with null metrics rather than guessed.

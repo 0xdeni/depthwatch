@@ -6,6 +6,7 @@
  * readers give a cold page its title block at once from what other screens already loaded.
  */
 import type { QueryClient } from '@tanstack/react-query'
+import type { StockSummary, StocksResponse } from './api/stockTypes.js'
 import type {
   ApiClient,
   GapsResponse,
@@ -58,6 +59,11 @@ export function routeQueries(href: string, api: ApiClient): RouteQuery[] {
     const query = tokenQuery(readTableState(params))
     return [{ queryKey: ['token', address, query], queryFn: () => api.token(address, query) }]
   }
+  const stock = pathname.match(/^\/stocks\/([^/]+)$/)
+  if (stock?.[1]) {
+    const address = decode(stock[1]).toLowerCase()
+    return [{ queryKey: ['stock', address], queryFn: () => api.stock(address) }]
+  }
   const mm = pathname.match(/^\/mm\/([^/]+)$/)
   if (mm?.[1]) {
     const id = decode(mm[1])
@@ -79,6 +85,9 @@ export function routeQueries(href: string, api: ApiClient): RouteQuery[] {
   if (pathname === '/gaps') {
     const query = { limit: 100 }
     return [{ queryKey: ['gaps', query], queryFn: () => api.gaps(query) }]
+  }
+  if (pathname === '/stocks') {
+    return [{ queryKey: ['stocks'], queryFn: () => api.stocks() }]
   }
   if (pathname === '/mm') {
     return [{ queryKey: ['mm', {}], queryFn: () => api.scorecards({}) }]
@@ -137,4 +146,12 @@ export function cachedScorecard(qc: QueryClient, id: string): ScorecardDetail | 
   if (!summary) return undefined
   const pool = cachedPoolSummary(qc, summary.mandate.poolId)
   return pool ? { ...summary, pool } : undefined
+}
+
+/** A stock's summary from the stocks list already loaded, for its title block while it loads. */
+export function cachedStock(qc: QueryClient, address: string): StockSummary | undefined {
+  const a = address.toLowerCase()
+  return qc
+    .getQueryData<StocksResponse>(['stocks'])
+    ?.items.find((s) => s.stock.token.address.toLowerCase() === a)
 }

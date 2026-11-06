@@ -36,8 +36,8 @@ NN/g measured that about 57 % of viewing time falls above the fold, and 74 % wit
 
 - **Primary navigation:**
   - The logo goes to Home.
-  - Then **Pools**, **Gaps**, **Scorecards** and **Methodology**, in that order (the same `NAV_ITEMS` as v2).
-  - On phones: a 44 px tab strip under a 52 px top bar (`PH2`). No hamburger menu.
+  - Then **Pools**, **Stocks**, **Gaps**, **Scorecards** and **Methodology**, in that order (`NAV_ITEMS`; Stocks added for the tokenized stocks, [stocks-api.md §3](stocks-api.md#3-dashboard-appsweb)). Pools stays current on pool and token pages, Stocks on `/stocks/:token`.
+  - On phones: a 44 px tab strip under a 52 px top bar (`PH2`); below about 425 px the five tabs scroll sideways, the trailing edge fading. No hamburger menu. The installed app's dock shows five tabs, Scorecards and Methodology as "Scores" and "Method".
 - **Entity links (the graph):**
 
   ```
@@ -110,6 +110,8 @@ Every v2 route and query parameter keeps its meaning. New parameters are additiv
 | `/pools/:id`       | —                                                                                        | `window` (`24h` default, `7d`) for the "Over time" section                                                                            | The id stays URL-encoded `dex:address`.                 |
 | `/gaps`            | —                                                                                        | `view` (`list` default, `table`)                                                                                                      |                                                         |
 | `/tokens/:address` | — (v2 kept its sort in local state)                                                      | `sort`, `dir`                                                                                                                         | Same semantics as Pools.                                |
+| `/stocks`          | —                                                                                        | —                                                                                                                                     | Tokenized stocks (stocks-api.md §3)                     |
+| `/stocks/:token`   | —                                                                                        | —                                                                                                                                     | One stock by its lowercase address                      |
 | `/mm`              | `active` (`true`/`false`)                                                                | `view` (`list` default, `table`)                                                                                                      |                                                         |
 | `/mm/:id`          | — (v2 kept its window in local state)                                                    | `window` (`24h`, `7d` default, `30d`)                                                                                                 |                                                         |
 | `/methodology`     | `#depth`, `#spread`, `#concentration`, `#persistence`, `#health`, `#gaps`, `#scorecards` | `#index`                                                                                                                              | Every anchor kept.                                      |
@@ -805,7 +807,7 @@ Nothing is removed from the product. Only these change:
    - The butterflies, the total row and the Pools glyph column read both sides from `usePools` / `useToken`; no per-row `usePool` request is made.
 2. **Breach episodes.** Derive them on the client from `useScorecardSamples` in a new `lib/scorecard.ts` helper, `breachEpisodes(points)`. It returns start, end, sample count, kinds and the worst depth per side. No API change.
 3. **Scorecards list strips.** Each strip needs that mandate's 7 d samples. Fetch them only on desktop and only when there are 10 mandates or fewer. Otherwise show the bullet alone. The static bundle already holds the samples.
-4. **Token total depth** is the API's `depth2UsdTotal`: the sum of `depth2Usd` over every scored pool of the token but the stale quotes, whatever page of them is loaded (docs/METRICS.md, "A token's depth"). Note in the tooltip that a pool counted for two tokens contributes to both token pages.
+4. **Token total depth** is the API's `depth2UsdTotal`: the sum of `depth2Usd` over every scored pool of the token but the stale quotes and the pools whose stock's transfers are paused, whatever page of them is loaded (docs/METRICS.md, "A token's depth"). Note in the tooltip that a pool counted for two tokens contributes to both token pages.
 5. **Mandates on a pool:** `useScorecards({pool: id})`, already supported by the HTTP, mock and static clients.
 6. **History series** for health, TVL and price already exist in `HistoryPoint`. No API change.
 7. **Tests.** Page tests (`Home.test.tsx`, `Pools.test.tsx`, `PoolDetail.test.tsx`, `Scorecard.test.tsx`, `Scorecards.test.tsx`, `Token.test.tsx`, `Methodology.test.tsx`) assert this contract: answer sentences, focal element presence, disclosure contents and URL parameters. The greps from `principles.md` §17 are test cases (no `text-transform: uppercase`, no `·` in `.tsx` UI strings, no `→` in link text). v4 amended: `text-transform: uppercase` appears only in the `.eyebrow` rule (`T1`, `T11`).

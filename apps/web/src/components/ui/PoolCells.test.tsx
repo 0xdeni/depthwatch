@@ -1,3 +1,4 @@
+import type { UnratedReason } from '@depthwatch/core'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -18,7 +19,7 @@ const rated = {
   unratedReason: null,
   concentrationBasis: 'owners',
 } as const
-const unrated = (unratedReason: 'thin' | 'one-sided' | 'unpriced' | 'hooked') =>
+const unrated = (unratedReason: UnratedReason) =>
   ({ total: 38.2, grade: null, rated: false, unratedReason, concentrationBasis: 'owners' }) as const
 
 describe('HealthCell', () => {
@@ -35,6 +36,7 @@ describe('HealthCell', () => {
       'one-sided': 'Too thin on one side',
       unpriced: 'No USD price',
       hooked: 'Hooked pool',
+      'transfers-paused': 'Transfers paused',
     } as const
     for (const [reason, words] of Object.entries(reasons)) {
       const { container, unmount } = render(

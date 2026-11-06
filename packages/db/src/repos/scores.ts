@@ -18,6 +18,7 @@ import {
 import {
   type DexStats,
   LATEST_JOIN,
+  LEFT_OUT_SQL,
   median,
   medianRatedHealth,
   RATED_SQL,
@@ -77,7 +78,7 @@ export interface GapCounts {
 export interface TokenDepth {
   /** Sum of the pools' known `depth2Usd`; null when none is known (unknown is not 0). */
   depth2UsdTotal: number | null
-  /** Pools whose depth is known and whose quote is not stale: the ones the sum covers. */
+  /** Pools whose depth is known, quote not stale and stock not paused: the ones the sum covers. */
   depthKnownPools: number
 }
 
@@ -187,11 +188,12 @@ export class ScoresRepo {
 
   /**
    * The ±2 % depth of every scored pool containing `token`, as the feeds list it: the score's
-   * `depth2Usd`, else the newest snapshot's. A stale quote's depth is left out, as from the stats.
+   * `depth2Usd`, else the newest snapshot's. A stale quote's depth and a paused stock's pool are
+   * left out, as from the stats.
    */
   tokenDepth(token: Address): TokenDepth {
     const { clauses, params } = poolFilterClauses({ token })
-    clauses.push(`NOT (${STALE_SQL})`)
+    clauses.push(`NOT ${LEFT_OUT_SQL}`)
     const row = this.ctx.get(
       `SELECT COUNT(d) AS known, SUM(d) AS total FROM (
           SELECT COALESCE(s.depth2_usd, sn.depth2_usd) AS d

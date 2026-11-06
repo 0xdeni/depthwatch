@@ -13,6 +13,7 @@ import type { ApiClient } from '../api/types.js'
 import {
   cachedPoolSummary,
   cachedScorecard,
+  cachedStock,
   cachedToken,
   hrefTarget,
   routeQueries,
@@ -22,6 +23,8 @@ import { createClickHold, prefetchRoute, ROUTE_WAIT_MS } from './routeIntent.js'
 const NOW = 1_760_000_000
 const POOL = 'uniswap-v3:0xd0b53d9277642d899df5c87a3966a349a798f224'
 const WETH = '0x4200000000000000000000000000000000000006'
+/** The mock's NVDAc (core `makeStock`). */
+const STOCK = '0xb26e766461630000000000000000000000000000'
 
 afterEach(cleanup)
 
@@ -50,6 +53,8 @@ describe('routeQueries: the keys each page reads first', () => {
     ])
     expect(keys('/gaps')).toEqual([['gaps', { limit: 100 }]])
     expect(keys('/mm')).toEqual([['mm', {}]])
+    expect(keys('/stocks')).toEqual([['stocks']])
+    expect(keys(`/stocks/${STOCK.toUpperCase().replace('0X', '0x')}`)).toEqual([['stock', STOCK]])
     expect(keys('/pools')[0]).toEqual(['stats'])
     expect(keys('/methodology')).toEqual([])
     expect(keys('/AGENTS.md')).toEqual([])
@@ -71,6 +76,9 @@ describe('cached title data', () => {
     if (!first) throw new Error('no mandates')
     expect(cachedScorecard(qc, first.mandate.id)?.mandate.name).toBe(first.mandate.name)
     expect(cachedScorecard(qc, 'nope')).toBeUndefined()
+    expect(cachedStock(qc, STOCK)).toBeUndefined()
+    qc.setQueryData(['stocks'], await api.stocks())
+    expect(cachedStock(qc, STOCK.toUpperCase().replace('0X', '0x'))?.stock.ticker).toBe('NVDA')
   })
 })
 

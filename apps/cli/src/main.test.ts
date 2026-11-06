@@ -2,7 +2,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createFakeRpcFetch, createSyntheticFixture } from '@depthwatch/chain'
+import {
+  addStockFixture,
+  BASE_STOCKS,
+  createFakeRpcFetch,
+  createSyntheticFixture,
+  SYNTHETIC_DEFAULTS,
+} from '@depthwatch/chain'
 import { fixturePool, openDatabase } from '@depthwatch/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { COMMANDS, DEFAULTS, MM_SUBCOMMANDS } from './config.js'
@@ -207,6 +213,24 @@ describe('main', () => {
   })
 })
 
+/**
+ * The synthetic world with sound answers for the ten stocks at its head: a live `snapshot` reads
+ * them beside the state (docs/design/stocks.md §4), and over HTTP a read the fixture lacks is an
+ * internal error that the reader retries.
+ */
+function syntheticWorldWithStocks() {
+  const fixture = createSyntheticFixture()
+  for (const { address } of BASE_STOCKS.tokens)
+    addStockFixture(fixture, {
+      stock: address,
+      feed: BASE_STOCKS.feeds[address] ?? null,
+      block: SYNTHETIC_DEFAULTS.latestBlock,
+      answer: 200n * 10n ** 8n,
+      updatedAt: SYNTHETIC_DEFAULTS.latestTimestamp - 600,
+    })
+  return fixture
+}
+
 /** A JSON-RPC endpoint that refuses everything, as a revoked key does. */
 const unauthorized = () => new Response('Unauthorized', { status: 401 })
 
@@ -236,7 +260,7 @@ describe('exit codes of a pass that failed', () => {
     const dir = mkdtempSync(join(tmpdir(), 'depthwatch-main-snapshot-'))
     try {
       const file = join(dir, 'live.db')
-      const fake = createFakeRpcFetch(createSyntheticFixture())
+      const fake = createFakeRpcFetch(syntheticWorldWithStocks())
       // The overview phase works; from the moment the tracked pools are chosen, every `eth_call`
       // (the state reads) is refused, so each pool fails and no snapshot can be built.
       let refuse = false
@@ -285,6 +309,21 @@ describe('exit codes of a pass that failed', () => {
       const ok = await run(['snapshot', '--db', file], env)
       expect(ok.code).toBe(EXIT_OK)
       expect(ok.stderr).toEqual([])
+      // The ten stocks are read at the snapshot's block beside the state reads (refused in the
+      // failed pass, whose `unread` readings the second pass at the same block keeps).
+      expect(
+        logs.some((line) => line.includes('WARN  [snapshot] stock reads failed stocks=10')),
+      ).toBe(true)
+      expect(ok.logs.some((line) => /read stocks stocks=10 .*statuses=live:10$/.test(line))).toBe(
+        true,
+      )
+      const stored = openDatabase(file)
+      try {
+        expect(stored.stocks.count()).toBe(BASE_STOCKS.tokens.length)
+        expect(stored.stockReadings.count()).toBe(BASE_STOCKS.tokens.length)
+      } finally {
+        stored.close()
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

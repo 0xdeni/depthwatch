@@ -129,6 +129,40 @@ describe('butterfly model (CH4, visual-v4 §5.9.1)', () => {
     expect(total?.textContent).toMatch(/^All of Base\$11\.8M\$14\.3M100.%$/)
   })
 
+  it("leaves a pool whose stock's transfers are paused out of the totals, as a stale quote", () => {
+    const base = summary('uniswap-v3:0xb20c', ['USDC', 'NVDAc'], 'uniswap-v3', 900_000, 800_000)
+    const paused: PoolSummary = {
+      ...base,
+      health: { ...base.health, grade: null, rated: false, unratedReason: 'transfers-paused' },
+    }
+    const pools = [...DEMO_POOLS, paused]
+    const model = butterflyModel(pools, pools)
+    const plain = butterflyModel(DEMO_POOLS, DEMO_POOLS)
+    expect([model.total, model.max, model.poolCount]).toEqual([
+      plain.total,
+      plain.max,
+      DEMO_POOLS.length,
+    ])
+    expect(model.segments.buy.map((s) => s.id)).not.toContain(paused.pool.id)
+    const row = model.rows[model.rows.length - 1]!
+    expect([row.id, row.paused, row.stale, row.share]).toEqual([paused.pool.id, true, false, null])
+    expect(rowLinkLabel(row, 'Base')).toMatch(/, left out of Base’s total: transfers paused$/)
+    // Another unrated reason stays in the totals.
+    const thin = { ...paused, health: { ...paused.health, unratedReason: 'one-sided' as const } }
+    expect(butterflyModel([thin], [...DEMO_POOLS, thin]).total.buy).toBe(plain.total.buy + 800_000)
+
+    render(<ButterflyTable pools={pools} rows={[paused]} scope="Base" />)
+    const table = screen.getByRole('table')
+    const first = within(table).getAllByRole('row')[1]!
+    expect(within(first).getByRole('img').getAttribute('aria-label')).toBe(
+      'Unknown: Transfers paused: every swap in this pool reverts, so its depth is left out of totals.',
+    )
+    // The six counted pools are "every other pool", and the total is theirs alone.
+    expect(within(table).getByText('Every other pool').closest('tr')?.textContent).toMatch(
+      /^Every other pool 6 pools\$11\.8M\$14\.3M100.%$/,
+    )
+  })
+
   it('lists the 7 deepest pools plus the gap pool (ia-v3 §4.1)', async () => {
     const client = createMockClient({ now: 1_760_000_000 })
     const pools = (await client.pools({ limit: 200 })).items

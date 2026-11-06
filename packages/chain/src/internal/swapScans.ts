@@ -52,7 +52,15 @@ export function swapScanGroups(pools: readonly PoolMeta[]): Map<Dex, PoolMeta[]>
   return groups
 }
 
-/** Swap events of `pools` over the range, without timestamps, scan by scan (in parallel). */
+function compareEvents(a: SwapEvent, b: SwapEvent): number {
+  if (a.blockNumber !== b.blockNumber) return a.blockNumber < b.blockNumber ? -1 : 1
+  return a.logIndex - b.logIndex
+}
+
+/**
+ * Swap events of `pools` over the range, without timestamps, scan by scan (in parallel), merged in
+ * chain order (block, then log index).
+ */
 export async function readSwapScans(
   ctx: ReaderContext,
   pools: readonly PoolMeta[],
@@ -87,5 +95,5 @@ export async function readSwapScans(
       ADAPTERS[dex].swaps(ctx, group, fromBlock, toBlock, observer),
     ),
   )
-  return perScan.flat()
+  return perScan.flat().sort(compareEvents)
 }

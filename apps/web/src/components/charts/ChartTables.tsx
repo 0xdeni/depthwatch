@@ -4,6 +4,7 @@
  * the same stored values the charts draw; nothing is recomputed.
  */
 import type { MmSampleDto, PoolSnapshotDto, PoolSummary, SampleWindow } from '../../api/types.js'
+import { TRANSFERS_PAUSED_DETAIL } from '../../lib/depthSums.js'
 import { abs, amount, day, NB, shareOf, tokenText, usd } from '../../lib/format.js'
 import { breachSides, dailySummary, sampleKeys } from '../../lib/scorecard.js'
 import { staleQuoteDetail } from '../../lib/staleQuote.js'
@@ -29,9 +30,9 @@ export function ButterflyTable({
 }) {
   const rows = rowsProp ?? pickButterflyRows(pools, gapPoolId)
   const m = butterflyModel(rows, pools)
-  // A stale row is listed but outside the totals, so "every other pool" is what the totals hold
-  // beyond the counted rows.
-  const counted = m.rows.filter((r) => !r.stale)
+  // A stale or paused row is listed but outside the totals, so "every other pool" is what the
+  // totals hold beyond the counted rows.
+  const counted = m.rows.filter((r) => r.share !== null)
   const other = m.poolCount - counted.length
   const both = m.total.sell + m.total.buy
   const otherSell = m.total.sell - counted.reduce((s, r) => s + (r.sell ?? 0), 0)
@@ -64,7 +65,9 @@ export function ButterflyTable({
               <td className="r num">{usd(r.buy)}</td>
               <td className="r num">
                 {r.share === null ? (
-                  <Unknown reason={staleQuoteDetail(r.deviationBps)} />
+                  <Unknown
+                    reason={r.paused ? TRANSFERS_PAUSED_DETAIL : staleQuoteDetail(r.deviationBps)}
+                  />
                 ) : (
                   shareOf(r.share)
                 )}

@@ -20,6 +20,7 @@ const SHORT: Readonly<Record<UnratedReason, string>> = {
   'one-sided': 'Too thin on one side',
   unpriced: 'No USD price',
   hooked: 'Hooked pool',
+  'transfers-paused': 'Transfers paused',
 }
 
 /** "Too thin to rate"; a score stored before ratings existed has no reason yet. */
@@ -40,6 +41,8 @@ export function unratedDetail(reason: UnratedReason | null): string {
       return `${SHORT.unpriced}: a token in this pool has no price in dollars.`
     case 'hooked':
       return `${SHORT.hooked}: it runs a swap hook Depthwatch does not model; depth is not computed.`
+    case 'transfers-paused':
+      return `${SHORT['transfers-paused']}: the stock’s transfers are paused, so this pool’s depth cannot be used.`
     case null:
       return 'Not rated yet: the score is being refreshed.'
   }

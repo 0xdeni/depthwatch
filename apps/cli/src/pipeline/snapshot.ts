@@ -1,8 +1,16 @@
 /**
  * `snapshot`: one overview pass over every known pool → USD prices → TVL ranking → the top N
- * (plus explicitly requested pools) become *tracked* → full state per tracked pool → depth,
- * effective spread and concentration → one `snapshots` row per pool, written in one transaction
- * together with the rebuilt `prices` table.
+ * (plus explicitly requested pools, mandated pools and the stock pools ranked at $10,000 or more)
+ * become *tracked* (tracking.ts) → full state per tracked pool → depth, effective spread and
+ * concentration → one `snapshots` row per pool, written in one transaction together with the
+ * rebuilt `prices` table.
+ *
+ * Stocks (stocks.ts, docs/design/stocks.md §4): every ranked pool holding a stock of the reader's
+ * stock list with a rank of at least `STOCK_TRACK_MIN_RANK_USD` is tracked whatever its place
+ * (`stockPoolIds`); the stock list is read at the same block beside the state reads, a stock
+ * pool's snapshot carries its `reference` to its stock's reading, and the same transaction
+ * rewrites the `stocks` table and stores one reading per stock with its pass depth. A failed stock
+ * read stores `unread` readings and never fails the snapshot.
  *
  * Fees are read with the state, at the snapshot block: each snapshot stores the fee its depth and
  * spread used (`PoolSnapshot.feePips`), and every snapshotted pool's row gets that fee in the same
@@ -38,7 +46,6 @@ import {
   computeEffectiveSpread,
   depthToUsd,
   isHookedPool,
-  type Mandate,
   type MmSample,
   midPrice,
   type PoolMeta,
@@ -46,23 +53,16 @@ import {
   type PoolState,
   type Position,
   priceDeviationBps,
-  tvlUsd,
 } from '@depthwatch/core'
 import type { PoolFee } from '@depthwatch/db'
-import { errorMessage, type Logger } from '../log.js'
+import { errorMessage } from '../log.js'
 import { type AlertsResult, deliverAlerts } from './alerts.js'
 import { type PipelineContext, settleConcurrent, syncKeys, throwIfStopped } from './context.js'
 import { activeMandatesByPool, sampleMandates, storedPositions } from './mm.js'
 import { storedCustodians } from './positions.js'
-import {
-  computePrices,
-  depthUsdFor,
-  type PoolPricing,
-  type PriceMap,
-  priceEntries,
-  pricingFor,
-  usdOf,
-} from './prices.js'
+import { computePrices, type PriceMap, priceEntries, usdOf } from './prices.js'
+import { readStockPass, stockPoolsOf, stockReadingRecords, withReference } from './stocks.js'
+import { mandatedPoolIds, poolTvlUsd, rankPools, selectTracked, stockPoolIds } from './tracking.js'
 
 export interface SnapshotOptions {
   topPools?: number
@@ -94,76 +94,9 @@ export interface SnapshotResult {
   fees: number
   /** Tracked pools without a usable mid price (a zero reserve): logged, not snapshotted. */
   empty: number
+  /** Stock readings stored: one per stock of the list, unless the stock was read at the block. */
+  stockReadings: number
   failed: Array<{ item: string; error: string }>
-}
-
-export interface RankedPool {
-  view: PoolOverview
-  pricing: PoolPricing
-  tvlUsd: number | null
-  /**
-   * TVL when known, else the USD value of the ±2 % depth (Uniswap v4). Null for a hooked Uniswap
-   * v4 pool: its depth is not modelled, so it is never ranked into the tracked set.
-   */
-  rankUsd: number | null
-}
-
-function reservesKnown(view: PoolOverview): boolean {
-  return view.pool.dex !== 'uniswap-v4'
-}
-
-export function poolTvlUsd(view: PoolOverview, prices: PriceMap): number | null {
-  if (!reservesKnown(view)) return null
-  const { token0, token1 } = view.pool
-  return tvlUsd(
-    view.reserve0,
-    view.reserve1,
-    token0,
-    token1,
-    usdOf(prices, token0.address),
-    usdOf(prices, token1.address),
-  )
-}
-
-/** Pools ordered by rank (desc), unranked (unpriced or hooked) pools last, ties by id. */
-export function rankPools(views: readonly PoolOverview[], prices: PriceMap): RankedPool[] {
-  const ranked = views.map((view): RankedPool => {
-    const pricing = pricingFor(view)
-    const tvl = poolTvlUsd(view, prices)
-    // A hooked pool's depth would be the swap walk's guess (docs/METRICS.md, `hooked`): no rank.
-    const rankUsd = isHookedPool(view.pool) ? null : (tvl ?? depthUsdFor(pricing, prices))
-    return { view, pricing, tvlUsd: tvl, rankUsd }
-  })
-  return ranked.sort((a, b) => {
-    const x = a.rankUsd ?? -1
-    const y = b.rankUsd ?? -1
-    if (x !== y) return y - x
-    return a.view.pool.id < b.view.pool.id ? -1 : 1
-  })
-}
-
-/**
- * Top `topPools` ranked ids (with a positive rank) plus the explicitly requested ones (`--pool`
- * and mandated pools), which are tracked whatever their rank, a hooked pool included.
- */
-export function selectTracked(
-  ranked: readonly RankedPool[],
-  topPools: number,
-  explicit: readonly string[],
-): string[] {
-  const known = new Set(ranked.map((r) => r.view.pool.id))
-  for (const id of explicit) {
-    if (!known.has(id)) throw new Error(`unknown pool id "${id}" (run discover first)`)
-  }
-  const selected = new Set<string>(explicit)
-  let taken = 0
-  for (const entry of ranked) {
-    if (taken >= topPools) break
-    if (entry.rankUsd === null || entry.rankUsd <= 0) break
-    selected.add(entry.view.pool.id)
-    taken++
-  }
-  return [...selected].sort()
 }
 
 /** Whether the state has a mid price to store: false for a pool with a zero reserve. */
@@ -201,6 +134,7 @@ export function buildSnapshot(
     activeLiquidity: state.kind === 'concentrated' ? state.liquidity : 0n,
     priceDeviationBps: priceDeviationBps(price, token0Usd, token1Usd),
     feePips: state.feePips,
+    reference: null,
   }
   // The swap walk does not run a hook's code: no number is guessed for a hooked pool.
   if (isHookedPool(pool))
@@ -216,29 +150,6 @@ export function buildSnapshot(
         ? computeConcentration(state, positions, bandPct, custodians)
         : computeConcentrationForReserves(state, bandPct),
   }
-}
-
-/**
- * Pool ids of the active mandates, restricted to pools the database knows; a mandate on an
- * unknown pool (not discovered yet) is logged and skipped.
- */
-export function mandatedPoolIds(
-  mandates: readonly Mandate[],
-  known: ReadonlySet<string>,
-  log: Logger,
-): string[] {
-  const out: string[] = []
-  for (const mandate of mandates) {
-    if (!known.has(mandate.poolId)) {
-      log.warn('mandate pool not in the database; skipped (run discover)', {
-        mandate: mandate.id,
-        pool: mandate.poolId,
-      })
-      continue
-    }
-    if (!out.includes(mandate.poolId)) out.push(mandate.poolId)
-  }
-  return out
 }
 
 export async function snapshotStep(
@@ -265,6 +176,7 @@ export async function snapshotStep(
     alerts: 0,
     fees: 0,
     empty: 0,
+    stockReadings: 0,
     failed: [],
   }
   if (pools.length === 0) {
@@ -282,7 +194,9 @@ export async function snapshotStep(
   log.info('derived prices from overviews', { tokens: firstPass.size })
 
   const ranked = rankPools(views, firstPass)
-  const trackedIds = selectTracked(ranked, topPools, [...explicit, ...mandated])
+  const stockTokens = chain.stocks.tokens.map((t) => t.address)
+  const stockIds = stockPoolIds(ranked, stockTokens)
+  const trackedIds = selectTracked(ranked, topPools, [...explicit, ...mandated, ...stockIds])
   const trackedSet = new Set(trackedIds)
   db.transaction(() => {
     db.pools.setTracked(
@@ -297,20 +211,24 @@ export async function snapshotStep(
     top: topPools,
     explicit: explicit.length,
     mandated: mandated.length,
+    stocks: stockIds.length,
   })
 
   const viewById = new Map(views.map((view) => [view.pool.id, view]))
   const trackedPools = pools.filter((p) => trackedSet.has(p.id))
-  const states = await settleConcurrent(
-    trackedPools,
-    concurrency,
-    (pool) => pool.id,
-    async (pool) => ({
-      pool,
-      state: await chain.readState(pool, { bandPct, blockNumber: latest.number }),
-    }),
-    ctx.signal,
-  )
+  const [states, stockPass] = await Promise.all([
+    settleConcurrent(
+      trackedPools,
+      concurrency,
+      (pool) => pool.id,
+      async (pool) => ({
+        pool,
+        state: await chain.readState(pool, { bandPct, blockNumber: latest.number }),
+      }),
+      ctx.signal,
+    ),
+    readStockPass(ctx, latest),
+  ])
   for (const failure of states.failed) {
     const error = errorMessage(failure.error)
     result.failed.push({ item: failure.item, error })
@@ -324,6 +242,8 @@ export async function snapshotStep(
   }
   const stateMap = new Map(states.ok.map((entry) => [entry.pool.id, entry.state]))
   const prices = computePrices(views, anchors, { states: stateMap, wrappedNative })
+  const stockPools = stockPoolsOf(views, stockPass.entries)
+  const references = { stocks: stockPass.entries, prices, stockPools }
 
   const mandatesByPool = activeMandatesByPool(db, mandated)
   const snapshots: PoolSnapshot[] = []
@@ -340,7 +260,8 @@ export async function snapshotStep(
     const positions = storedPositions(db, pool)
     const custodians = storedCustodians(db, pool.id)
     try {
-      snapshots.push(buildSnapshot(pool, view, state, prices, positions, bandPct, custodians))
+      const snapshot = buildSnapshot(pool, view, state, prices, positions, bandPct, custodians)
+      snapshots.push(withReference(snapshot, pool, references))
       fees.push({ id: pool.id, feePips: state.feePips })
     } catch (error) {
       const message = errorMessage(error)
@@ -368,11 +289,18 @@ export async function snapshotStep(
 
   throwIfStopped(ctx)
   const entries = priceEntries(prices)
+  const readings = stockReadingRecords(
+    stockPass.readings,
+    snapshots,
+    new Map(trackedPools.map((p) => [p.id, p])),
+  )
   db.transaction(() => {
     result.snapshots = db.snapshots.insertMany(snapshots)
     result.fees = db.pools.setFees(fees)
     result.samples = db.mmSamples.insertMany(samples)
     db.prices.replaceAll(entries, latest.timestamp)
+    db.stocks.replaceAll(stockPass.infos, latest.timestamp)
+    result.stockReadings = db.stockReadings.insertMany(readings)
     db.syncState.setBigInt(syncKeys.snapshot(), latest.number)
   })
   result.prices = entries.length
@@ -383,6 +311,7 @@ export async function snapshotStep(
     prices: entries.length,
     fees: result.fees,
     empty: result.empty,
+    stockReadings: result.stockReadings,
     failed: result.failed.length,
     block: latest.number,
   })

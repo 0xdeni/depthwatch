@@ -5,7 +5,8 @@
  * Every method answers with the same DTOs, defaults, limits and error bodies as the real routes
  * in `apps/api` (`pool not found` 404, `invalid token address` 400, limit 1..200, `mandate not
  * found` 404, …) so the UI cannot tell the two apart. Histories are deterministic per pool id;
- * the two scorecards mirror the API seed (`mockScorecards.ts`).
+ * the two scorecards mirror the API seed (`mockScorecards.ts`); the tokenized stocks and their
+ * pools are `mockStocks.ts`.
  */
 import {
   DEXES,
@@ -16,6 +17,7 @@ import {
   toJsonSafe,
 } from '@depthwatch/core'
 import { renderBadge } from '../lib/badge.js'
+import { countsInDepthSums } from '../lib/depthSums.js'
 import { compareScorecards, SAMPLE_WINDOW_HOURS } from '../lib/scorecard.js'
 import { matchesQuery, sortSummaries } from '../lib/sort.js'
 import { ApiError } from './errors.js'
@@ -30,6 +32,7 @@ import {
   tokenInfo,
 } from './mockPools.js'
 import { mockMandates, mockMmSamples, mockScorecard } from './mockScorecards.js'
+import { createStockWorld, STOCK_TOKENS, stockTokenKey } from './mockStocks.js'
 import type {
   ApiClient,
   DexStatsDto,
@@ -57,6 +60,7 @@ export {
   MOCK_MM_OK_ID,
   MOCK_MM_OK_POOL,
 } from './mockScorecards.js'
+export { MOCK_STOCK_POOLS } from './mockStocks.js'
 
 const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 200
@@ -115,7 +119,11 @@ function historySeed(p: MockPool): HistorySeed {
 
 function dexStats(dex: Dex, rows: MockPool[]): DexStatsDto {
   const counted = rows.filter(
-    (p) => !isStaleQuote(p.snapshot.priceDeviationBps) && p.depth2Usd !== null,
+    (p) =>
+      countsInDepthSums({
+        staleQuote: isStaleQuote(p.snapshot.priceDeviationBps),
+        health: p.score,
+      }) && p.depth2Usd !== null,
   )
   return {
     dex,
@@ -123,7 +131,8 @@ function dexStats(dex: Dex, rows: MockPool[]): DexStatsDto {
     tracked: rows.length,
     scored: rows.length,
     rated: rows.filter((p) => p.score.rated).length,
-    // As the API: a stale quote's depth stays out of the sum and the count of pools it covers.
+    // As the API: the depth of a stale quote or a paused stock's pool stays out of the sum and the
+    // count of pools it covers.
     depth2Usd: counted.reduce((sum, p) => sum + (p.depth2Usd ?? 0), 0),
     depthKnownPools: counted.length,
     volume24hUsd: sumKnown(rows.map((p) => p.volume24hUsd)),
@@ -143,9 +152,11 @@ export function createMockClient(opts: MockOptions = {}): ApiClient {
   const summaries = pools.map(summarize)
   const mandates = mockMandates(now)
   const mmSamples = new Map(mandates.map((m) => [m.id, mockMmSamples(now, m)]))
+  // The stock pools answer by id and on their stocks' pages, never in the generic lists.
+  const stockWorld = createStockWorld(now)
 
   function find(id: string): MockPool {
-    const pool = byId.get(id)
+    const pool = byId.get(id) ?? stockWorld.pools.get(id)
     if (!pool) throw new ApiError(404, 'pool not found')
     return pool
   }
@@ -249,14 +260,19 @@ export function createMockClient(opts: MockOptions = {}): ApiClient {
       if (!ADDRESS_RE.test(needle)) {
         throw new ApiError(400, 'invalid token address: expected 0x + 40 hex chars')
       }
-      const entry = Object.entries(TOKENS).find(([, t]) => t.address.toLowerCase() === needle)
-      if (!entry) throw new ApiError(404, 'token not found')
+      const stockKey = stockTokenKey(needle)
+      const entry =
+        stockKey === undefined
+          ? Object.entries(TOKENS).find(([, t]) => t.address.toLowerCase() === needle)
+          : ([stockKey, STOCK_TOKENS[stockKey]] as const)
+      if (!entry?.[1]) throw new ApiError(404, 'token not found')
       const [symbol, seed] = entry
-      const inPools = sortSummaries(containing(needle), query.sort ?? 'depth', query.dir ?? 'desc')
-      // A token's depth leaves stale quotes out, as the stats do (docs/METRICS.md).
-      const depths = inPools.filter((p) => !p.staleQuote).map((p) => p.depth2Usd)
+      const holding = stockWorld.tokenPools(needle) ?? containing(needle)
+      const inPools = sortSummaries(holding, query.sort ?? 'depth', query.dir ?? 'desc')
+      // A token's depth leaves stale quotes and paused stocks' pools out, as the stats do.
+      const depths = inPools.filter(countsInDepthSums).map((p) => p.depth2Usd)
       return {
-        token: tokenInfo(symbol),
+        token: tokenInfo(symbol, stockKey === undefined ? TOKENS : STOCK_TOKENS),
         usd: seed.usd > 0 ? seed.usd : null,
         via: seed.via,
         priceUpdatedAt: now,
@@ -303,6 +319,12 @@ export function createMockClient(opts: MockOptions = {}): ApiClient {
     },
     async badge(id: string) {
       return renderBadge(scorecardOf(id))
+    },
+    async stocks() {
+      return stockWorld.stocks()
+    },
+    async stock(address: string) {
+      return stockWorld.stock(address)
     },
   }
 }

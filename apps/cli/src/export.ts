@@ -10,7 +10,10 @@
  * - `--note <text>` adds the bundle's `note`, which the static site shows as "About this snapshot"
  *   for a live bundle. Without it the bundle has no `note` key at all.
  * - `depthwatch export --bundle <file> --out <file>`: an exported bundle written again with only
- *   its `features` replaced, no database read (the Trade switch and Trade preview workflows).
+ *   its `features` replaced, no database read (the Trade switch and Trade preview workflows). A
+ *   bundle exported before the stock routes keeps no `stocks` or `stockDetails` key.
+ * - The stock routes are exported like every other (`stocks`, `stockDetails`); the demo tracks no
+ *   stock, so its bundle has `stocks: []` and `stockDetails: {}`.
  *
  * Every export writes the trade switch (DEPTHWATCH_TRADE, tradeSwitch.ts) twice: as the bundle's
  * `features.trade` and as `flags.json` next to the bundle. An invalid value writes the switch off,
@@ -32,6 +35,8 @@ import {
   type ScorecardsResponse,
   type StaticBundle,
   type StatsResponse,
+  type StockDetail,
+  type StocksResponse,
   type TokenDetail,
 } from '@depthwatch/api'
 import { type TradeFlags, tradeOff } from '@depthwatch/core'
@@ -119,6 +124,19 @@ async function fullToken(app: App, address: string): Promise<TokenDetail | undef
   return { ...detail, pools }
 }
 
+/** `/api/stocks` and `/api/stocks/:token` of every stock, key = lowercase address. */
+async function allStocks(
+  app: App,
+): Promise<Required<Pick<StaticBundle, 'stocks' | 'stockDetails'>>> {
+  const { items: stocks } = await getJson<StocksResponse>(app, '/api/stocks')
+  const stockDetails: Record<string, StockDetail> = {}
+  for (const { stock } of stocks) {
+    const address = stock.token.address.toLowerCase()
+    stockDetails[address] = await getJson<StockDetail>(app, `/api/stocks/${segment(address)}`)
+  }
+  return { stocks, stockDetails }
+}
+
 /** Lowercase addresses of every token in `pools`, in first-seen order. */
 function tokenAddresses(pools: readonly PoolSummary[]): string[] {
   const seen = new Set<string>()
@@ -172,6 +190,7 @@ export async function buildStaticBundle(
       }
       badges[mandate.id] = await (await get(app, `${base}/badge.svg`)).text()
     }
+    const { stocks, stockDetails } = await allStocks(app)
     return {
       v: 1,
       generatedAt: opts.now,
@@ -190,6 +209,8 @@ export async function buildStaticBundle(
       scorecardDetails,
       samples,
       badges,
+      stocks,
+      stockDetails,
     }
   } catch (error) {
     if (failure !== undefined) throw new ExportError(errorMessage(failure), { cause: failure })

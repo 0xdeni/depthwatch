@@ -52,7 +52,7 @@ export function reviveBigints<T>(value: unknown, bigintKeys: ReadonlySet<string>
   return walk(value, null) as T
 }
 
-/** Property names that hold bigints anywhere in the snapshot / volume / position types. */
+/** Property names that hold bigints anywhere in the snapshot / volume / position / stock reading types. */
 export const BIGINT_KEYS: ReadonlySet<string> = new Set([
   'amountIn',
   'amountOut',
@@ -72,4 +72,8 @@ export const BIGINT_KEYS: ReadonlySet<string> = new Set([
   'amount1',
   'reserve0',
   'reserve1',
+  'feedRoundId',
+  'feedAnswer',
+  'oracleMultiplierWad',
+  'tokenMultiplierWad',
 ])

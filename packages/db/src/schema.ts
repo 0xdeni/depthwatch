@@ -22,6 +22,9 @@
  * Version 7 adds `snapshots.fee_pips`: the LP fee each snapshot's depth and spread used
  * (`PoolSnapshot.feePips`), NULL in the rows stored before it. It also marks the first build that
  * knows the Aero DEX ids, so an older build refuses the file before any step meets them.
+ * Version 8 adds tokenized stocks (docs/design/stocks.md §5): `snapshots.reference_json`
+ * (`PoolSnapshot.reference`, NULL in the rows stored before it), the stock list (`stocks`) and one
+ * reading per stock and snapshot block (`stock_readings`).
  *
  * Several processes may open one file at once: a database at the current version is read without
  * a write lock; otherwise `BEGIN IMMEDIATE` comes first and `schema_version` is created and read
@@ -218,6 +221,51 @@ export const MIGRATIONS: readonly string[] = [
   // not say which one a stored snapshot was computed with.
   `
   ALTER TABLE snapshots ADD COLUMN fee_pips INTEGER;
+  `,
+  // Version 8: tokenized stocks. `reference_json` is a PoolReference (no bigint), NULL for a pool
+  // without a stock and in rows stored before. `stocks` is the stock list as the last snapshot
+  // pass wrote it (the feed columns NULL for a stock without a feed). `stock_readings` holds one
+  // reading per stock and block: bigints as decimal TEXT, `paused_features` the feature names
+  // comma-separated ('' for none, NULL when unread), `pass_depth_json` a StockPassDepth. The
+  // (token, timestamp) index serves a stock's newest reading and its series, since the table is
+  // never pruned.
+  `
+  ALTER TABLE snapshots ADD COLUMN reference_json TEXT;
+
+  CREATE TABLE stocks (
+    token TEXT PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    name TEXT NOT NULL,
+    decimals INTEGER NOT NULL,
+    ticker TEXT NOT NULL,
+    feed TEXT,
+    feed_decimals INTEGER,
+    heartbeat_seconds INTEGER,
+    deviation_threshold_bps INTEGER,
+    feed_hours TEXT,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE stock_readings (
+    token TEXT NOT NULL,
+    block_number TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    reference_usd REAL,
+    feed_age_seconds INTEGER,
+    feed_round_id TEXT,
+    feed_answer TEXT,
+    feed_updated_at INTEGER,
+    oracle_multiplier TEXT,
+    oracle_paused INTEGER,
+    token_multiplier TEXT,
+    paused_features TEXT,
+    error TEXT,
+    pass_depth_json TEXT,
+    PRIMARY KEY (token, block_number)
+  );
+  CREATE INDEX stock_readings_timestamp ON stock_readings(timestamp);
+  CREATE INDEX stock_readings_token_timestamp ON stock_readings(token, timestamp);
   `,
 ]
 

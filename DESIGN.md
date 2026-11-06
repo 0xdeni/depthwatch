@@ -4,7 +4,8 @@ Depthwatch is an open liquidity observatory for **Base mainnet only**. It indexe
 Uniswap v4, Aerodrome (v2 AMM + Slipstream concentrated) and Aero (v2 AMM + Slipstream
 concentrated; Aerodrome and Velodrome merged into Aero on 2026-10-21) pools: every pool of those factories
 with log discovery (`discover`), or the pools between the reference tokens (and any
-`--seed-token`) with `discover --seed`. It publishes per pool:
+`--seed-token`), and those of each tokenized stock with them, with `discover --seed`. It publishes
+per pool:
 - **Depth at ±1 / 2 / 5 %**: how much capital it takes to move the price by that much, each side.
 - **Effective spread** at $1k / $10k / $100k / $1M round-trip notional, fees included.
 - **LP concentration**: structural (tick-range HHI) and ownership (top-1 / top-3 share, HHI over owners).
@@ -88,10 +89,25 @@ Key conventions it encodes:
   `DepthLevel.down` is the token0 needed to push it down (sell pressure).
 - `PriceEdge` carries either a pool's ±2 % depth sides (`upToken1`, `downToken0`: human token1 and token0 amounts),
   weighed in USD by `derivePrices` when it reaches the edge, or a fixed `weight` (the ETH ↔ WETH wrap edge).
-- `UnratedReason` is `'hooked' | 'unpriced' | 'one-sided' | 'thin'`; `HealthInputs.hooked` (optional, default false) marks
-  a hooked pool (`isHookedPool`), whose `PoolSnapshot` holds no depth levels, spread points or concentration.
+- `UnratedReason` is `'hooked' | 'transfers-paused' | 'unpriced' | 'one-sided' | 'thin'`, tested in that order;
+  `HealthInputs.hooked` (optional, default false) marks a hooked pool (`isHookedPool`), whose `PoolSnapshot` holds no
+  depth levels, spread points or concentration; `HealthInputs.transfersPaused` (optional, default false) a stock pool
+  whose stock's transfers are paused at the snapshot's block (docs/METRICS.md, "Stock tradability").
+- Tokenized stocks (`packages/core/src/stocks/types.ts`, docs/design/stocks.md §2): `StockInfo` (`token`, `ticker`,
+  `feed: StockFeedInfo | null`), `StockRawRead` (a stock's decoded answers at a block, a null field per failed call),
+  `StockReading` (`referenceStatus: 'live' | 'held' | 'paused' | 'invalid' | 'unread' | 'no-feed'`, `referenceUsd`,
+  `feedAgeSeconds`, the answers, `pausedFeatures: PausableFeature[] | null`, `transfersPaused`), `PoolReference` (a
+  stock pool against its stock's reading: `poolUsd`, `deviationBps`, `toleranceBps` with its parts
+  `deviationThresholdBps` and `feeBps`, `withinTolerance`, `deviationNull: ReferenceNullReason | null`; no bigint;
+  token0's stock in a pool of two), `StockPoolInput` (with `pausedByNewerReading?`, which only the API sets),
+  `StockVenue`, `StockAggregate` and `StockPassDepth`. `referenceUsd` is Chainlink's answer as read and `poolUsd` one
+  pool's mid in dollars: Depthwatch publishes no stock price. `BIGINT_KEYS` holds `feedRoundId`, `feedAnswer`,
+  `oracleMultiplierWad` and `tokenMultiplierWad` beside the snapshot, volume and position keys.
 - `PoolSnapshot.priceDeviationBps` is the stale-quote measure (docs/METRICS.md, Stale quotes): `null` when a token has
   no USD price, and in snapshots stored before the field existed.
+- `PoolSnapshot.reference: PoolReference | null` sets a stock pool against its stock's reading at the snapshot's block
+  (docs/METRICS.md, "Reference deviation"; `PoolReference` from `stocks/types.ts`, brought in by `import type`): `null`
+  for a pool without a stock, and in snapshots stored before schema version 8.
 - `FeatureFlags` is the static bundle's optional `features` block and, exactly, `data/flags.json`: `{ trade: TradeFlags }`
   with `TradeFlags = { enabled: boolean, venues: Dex[], maxUsd: number, maxSlippageBps: number }` (`TradeLimits` holds the
   two limits). Written by `depthwatch export` from `DEPTHWATCH_TRADE`, read by the dashboard; every reader fails closed
@@ -123,8 +139,8 @@ computeEffectiveSpread(state: PoolState, token0: TokenInfo, token1: TokenInfo, t
 computeConcentration(state: ConcentratedState, positions: Position[] | null, bandPct?: number, excludedOwners?: readonly string[]): ConcentrationMetrics // excludedOwners: custodians (a Slipstream gauge), uncovered
 computeConcentrationForReserves(state: ConstantProductState | StableSwapState): ConcentrationMetrics   // rangeHhi = 1, activeRangeShare = 1, owners null (or from LP token holders when provided later)
 computePersistence(samples: Array<{ timestamp: number; depthUsd: number | null }>, windowHours: number, now: number): PersistenceMetrics
-computeHealthScore(inputs: HealthInputs): HealthScore   // inputs: depth2UpUsd, depth2DownUsd, spread10kBps, ownerTop1Share, ownerCoverage, rangeHhi, poolKind, persistence, hooked?; HealthScore.concentrationBasis: 'owners' | 'ranges' | 'neutral' (null only when read from a score stored before it)
-rateDepth(upUsd: number | null, downUsd: number | null, opts?: { hooked?: boolean }): { rated: boolean; unratedReason: UnratedReason | null }
+computeHealthScore(inputs: HealthInputs): HealthScore   // inputs: depth2UpUsd, depth2DownUsd, spread10kBps, ownerTop1Share, ownerCoverage, rangeHhi, poolKind, persistence, hooked?, transfersPaused?; HealthScore.concentrationBasis: 'owners' | 'ranges' | 'neutral' (null only when read from a score stored before it)
+rateDepth(upUsd: number | null, downUsd: number | null, opts?: { hooked?: boolean; transfersPaused?: boolean }): { rated: boolean; unratedReason: UnratedReason | null } // hooked, then transfers-paused, then the sides
 isHookedPool(pool: Pick<PoolMeta, 'hooks'>): boolean // a non-zero hooks address (Uniswap v4 hook; Aero Slipstream off its reviewed swap hook)
 ownersCoverPool(owners: OwnerConcentration | null | undefined): boolean // count > 0 and coverage ≥ OWNER_COVERAGE_MIN (0.9)
 poolOwnerTop1Share(owners: OwnerConcentration | null | undefined): number | null // top1Share when ownersCoverPool, else null
@@ -175,8 +191,26 @@ combineTradeFlags(atLoad: TradeFlags | null, live: TradeFlags | null): TradeFlag
 tradeOnFor(flags: TradeFlags, venue: Dex): boolean
 tradeOff(): TradeFlags // off, with the launch limits
 
+// tokenized stocks (stocks/; docs/METRICS.md, "Reference deviation", "Stock tradability", "Stock aggregates")
+weeklyCloseAt(timestamp: number): { start: number; end: number } | null // [Friday 20:00, Sunday 20:00) America/New_York, US DST rule in pure code
+newYorkOffsetSeconds(timestamp: number): number // −4 h from the second Sunday of March 07:00 UTC to the first Sunday of November 06:00 UTC, else −5 h
+isHeld(feed: StockFeedInfo, timestamp: number, updatedAt: number): boolean // age > heartbeat + REFERENCE_AGE_GRACE_SECONDS (3,600), or 24/5 in a weekly close with updatedAt before it began
+evaluateStockReading(stock: StockInfo, raw: StockRawRead | null, block: { blockNumber: bigint; timestamp: number }, error?: string): StockReading
+referenceUsdPerToken(answer: bigint, decimals: number): number | null // answer / 10^decimals; the multiplier is never applied
+decodePausedFeatures(ordinals: readonly number[]): PausableFeature[] // B20 ordinals 0..3, a set; unknown dropped
+isTransferPaused(features: readonly PausableFeature[] | null): boolean | null
+quoteRouteAvoids(via: readonly string[], stockPoolIds: ReadonlySet<string>): boolean
+poolReference(input: PoolReferenceInput): PoolReference | null // null: no stock in the pool
+stockSides(stock: Address, token0: Address, depth2UpUsd: number | null, depth2DownUsd: number | null): { buyUsd: number | null; sellUsd: number | null }
+countsInStockSums(pool: StockPoolInput): boolean // not stale, transfers not paused at the snapshot nor by a newer reading
+newerReadingPauses(snapshotBlock: bigint | null, readings: readonly (Pick<StockReading, 'blockNumber' | 'transfersPaused'> | undefined)[]): boolean // a later reading of either stock finds transfers paused
+summarizeStock(token: Address, pools: readonly StockPoolInput[]): StockAggregate
+stockPassDepth(aggregate: StockAggregate): StockPassDepth
+
 // test helpers (exported from core for other packages' tests)
 buildConcentratedState(opts: { positions: Array<{tickLower, tickUpper, liquidity}>; tick; feePips; tickSpacing; blockNumber?; timestamp? }): ConcentratedState
+makeStock(symbol: string, opts?: { address?; feed?: Partial<StockFeedInfo> | null }): StockInfo // 8 decimals at 0xb2…, a 24/5 feed like the ten
+stockRawRead(stock: StockInfo, answer: bigint, updatedAt: number, overrides?: Partial<StockRawRead>): StockRawRead
 ```
 
 ### Concentrated-liquidity swap walk (must match Uniswap v3 semantics)
@@ -250,13 +284,15 @@ export interface PoolOverview {
 }
 export interface ChainReader {
   readonly chainId: 8453
+  readonly stocks: StockList // src/stocks.ts: { tokens, feeds (keyed by token), oracleRegistry }; default BASE_STOCKS (the ten of base.org/stocks), resolveStockList: lowercased, frozen; a malformed address, a token listed twice or a feed for no listed token throws
   getLatestBlock(): Promise<{ number: bigint; timestamp: number }>
   getBlockTimestamp(blockNumber: bigint): Promise<number> // cached per reader, at most TIMESTAMP_CACHE_LIMIT (10 000) blocks; a full cache starts over
   blockAtOrAfter(timestamp: number, toBlock: bigint): Promise<bigint> // first block ≤ toBlock whose header timestamp is ≥ timestamp (unix seconds), else toBlock + 1n: the block schedule's candidate once its own and its parent's header confirm it, else a binary search over headers (about 26 to 27 for Base's height, log2 of it)
   discoverPools(dex: Dex, fromBlock: bigint, toBlock: bigint): Promise<PoolMeta[]> // paginates getLogs in chunks (default 10 000 blocks), resolves token metadata (cached), symbol fallback for bytes32/missing
-  seedPools(opts?: SeedPoolsOptions): Promise<SeedResult> // no logs: factory / StateView views for every pair of the token list (default: the reference tokens) at one block (default latest), creation blocks by binary search over archive state (eth_getCode; v4: PoolManager extsload of slot0); same PoolMeta as discoverPools. opts: { dexes, tokens, blockNumber, knownCreatedAt(poolId), concurrency (4), batchSize (50), onPools(pools, { done, total, requests }) per finished batch, onSearchRound, onRetry }; 429 / transient probes back off with the logRetry policy; the DEX seeders run independently: one whose factory views fail is listed in `failed` and the others' pools are still searched and returned (a failed creation-block search still throws); result: { blockNumber, pools, dexes: [{ dex, candidates, found, searched }] (seeded DEXes only), failed: [{ dex, error }], searchRequests, searchRounds }
+  seedPools(opts?: SeedPoolsOptions): Promise<SeedResult> // no logs: factory / StateView views for every pair of the token list (default: the reference tokens), plus each of `crossTokens` with each of them and never with each other (`seedPairs`; the seeders take that pair list, every DEX but Uniswap v4 drops pairs with native ETH), at one block (default latest), creation blocks by binary search over archive state (eth_getCode; v4: PoolManager extsload of slot0); same PoolMeta as discoverPools. opts: { dexes, tokens, crossTokens, blockNumber, knownCreatedAt(poolId), concurrency (4), batchSize (50), onPools(pools, { done, total, requests }) per finished batch, onSearchRound, onRetry }; 429 / transient probes back off with the logRetry policy; the DEX seeders run independently: one whose factory views fail is listed in `failed` and the others' pools are still searched and returned (a failed creation-block search still throws); result: { blockNumber, pools, dexes: [{ dex, candidates, found, searched }] (seeded DEXes only), failed: [{ dex, error }], searchRequests, searchRounds }
   refreshPoolMetas(pools: readonly PoolMeta[]): Promise<PoolMeta[]> // stored pools' PoolMeta read again at the head as discovery builds them (stored tokens, tick spacing, creation block kept) for DEXes whose PoolMeta holds a reading the state reads check (Aero Slipstream: `hooks`); other DEXes' pools and pools no factory reports are left out
   readTokens(addresses: Address[]): Promise<TokenInfo[]>
+  readStocks(blockNumber: bigint): Promise<StockReadResult[]> // { token, raw: StockRawRead | null, error }, one per stock in list order, from one multicallBatched at the block (internal/stocks.ts): per stock with a feed latestRoundData, decimals, description (the proxy), getOracleParams(token) (the oracle registry), multiplier, pausedFeatures (the token); without a feed the last two; each call decoded on its own, a revert or undecodable answer nulls its fields and is named in error ("<call>: <reason>", "; "-joined); a failed request gives every stock raw null and its errorSummary; never throws but the reader's abort
   readOverview(pools: PoolMeta[], blockNumber?: bigint): Promise<PoolOverview[]> // multicall-batched (≤ 500 calls per multicall)
   readState(pool: PoolMeta, opts: { bandPct: number; blockNumber?: bigint }): Promise<PoolState> // tick walk via tickBitmap words ± enough to cover bandPct·2 (at least ±10 %), ticks() per initialised tick, all multicall-batched
   readPositions(pool: PoolMeta, opts: { fromBlock: bigint; toBlock: bigint }): Promise<Position[]> // v3/Slipstream: NFPM IncreaseLiquidity/DecreaseLiquidity/Transfer + positions() (Aero Slipstream: its NFPM's 6-field IncreaseLiquidity); v4: PositionManager; aerodrome-v2, aero-v2: []
@@ -274,6 +310,7 @@ export function createChainReader(opts: {
   logsRpcUrl?: string // eth_getLogs only (default: rpcUrl, or transport when given)
   logsTransport?: Transport // wins over logsRpcUrl
   addresses?: Partial<ChainAddresses>
+  stocks?: StockList // the stock list readStocks reads (default BASE_STOCKS), resolved like addresses
   logChunkSize?: number | bigint // blocks per eth_getLogs (default 10 000)
   minLogRange?: number | bigint // rejected ranges are split down to min(minLogRange, logChunkSize), default 100
   logRetry?: Partial<LogRetryPolicy> // { retries: 8, baseDelayMs: 1 000, maxDelayMs: 30 000, sleep, onRetry }: the one backoff of every 429 / transient request (eth_getLogs, multicalls, blocks, eth_getCode); onRetry hears eth_getLogs
@@ -317,6 +354,7 @@ Protocol specifics (addresses live in `src/addresses.ts`, overridable via `creat
 - Aerodrome Slipstream: CLFactory `PoolCreated(token0, token1, tickSpacing, pool)`; same tick interface as v3 but `ticks()` returns a different struct (ABI in docs/research/base-contracts.md); fee via `fee()`, which the deployment's DynamicSwapFeeModule can change every block.
 - Aero v2 (`aero-v2`, `ChainAddresses.aeroV2`): a volatile and a stable PoolFactory. `PoolCreated(token0, token1, pool, length)` has no `stable` flag: one log filter covers both factories and the emitting factory gives the kind; seeding asks `getPool(token0, token1)` of both. `getReserves` and Aerodrome v2's `Swap` (its swaps join that scan); `metadata()` (6 outputs) and `stable()` (reverts) are never read. Fee: `getBaseFee(pool, 0x0, 0, 0, 0, 0)` (bps) on the pool's factory, in the same multicall as its `feeModule()`, which must be `aeroV2.volatileFeeModule` / `stableFeeModule`. LP holdings: the wallet balance plus the gauge from `FactoryRegistry.targetToGauge(pool)` (`balanceOf(owner)`); the LeafVoter has no pool views.
 - Aero Slipstream (`aero-slipstream`, `ChainAddresses.aeroSlipstream`, `AeroSlipstreamDeployment` = a Slipstream deployment plus its reviewed `swapHook`): Slipstream's `PoolCreated`, `slot0`, `ticks()`, `positions()` and `Swap` (its swaps join the Uniswap v3 scan); the NFPM's `IncreaseLiquidity` has 6 fields (`aeroNFPMAbi`); `fee()` is the swap hook's fee for the block. Discovery and seeding read `getPoolSwapHook(pool)` and the hook's `dynamicFeeConfig(pool)` and set `hooks` (above); custodians are `CLPool.gauge()`, staked owners resolved with `CLGauge.stakedContains`.
+- Tokenized stocks (`src/stocks.ts`, never in `addresses.ts`: no reference token, no trade token, not on the `./addresses` subpath; docs/design/stocks.md): `STOCK_TOKENS`, `STOCK_FEEDS`, `STOCK_PROTOCOL`, `BASE_STOCKS`, `resolveStockList`, `stockInfos(list)` (core's `StockInfo`, the feed's proxy as `address`). ABIs of the functions read only: `abi/chainlinkFeed.ts` (`latestRoundData`, `decimals`, `description`), `abi/b20.ts` (`multiplier`, `pausedFeatures` → `uint8[]`), `abi/coinbaseOracleRegistry.ts` (`getOracleParams(address) → (uint256, bool)`, from the bytecode and observed answers, no document). `fixtures/stocks.ts` `addStockFixture` registers one stock's answers at a block (`revert` / `malformed` per call).
 - A state read that finds an Aero pool's configuration changed throws `PoolConfigChangedError` and fails that pool's snapshot: `fee module changed` (an Aero v2 factory's `feeModule()` is not the pinned one) or, for Aero Slipstream, `swap hook changed` / `initial fee enabled` (`isPool`, `getPoolSwapHook` and `dynamicFeeConfig` ride in the state multicall; `hooks ?? swapHook` must answer, and `initialFeeEnabled` must be false when `hooks` is null). `discover --seed` reads the hook of every stored Aero Slipstream pool again, seeded pair or not (`refreshPoolMetas`), so a changed hook stores the pool as hooked; a changed fee module needs a new build that pins the reviewed module (`poolConfigFix` names the remedy the snapshot step logs).
 
 ## Storage (packages/db)
@@ -325,20 +363,23 @@ Protocol specifics (addresses live in `src/addresses.ts`, overridable via `creat
 (only when the file is not in WAL yet, retried for up to 5 s while another process holds the lock: SQLite's busy handler does not
 cover the switch) and `synchronous = NORMAL`, then runs migrations. A database at the current version is opened without a write
 lock; otherwise `BEGIN IMMEDIATE` comes before `schema_version` is read, so of several processes opening one file at once the first
-applies each pending migration and the others read the version it recorded. Schema version 7; a file of a newer version
+applies each pending migration and the others read the version it recorded. Schema version 8; a file of a newer version
 than the build is refused before any step runs. Tables:
 - `tokens(address PK, symbol, name, decimals)`
 - `pools(id PK, dex, kind, address, pool_id, token0, token1, fee_pips, tick_spacing, stable, hooks, created_at_block, tracked INTEGER, first_seen_at)`
-- `snapshots(id PK AUTOINCREMENT, pool_id, block_number, timestamp, price, token0_usd, token1_usd, tvl_usd, active_liquidity TEXT, depth_json, depth_usd_json, spreads_json, concentration_json, price_deviation_bps, fee_pips)` + index `(pool_id, timestamp)` + unique index `(pool_id, block_number)`; `price_deviation_bps` (schema version 5) is `PoolSnapshot.priceDeviationBps`, NULL in rows stored before it; `fee_pips` (schema version 7) is `PoolSnapshot.feePips`, NULL in rows stored before it; `owner_top1_share` is core's `poolOwnerTop1Share` of the stored owners (schema version 6 set it to NULL in the rows stored before where those owners do not describe the pool)
+- `snapshots(id PK AUTOINCREMENT, pool_id, block_number, timestamp, price, token0_usd, token1_usd, tvl_usd, active_liquidity TEXT, depth_json, depth_usd_json, spreads_json, concentration_json, price_deviation_bps, fee_pips)` + index `(pool_id, timestamp)` + unique index `(pool_id, block_number)`; `price_deviation_bps` (schema version 5) is `PoolSnapshot.priceDeviationBps`, NULL in rows stored before it; `fee_pips` (schema version 7) is `PoolSnapshot.feePips`, NULL in rows stored before it; `reference_json` (schema version 8) is `PoolSnapshot.reference` (a `PoolReference`, no bigint), NULL for a pool without a stock and in rows stored before it; `owner_top1_share` is core's `poolOwnerTop1Share` of the stored owners (schema version 6 set it to NULL in the rows stored before where those owners do not describe the pool)
 - `volume_hourly(pool_id, hour_start, volume_token0 TEXT, volume_token1 TEXT, volume_usd, swap_count, PK(pool_id, hour_start))`
 - `positions(pool_id, token_id TEXT, owner, tick_lower, tick_upper, liquidity TEXT, updated_block, PK(pool_id, token_id))`; rows under `<pool id>#catch-up` hold a windowed first scan that has not reached the head (never read as a pool's positions)
 - `prices(token PK, usd, via_json, updated_at)`
 - `scores(pool_id PK, timestamp, health_json, gap_json, persistence_24h_json, persistence_7d_json, volume_24h_usd, depth2_usd, health_total, gap_score)`; `health_json.rated` is the rating flag (a row without one reads as unrated until `score` runs again)
+- `stocks(token PK, symbol, name, decimals, ticker, feed, feed_decimals, heartbeat_seconds, deviation_threshold_bps, feed_hours, updated_at)` (schema version 8): the stock list as the last snapshot pass wrote it (core `StockInfo`; the feed columns NULL for a stock without a feed); the API knows which tokens are stocks from it alone
+- `stock_readings(token, block_number TEXT, timestamp, status, reference_usd, feed_age_seconds, feed_round_id TEXT, feed_answer TEXT, feed_updated_at, oracle_multiplier TEXT, oracle_paused, token_multiplier TEXT, paused_features, error, pass_depth_json, PK(token, block_number))` + indexes `(timestamp)` and `(token, timestamp)` (schema version 8; the second serves a stock's newest reading and series, since the table is never pruned): one `StockReading` per stock and snapshot block with its `StockPassDepth` (`pass_depth_json`, no bigint); `paused_features` holds the feature names comma-separated in ordinal order (`''` for none, NULL when the call failed) and `transfersPaused` is read back as core's `isTransferPaused` of them; never pruned (docs/design/stocks.md §4)
 - `sync_state(key PK, value)` (e.g. `discover:uniswap-v3:lastBlock`; `seed:<dex>:lastBlock` records the block of the last `discover --seed`; `volume:<pool>:lastBlock` / `volume:<pool>:fromTs` the volume coverage of a pool; `volume:lastBlock` / `volume:lastTs` the head of the last volume pass; `volume:windows` = `by-time` once a pass has found its blocks by time; `positions:<pool>:lastBlock` the positions cursor, `positions:<pool>:catchUpBlock` that of a staged first scan, `positions:<pool>:custodians` the pool's custodians (comma-separated) as of its published positions; `start:<step>:lastRunAt` the unix ms of `start`'s last volume / positions run; `prune:lastRunAt` the unix seconds of the last `prune`)
 
 One snapshot per pool and block, one market-maker sample per mandate and block (`mm_samples` unique on `(mandate_id, block_number)`,
-docs/design/scorecards.md §4): migration 3 deleted the later copies a second writer had stored and added both unique indexes, and
-`snapshots.insert` / `mmSamples.insert` skip a row already stored (`INSERT OR IGNORE`), returning its row id or `null`, while
+docs/design/scorecards.md §4), one stock reading per stock and block (`stock_readings`' primary key): migration 3 deleted the later
+copies a second writer had stored and added both unique indexes, and `snapshots.insert` / `mmSamples.insert` skip a row already
+stored (`INSERT OR IGNORE`), returning its row id or `null` (`stockReadings.insert`: whether it stored the row), while
 `insertMany` returns the number stored. A second process writing the same block adds nothing. `packages/db/src/schema.test.ts` pins a
 sha256 of every shipped migration: a shipped entry is never edited, a change is a new migration.
 bigint columns are TEXT (decimal strings). JSON columns hold the core types with bigint → string.
@@ -349,9 +390,16 @@ Repositories expose typed methods (`pools.upsertMany` (keeps the stored `fee_pip
 column alone, what the snapshot step writes), `snapshots.insert`, `snapshots.latestForPool`, `snapshots.seriesForPool(poolId, fromTs)`,
 `snapshots.seriesSummaryForPool(poolId, fromTs, toTs)` (the `SnapshotHealthSummary` per row: the summary columns plus `rangeHhi` and `ownerCoverage`, extracted by
 SQLite, no snapshot JSON parsed; what the history route scores), `snapshots.latestTimestampForPool`, `mmSamples.latestIdFor(mandateId)`,
-`volume.upsertBuckets`, `volume.sumUsd(poolId, fromTs)`, `scores.upsert`, `scores.topBy('health'|'gap'|'depth'|'volume'|'tvl'|'spread'|'top', limit, offset, filters)`, `scores.gapCounts(minVolumeUsd)`
+`snapshots.latestReferences(poolIds)` (the newest snapshot's `reference` per pool, `null` without a stock; pools without snapshots absent),
+`stocks.replaceAll(stocks, updatedAt?)` / `stocks.list()` (by ticker) / `stocks.get(token)` (`StockListEntry`: a `StockInfo` with `updatedAt`),
+`stockReadings.insertMany(records)` (`StockReadingRecord`: `{ reading, passDepth }`), `stockReadings.latestFor(token)` /
+`latestForMany(tokens)` (the newest `StockReading` by timestamp, then block: one search of the `(token, timestamp)` index per stock), `stockReadings.seriesFor(token, fromTs, toTs?)` (the
+records, oldest first), `volume.upsertBuckets`, `volume.sumUsd(poolId, fromTs)`, `scores.upsert`, `scores.topBy('health'|'gap'|'depth'|'volume'|'tvl'|'spread'|'top', limit, offset, filters)`, `scores.gapCounts(minVolumeUsd)`
 (`{ total, meaningful }` over the whole gaps feed), `scores.tokenDepth(token)` (`{ depth2UsdTotal, depthKnownPools }` over every scored pool of
-the token, stale quotes left out)…).
+the token, stale quotes and paused stocks' pools left out)…). The depth sums (`statsByDex`, `scores.tokenDepth`) leave out a
+stale quote (`STALE_SQL`, the newest snapshot's `price_deviation_bps`) and a pool unrated `transfers-paused` (`PAUSED_SQL`,
+`health_json.unratedReason`; docs/METRICS.md, "Stock tradability"), both through `LEFT_OUT_SQL` in `repos/scoreStats.ts`; a depth
+sort puts only the stale quotes last.
 Pool filters (`PoolFilter`, shared by `pools.list/count` and `scores.topBy`): `dex`, `tracked`, `q` (case-insensitive substring of a token
 symbol, token address, pool address or v4 pool id) and `token` (exactly token0 or token1, never a symbol; what `/api/tokens/:address` uses).
 Query plans: the score feeds join `scores s CROSS JOIN pools p` so the scored set drives every count and filtered page whatever the number of
@@ -374,9 +422,9 @@ Every response is gzip- or deflate-compressed when `Accept-Encoding` allows it a
 matching `If-None-Match` with `304`. A successful `GET /api/*` response carries `Cache-Control: public, max-age=30`
 unless the route sets its own (the badge: `public, max-age=300`; a pool's history: `public, max-age=60`); `/api/health` sends none.
 
-Each response body is a type of `apps/api/src/dto.ts`, mirrored in `apps/web/src/api/types.ts`;
-`apps/api/src/agentDocs/openapi.json` describes every field, and `apps/api/src/routes/agentDocs.test.ts` checks real
-responses against it. The list names each route's type and query parameters; the fields are in those files:
+Each response body is a type of `apps/api/src/dto.ts` (the stock rows: `stockDto.ts`), mirrored in
+`apps/web/src/api/types.ts` (`stockTypes.ts`); `apps/api/src/agentDocs/openapi.json` describes every field, and
+`apps/api/src/routes/agentDocs.test.ts` checks real responses against it. The list names each route's type and query parameters; the fields are in those files:
 - `GET /api/health?maxAge=` → `HealthResponse`: counts, the newest snapshot's time and block, the newest score's time
   (`latestScoredAt`, `MAX(scores.timestamp)`: a pass writes its scores after its snapshots, so the dashboard refetches
   when either moves), `snapshotAgeSeconds` (the server clock minus `latestSnapshotAt`, `null` before the first snapshot)
@@ -384,7 +432,8 @@ responses against it. The list names each route's type and query parameters; the
   `ok: false` and `error` when the database cannot be read (zero counts) or, with `maxAge` (a positive integer of
   seconds), when `snapshotAgeSeconds` is `null` or above it (`error: stale: …`, counts filled); 400 for an invalid `maxAge`
 - `GET /api/stats` → `StatsResponse`: totals by dex (one row per `DEXES` id, in that order) and overall: pools, tracked, scored, rated, depth2Usd sum (stale
-  quotes left out) and `depthKnownPools` (the scored pools it sums: a known depth, no stale quote), volume24hUsd sum
+  quotes and paused stocks' pools left out) and `depthKnownPools` (the scored pools it sums: a known depth, no stale quote,
+  transfers not paused), volume24hUsd sum
   (null when no pool has a volume), median health over rated pools
 - `GET /api/pools?sort=health|depth|volume|gap|tvl|spread|top&dir=asc|desc&dex=&q=&minVolume=&rated=true|false&limit=&offset=` →
   `PoolsResponse` (`{ items: PoolSummary[], total }`; sorting by health puts unrated pools last in both directions,
@@ -403,7 +452,19 @@ responses against it. The list names each route's type and query parameters; the
 - `GET /api/tokens/:address?sort=&dir=&limit=&offset=` → `TokenDetail`: token info, USD price and the pools it was
   derived through, a page of the scored pools containing it (sorted like `/api/pools`, default deepest first) with
   `total`, the count of every pool containing it (`poolCount`), and `depth2UsdTotal` / `depthKnownPools` (the ±2 % depth
-  summed over every scored pool of the token with a known depth and no stale quote, ignoring paging; docs/METRICS.md)
+  summed over every scored pool of the token with a known depth, no stale quote and its transfers not paused, ignoring
+  paging; docs/METRICS.md)
+- `GET /api/stocks` → `StocksResponse`: every stock of the stored stock list (`stocks.list()`), with pools or not, by
+  `depth2BuyUsd + depth2SellUsd` descending (nulls last), then ticker. A `StockSummary` (`apps/api/src/stockDto.ts`) is
+  the labelled stock with its feed, its newest reading (`stockReadings.latestForMany`, bigints as decimal strings), the
+  list's `updatedAt` and core's `summarizeStock` over its scored pools as the lists show them (`scores.topBy('depth',
+  { token })`, page by page, each with its newest snapshot's reference from `snapshots.latestReferences` and core's
+  `newerReadingPauses` of its tokens' newest readings, so no pool counts while the newest reading finds the transfers
+  paused); built in `apps/api/src/stocks.ts`, which derives no number itself
+- `GET /api/stocks/:token` → `StockDetail`: the summary plus `pools: StockPoolRow[]` (`{ pool: PoolSummary, stockIs,
+  depth2BuyUsd, depth2SellUsd, counted, reference }`: the sides are core's `stockSides`, `counted` its
+  `countsInStockSums`), the counted pools first, then the larger thinner side (unknown last), then the pool id; 400 for a
+  malformed address (as `/api/tokens/:address`), 404 `stock not found` for a token the `stocks` table lacks
 - `GET /AGENTS.md`, `GET /llms.txt`, `GET /openapi.json` → the documents for AI agents (usage guide, llms.txt index,
   hand-written OpenAPI 3.1 of the GET routes), written once in `apps/api/src/agentDocs/` and registered before the static
   fallback; the web build copies the files into `dist` unchanged and into `dist-static` with a generated static-site
@@ -413,7 +474,7 @@ responses against it. The list names each route's type and query parameters; the
   including `index.html` served as the fallback under `/assets/` (a navigation to a removed chunk).
 
 `PoolSummary = { pool: PoolMeta, price, tvlUsd, depth2Usd, depth2UpUsd, depth2DownUsd, spread10kBps, priceDeviationBps, staleQuote, health: { total, grade, rated, unratedReason, concentrationBasis }, gapScore, volume24hUsd, ownerTop1Share, updatedAt }`
-(`grade: HealthGrade | null`, `unratedReason: 'hooked' | 'unpriced' | 'one-sided' | 'thin' | null`, `concentrationBasis: 'owners' | 'ranges' | 'neutral' | null`;
+(`grade: HealthGrade | null`, `unratedReason: 'hooked' | 'transfers-paused' | 'unpriced' | 'one-sided' | 'thin' | null`, `concentrationBasis: 'owners' | 'ranges' | 'neutral' | null`;
 `HealthScore` carries the same three fields; `priceDeviationBps` is the newest snapshot's, `staleQuote` is core's `isStaleQuote` of it).
 `depth2UpUsd` / `depth2DownUsd` are the ±2 % level's `upUsd` (buy side) and `downUsd` (sell side) of the pool's newest
 snapshot, read from the stored `depth_usd_json` as core computed them; each is `null` when its token has no USD price
@@ -434,12 +495,12 @@ it, and `apps/api/src/routes/webhookSecret.test.ts` fails when any part of it sh
 
 `depthwatch <command>` via `tsx` (`pnpm depthwatch …`). Env: `DEPTHWATCH_RPC_URL`, `DEPTHWATCH_LOGS_RPC_URL` (eth_getLogs only, default: `DEPTHWATCH_RPC_URL`), `DEPTHWATCH_LOG_CHUNK`, `DEPTHWATCH_DB`, `DEPTHWATCH_PORT` (else the platform's `PORT`), `DEPTHWATCH_HOST` (`serve`, `start`, `demo`; default `0.0.0.0`), `DEPTHWATCH_LOG_LEVEL` (`debug|info|warn|error|silent`, default `info`), `DEPTHWATCH_PUBLIC_URL` (base of the scorecard link `mm register` prints and of webhook alerts' `scorecardUrl`; default `http://<host>:<port>`), `DEPTHWATCH_ADMIN_TOKEN` (environment only: `createApp`'s `adminToken` under `serve`, `start` and `demo`), `DEPTHWATCH_TOP_POOLS`, `DEPTHWATCH_KEEP_DAYS` (`prune`, `run`, `start`), `DEPTHWATCH_SEED_TOKENS` (`--seed`, `start`); for `start` also `DEPTHWATCH_SNAPSHOT_INTERVAL`, `DEPTHWATCH_VOLUME_INTERVAL`, `DEPTHWATCH_POSITIONS_INTERVAL`, `DEPTHWATCH_POSITIONS_BUDGET`, `DEPTHWATCH_DISCOVER_BUDGET`, `DEPTHWATCH_SHUTDOWN_GRACE` (durations: `90s`, `30m`, `6h`, a plain number is seconds).
 - `discover [--dex …] [--from-block N]` — incremental factory log scan in windows of 50 log chunks; each window upserts its pools and advances sync_state in one transaction, so reruns resume. `--dex` takes the `DEXES` ids; a DEX without a cursor starts at its factories' first block (Aero: `aeroV2.startBlock`, the earliest `aeroSlipstream` start block).
-  `--seed [--seed-token <address> …]`: no logs; `ChainReader.seedPools` for the pairs of the reference tokens plus the `--seed-token` ERC-20s (repeatable; `DEPTHWATCH_SEED_TOKENS`, comma-separated; lowercased; also read by `run --seed` and `start`), upsert, then `refreshPoolMetas` over the stored `aero-slipstream` pools the seed did not find (upserted; a failure fails that DEX), `seed:<dex>:lastBlock` = the seed block for each DEX whose seeder succeeded (log cursors untouched; pools already stored keep their creation block and are not searched again). A DEX whose seeder failed gets no marker and is logged; the step stores the other DEXes' pools, then fails naming it.
-- `snapshot [--top N] [--pool id…]` — readOverview for all pools → derive prices → rank by TVL (a Uniswap v4 pool by its ±2 % depth; a hooked one is not ranked, so it is tracked only through `--pool` or a mandate) → readState for top N → compute depth/spread/concentration (none for a hooked Uniswap v4 pool, which is also no price edge) and the price deviation → insert snapshots and write each snapshotted pool's fee (`pools.setFees`); also rebuild `prices`. A tracked pool without a usable mid price (a zero reserve) is logged and skipped (`empty`), not failed; a `PoolConfigChangedError` is logged with `poolConfigFix`. One `MmSample` per active mandate of a snapshotted pool; a mandate on a hooked Uniswap v4 pool, or on a concentrated pool whose positions are not published (`positions:<pool>:lastBlock` unset), is an attribution failure, no sample. Under `start`, a stop before the storing transaction stores nothing.
+  `--seed [--seed-token <address> …]`: no logs; `ChainReader.seedPools` for the pairs of the reference tokens plus the `--seed-token` ERC-20s (repeatable; `DEPTHWATCH_SEED_TOKENS`, comma-separated; lowercased; also read by `run --seed` and `start`), with the reader's stock list as `crossTokens` (`chain.stocks`, the ten stocks of `BASE_STOCKS`: each stock with each of those tokens, never with another stock; docs/design/stocks.md §4), upsert, then `refreshPoolMetas` over the stored `aero-slipstream` pools the seed did not find (upserted; a failure fails that DEX), `seed:<dex>:lastBlock` = the seed block for each DEX whose seeder succeeded (log cursors untouched; pools already stored keep their creation block and are not searched again). A DEX whose seeder failed gets no marker and is logged; the step stores the other DEXes' pools, then fails naming it.
+- `snapshot [--top N] [--pool id…]` — readOverview for all pools → derive prices → rank by TVL (a Uniswap v4 pool by its ±2 % depth; a hooked one is not ranked, so it is tracked only through `--pool` or a mandate) → readState for top N → compute depth/spread/concentration (none for a hooked Uniswap v4 pool, which is also no price edge) and the price deviation → insert snapshots and write each snapshotted pool's fee (`pools.setFees`); also rebuild `prices`. The ranking and the tracked set are `pipeline/tracking.ts` (`rankPools`, `selectTracked`, `mandatedPoolIds`, and `stockPoolIds`: the ranked pools holding a stock of `chain.stocks` from `STOCK_TRACK_MIN_RANK_USD`, $10,000, tracked whatever their rank beside `--pool` and the mandated pools). Stocks (`pipeline/stocks.ts`, docs/design/stocks.md §4): `ChainReader.readStocks` at the snapshot block, beside the state reads, judged by core's `evaluateStockReading`; each snapshotted stock pool gets `PoolSnapshot.reference` (core `poolReference` on the snapshot's mid, USD prices, ±2 % sides and fee, the quote independent when its route avoids every pool of the pass's overviews holding the stock); the storing transaction rewrites `stocks` and stores one reading per stock with its `StockPassDepth` (core `summarizeStock` over the pass's snapshots of the stock's pools). A failed stock read is logged (`stock reads failed`, or `stock calls failed` per stock) and stored as core judges it, `unread` for a failed request; it never fails the snapshot. An empty stock list (the demo's) sends no read. A tracked pool without a usable mid price (a zero reserve) is logged and skipped (`empty`), not failed; a `PoolConfigChangedError` is logged with `poolConfigFix`. One `MmSample` per active mandate of a snapshotted pool; a mandate on a hooked Uniswap v4 pool, or on a concentrated pool whose positions are not published (`positions:<pool>:lastBlock` unset), is an attribution failure, no sample. Under `start`, a stop before the storing transaction stores nothing.
 - `volume [--hours 24]` — readSwaps for tracked pools, bucket hourly, USD via prices. The window is found by time, exactly: from the top of the hour `--hours` before the head (`fromTs`), first block `ChainReader.blockAtOrAfter(fromTs, head)`, no margin (24 h of 200 ms blocks is 432,000 to 450,000 blocks, by where the head sits in its hour). Incremental per pool (`volume:<pool>:lastBlock` / `volume:<pool>:fromTs`): a later pass starts at the first block of the hour that held the stored `lastBlock` (its header's hour, then `blockAtOrAfter`) and rewrites that hour, keeping earlier hours; pools without coverage of the window read all of it. Every pass writes `volume:windows` = `by-time`; coverage that ends at or after `BASE_DENIM_BLOCK` without that mark was written by a build that counted 2 s blocks after Denim (its post-Denim hours are short) and is ignored once, so those pools read their whole window again. Uniswap v3 and Slipstream pools share one log scan; progress (blocks and chunks done of the total, %, at most 99.9 % until the scan ends, elapsed, ETA, backoffs) is logged every 30 s.
 - `positions` — readPositions for tracked concentrated pools and the concentrated pools of active mandates, upsert; with each published set, `readCustodians` at its head block is recorded (`positions:<pool>:custodians`) for the snapshot's owner coverage. Options `windowBlocks` / `budgetMs` (used by `start`): pools far behind are read in shared windows from the oldest cursor, a first scan stays staged until it reaches the head, a mandated pool without published positions reads to the head on its own range at once, and a spent budget starts no further pool or window.
-- `score` — for every tracked pool: persistence 24h/7d from snapshots, volume24h, health, gap → `scores`; rows of pools no longer tracked are deleted. volume24h sums the 24 whole hours before the hour of the last block `volume` read (`volume:lastTs`), via core `computeVolume24hUsd`.
-- `prune [--keep-days 30]` — retention, database only: deletes snapshots and hourly volume older than `--keep-days` (`DEPTHWATCH_KEEP_DAYS`, default 30; snapshots keep at least 8 days so the 7 d windows always have their series), scorecard samples older than 35 days and alerts older than 90 (each mandate's newest delivered alert is kept, so a longer breach streak is not reported twice and still gets its recovery), and the `volume:<pool>:*` cursors of pools no longer tracked; a tracked pool's `volume:<pool>:fromTs` moves up to the volume cutoff so no pruned hour counts as covered. Snapshots go in batches of 10,000 rows, each its own transaction; the WAL is checkpointed (truncated) at the end. Records `prune:lastRunAt` (unix seconds).
+- `score` — for every tracked pool: persistence 24h/7d from snapshots, volume24h, health (unrated `transfers-paused` when the newest snapshot's `reference.transfersPaused` is true), gap → `scores`; rows of pools no longer tracked are deleted. volume24h sums the 24 whole hours before the hour of the last block `volume` read (`volume:lastTs`), via core `computeVolume24hUsd`.
+- `prune [--keep-days 30]` — retention, database only: deletes snapshots and hourly volume older than `--keep-days` (`DEPTHWATCH_KEEP_DAYS`, default 30; snapshots keep at least 8 days so the 7 d windows always have their series), scorecard samples older than 35 days and alerts older than 90 (each mandate's newest delivered alert is kept, so a longer breach streak is not reported twice and still gets its recovery), and the `volume:<pool>:*` cursors of pools no longer tracked; a tracked pool's `volume:<pool>:fromTs` moves up to the volume cutoff so no pruned hour counts as covered. Snapshots go in batches of 10,000 rows, each its own transaction; the WAL is checkpointed (truncated) at the end. Records `prune:lastRunAt` (unix seconds). `stock_readings` is never pruned (the only record of a stock's depth that outlives the snapshots) and `stocks` is rewritten by every snapshot.
 - `run [--interval 300|5m] [--once] [--with-positions] [--seed] [--keep-days 30]` — loop: discover → [positions] → snapshot → volume → score → [prune] (positions runs for the concentrated pools of active mandates, before the snapshot that samples them; `--with-positions` runs it for every tracked pool; volume values swaps at the prices snapshot stored; score follows volume, whose head anchors the 24 h window; prune runs once a day, when `prune:lastRunAt` is a day old or unset); `--seed` seeds in the discover step. A failed step is logged and the pass goes on; `--once` exits 1 when any step failed (one stderr line naming them); the loop stops with exit 1 (`PipelineStalledError`) after three passes in a row in which every step that reads the chain (discover, positions, snapshot, volume) failed, so a supervisor restarts or alerts.
 - `start [--snapshot-interval 30m] [--volume-interval 1h] [--positions-interval 6h] [--positions-budget 10m] [--discover-budget 15m]` — the server: `serve`'s API and dashboard, listening at once (after a write probe: an unwritable database is exit code 1), plus a scheduler over the same database. A pass every snapshot interval runs [seed until one succeeds] → snapshot → [volume when due] → score → [positions when due or while an active mandate's concentrated pool has no published positions, budgeted] → [log discovery, budgeted] → [prune once a day], both budgets cut to the time left before the next pass; steps never overlap, a failing step is logged and retried at its next slot, a volume or positions run that found no tracked pool is due again at the next pass, every step logs its requests and estimated Alchemy compute units and each UTC day a total. SIGTERM aborts the chain reader and the pipeline (`PipelineContext.signal`: no further pool read, nothing stored by the step in flight), waits `DEPTHWATCH_SHUTDOWN_GRACE` (8 s) at most, closes server and database, exit 0.
 - `serve` — API + dashboard (`apps/web/dist` if built).
@@ -450,10 +511,13 @@ it, and `apps/api/src/routes/webhookSecret.test.ts` fails when any part of it sh
 ## Dashboard (apps/web)
 
 Routes (docs/design/ia-v3.md §2): `/` (the answer, the depth butterfly, facts, gap and scorecard previews), `/pools`,
-`/pools/:id` (mirrored depth curve, health, cost to trade, providers, over time, mandates), `/gaps`, `/tokens/:address`,
-`/mm`, `/mm/:id`, `/methodology`. The visual and interaction spec is docs/design/visual-v4.md, which supersedes
-visual-v3.md where they differ. Charts are hand-written SVG and HTML: no chart library, because library defaults
-conflict with the chart rules (visual-v4.md §7.1); the standard library and React cover them. Light and dark theme
+`/pools/:id` (mirrored depth curve, health, cost to trade, providers, over time, mandates; a stock pool's
+"tokenized stock" row first), `/stocks` and `/stocks/:token` (the tokenized stocks: Chainlink's answer with its
+status and age, depth, venues and each pool's deviation, with the eligibility line and no trade link,
+docs/design/stocks-api.md §3), `/gaps`, `/tokens/:address`, `/mm`, `/mm/:id`, `/methodology`.
+The visual and interaction spec is docs/design/visual-v4.md, which supersedes visual-v3.md where they differ.
+Charts are hand-written SVG and HTML: no chart library, because library defaults conflict with the chart rules
+(visual-v4.md §7.1); the standard library and React cover them. Light and dark theme
 via `prefers-color-scheme`, tokens on `:root` (`src/styles/tokens.css`), fonts self-hosted under `public/fonts`. Data
 via TanStack Query against `/api`; the static build (`pnpm build:static`) reads an exported bundle on hash routes.
 `VITE_MOCK=1` serves from

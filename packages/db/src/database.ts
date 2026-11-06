@@ -24,6 +24,8 @@ import { PositionsRepo } from './repos/positions.js'
 import { PricesRepo } from './repos/prices.js'
 import { ScoresRepo } from './repos/scores.js'
 import { SnapshotsRepo } from './repos/snapshots.js'
+import { StockReadingsRepo } from './repos/stockReadings.js'
+import { StocksRepo } from './repos/stocks.js'
 import { SyncStateRepo } from './repos/syncState.js'
 import { TokensRepo } from './repos/tokens.js'
 import { VolumeRepo } from './repos/volume.js'
@@ -54,6 +56,9 @@ export interface Database {
   readonly mandates: MandatesRepo
   readonly mmSamples: MmSamplesRepo
   readonly mmAlerts: MmAlertsRepo
+  /** Tokenized stocks (docs/design/stocks.md §5): the stock list and its readings. */
+  readonly stocks: StocksRepo
+  readonly stockReadings: StockReadingsRepo
   /** Runs `fn` in `BEGIN IMMEDIATE … COMMIT`, rolling back on throw; nested calls join the outer one. */
   transaction<T>(fn: () => T): T
   /** True while a `transaction` call runs on this connection. */
@@ -159,6 +164,8 @@ class SqliteDatabase implements Database {
   readonly mandates: MandatesRepo
   readonly mmSamples: MmSamplesRepo
   readonly mmAlerts: MmAlertsRepo
+  readonly stocks: StocksRepo
+  readonly stockReadings: StockReadingsRepo
   private open = true
 
   constructor(
@@ -178,6 +185,8 @@ class SqliteDatabase implements Database {
     this.mandates = new MandatesRepo(ctx)
     this.mmSamples = new MmSamplesRepo(ctx)
     this.mmAlerts = new MmAlertsRepo(ctx)
+    this.stocks = new StocksRepo(ctx)
+    this.stockReadings = new StockReadingsRepo(ctx)
   }
 
   get isOpen(): boolean {

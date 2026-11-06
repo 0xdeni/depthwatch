@@ -2,7 +2,7 @@
  * Seeded discovery of the Aero DEXes (see ./candidates.ts for the others).
  *
  * - Aero v2: `getPool(token0, token1)` (the 2-argument form, either token order) on the volatile
- *   and on the stable factory for every ERC-20 pair; the factory that answers gives the pool's
+ *   and on the stable factory for every ERC-20 pair of the seed; the factory that answers gives the pool's
  *   kind. The 3-argument `getPool(a, b, stable)` of Aerodrome reverts on these factories. Both
  *   factories' `feeModule()` rides along: a factory off its pinned module fails the DEX before
  *   any creation block is searched.
@@ -20,15 +20,14 @@ import {
   codeTarget,
   type DexSeeder,
   dated,
-  erc20s,
+  erc20Pairs,
   poolAddress,
   slipstreamSeeder,
-  sortedPairs,
 } from './candidates.js'
 
-export const seedAeroV2: DexSeeder = async (ctx, block, tokens) => {
+export const seedAeroV2: DexSeeder = async (ctx, block, pairs) => {
   const { volatileFactory, stableFactory, startBlock } = ctx.addresses.aeroV2
-  const keys = sortedPairs(erc20s(tokens)).flatMap(([token0, token1]) =>
+  const keys = erc20Pairs(pairs).flatMap(([token0, token1]) =>
     [volatileFactory, stableFactory].map((factory) => ({ token0, token1, factory })),
   )
   const guard = aeroV2FeeModuleGuard(ctx)

@@ -18,6 +18,8 @@ afterEach(() => {
 
 const POOL = 'uniswap-v3:0xd0b53d9277642d899df5c87a3966a349a798f224'
 const TOKEN = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+/** The mock's NVDAc. */
+const STOCK = '0xb26e766461630000000000000000000000000000'
 
 function renderAt(path: string) {
   const client = createMockClient({ now: 1_760_000_000 })
@@ -44,6 +46,8 @@ const ROUTES: ReadonlyArray<readonly [string, string | null]> = [
   [`/pools/${encodeURIComponent(POOL)}`, 'Pools'],
   ['/gaps', 'Gaps'],
   [`/tokens/${TOKEN}`, 'Pools'],
+  ['/stocks', 'Stocks'],
+  [`/stocks/${STOCK}`, 'Stocks'],
   ['/mm', 'Scorecards'],
   ['/methodology', 'Methodology'],
   ['/nowhere', null],

@@ -24,6 +24,8 @@ const EXPECTED_TABLES = [
   'schema_version',
   'scores',
   'snapshots',
+  'stock_readings',
+  'stocks',
   'sync_state',
   'tokens',
   'volume_hourly',
@@ -47,6 +49,8 @@ const EXPECTED_INDEXES = [
   'snapshots_pool_block',
   'snapshots_pool_timestamp',
   'snapshots_timestamp',
+  'stock_readings_timestamp',
+  'stock_readings_token_timestamp',
   'volume_hourly_hour_start',
 ]
 
@@ -76,8 +80,8 @@ describe('openDatabase', () => {
   it('creates the schema and records every migration once', () => {
     const db = memory()
     expect(db.migration).toEqual({ from: 0, to: SCHEMA_VERSION })
-    expect(MIGRATIONS.length).toBe(7)
-    expect(SCHEMA_VERSION).toBe(7)
+    expect(MIGRATIONS.length).toBe(8)
+    expect(SCHEMA_VERSION).toBe(8)
     expect(names(db, 'table')).toEqual(EXPECTED_TABLES)
     expect(names(db, 'index')).toEqual(EXPECTED_INDEXES)
     const versions = db.raw

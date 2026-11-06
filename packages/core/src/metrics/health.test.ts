@@ -101,6 +101,33 @@ describe('rateDepth', () => {
     expect(score.total).toBe(computeHealthScore(perfect).total)
   })
 
+  it('is transfers-paused for a stock pool whose transfers are paused: after hooked, before unpriced', () => {
+    const paused = { transfersPaused: true }
+    expect(rateDepth(1_000_000, 1_000_000, paused)).toEqual({
+      rated: false,
+      unratedReason: 'transfers-paused',
+    })
+    expect(rateDepth(null, 1_000_000, paused).unratedReason).toBe('transfers-paused')
+    expect(rateDepth(0, 0, paused).unratedReason).toBe('transfers-paused')
+    expect(rateDepth(null, null, { hooked: true, transfersPaused: true }).unratedReason).toBe(
+      'hooked',
+    )
+    expect(rateDepth(null, 1_000_000, { transfersPaused: false }).unratedReason).toBe('unpriced')
+    expect(rateDepth(1_000_000, 1_000_000, { transfersPaused: false }).rated).toBe(true)
+  })
+
+  it('a pool whose transfers are paused is unrated with its total and components kept', () => {
+    const score = computeHealthScore({ ...perfect, transfersPaused: true })
+    expect(score).toMatchObject({ rated: false, grade: null, unratedReason: 'transfers-paused' })
+    expect(score.components).toEqual(computeHealthScore(perfect).components)
+    expect(
+      computeHealthScore({ ...perfect, hooked: true, transfersPaused: true }).unratedReason,
+    ).toBe('hooked')
+    expect(computeHealthScore({ ...perfect, transfersPaused: false })).toEqual(
+      computeHealthScore(perfect),
+    )
+  })
+
   it('thinnerSideUsd is the smaller side, null when either is unknown', () => {
     expect(thinnerSideUsd(3, 9)).toBe(3)
     expect(thinnerSideUsd(9, 3)).toBe(3)

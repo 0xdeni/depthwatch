@@ -2,10 +2,11 @@
  * The Token page's words (ia-v3 §4.7, docs/design/visual-v4.md §6.8): the answer, the price route
  * and the Pools takeaway, plus the one view change the butterfly needs. Values are read as stored
  * and only formatted; the token's total depth is the API's `depth2UsdTotal`, summed over every
- * scored pool of the token but the stale quotes, so it holds whatever page of the pools is loaded
- * and in any order.
+ * scored pool of the token but the stale quotes and the pools whose stock's transfers are paused,
+ * so it holds whatever page of the pools is loaded and in any order.
  */
 import type { PoolMetaDto, PoolSummary, TokenDetail } from '../../api/types.js'
+import { countsInDepthSums } from '../../lib/depthSums.js'
 import {
   count,
   dexLabel,
@@ -92,8 +93,8 @@ export function stepWords(step: RouteStep): string {
 
 /**
  * The Pools takeaway: the deepest loaded pool's share of the token's depth, over the API's total
- * for all of the token's scored pools. A stale quote is not part of that total, so it is never the
- * deepest pool here.
+ * for all of the token's scored pools. A stale quote and a pool whose stock's transfers are paused
+ * are not part of that total, so neither is ever the deepest pool here.
  */
 export function poolsTakeaway(
   pools: readonly PoolSummary[],
@@ -101,7 +102,7 @@ export function poolsTakeaway(
   totals: TokenTotals,
 ): string {
   if (totals.depth2UsdTotal === null) return `No ${symbol} pool has a priced depth yet.`
-  const known = pools.filter((p) => p.depth2Usd !== null && !p.staleQuote)
+  const known = pools.filter((p) => p.depth2Usd !== null && countsInDepthSums(p))
   const deepest = [...known].sort((a, b) => (b.depth2Usd ?? 0) - (a.depth2Usd ?? 0))[0]
   if (!deepest) return ''
   const pair = `${pairLabel(deepest.pool.token0, deepest.pool.token1)} on ${dexLabel(deepest.pool.dex)}`

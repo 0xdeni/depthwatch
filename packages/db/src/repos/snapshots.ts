@@ -4,6 +4,7 @@ import {
   type DepthLevel,
   type DepthLevelUsd,
   jsonStringify,
+  type PoolReference,
   type PoolSnapshot,
   reviveBigints,
   type SpreadPoint,
@@ -32,7 +33,7 @@ import {
 
 const COLUMNS = `id, pool_id, block_number, timestamp, price, token0_usd, token1_usd, tvl_usd,
   active_liquidity, depth_json, depth_usd_json, spreads_json, concentration_json,
-  depth2_usd, spread10k_bps, owner_top1_share, price_deviation_bps, fee_pips`
+  depth2_usd, spread10k_bps, owner_top1_share, price_deviation_bps, fee_pips, reference_json`
 
 const SUMMARY_COLUMNS = `id, pool_id, block_number, timestamp, price, tvl_usd,
   depth2_usd, owner_top1_share, price_deviation_bps`
@@ -86,8 +87,8 @@ const HEALTH_SUMMARY = `${SUMMARY_OUTER}, fee_pips,
 const INSERT = `INSERT OR IGNORE INTO snapshots (
     pool_id, block_number, timestamp, price, token0_usd, token1_usd, tvl_usd, active_liquidity,
     depth_json, depth_usd_json, spreads_json, concentration_json,
-    depth2_usd, spread10k_bps, owner_top1_share, price_deviation_bps, fee_pips
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    depth2_usd, spread10k_bps, owner_top1_share, price_deviation_bps, fee_pips, reference_json
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 /**
  * Newest row per pool: highest timestamp, then highest id (insertion order) as the tie-break.
@@ -120,6 +121,7 @@ export function rowToSnapshot(row: Row): PoolSnapshot {
     ),
     priceDeviationBps: colNumberOrNull(row, 'price_deviation_bps'),
     feePips: colNumberOrNull(row, 'fee_pips'),
+    reference: colJsonOrNull<PoolReference>(row, 'reference_json'),
   }
 }
 
@@ -189,6 +191,8 @@ export class SnapshotsRepo {
       summary.ownerTop1Share,
       snapshot.priceDeviationBps,
       snapshot.feePips,
+      // A PoolReference holds no bigint.
+      snapshot.reference === null ? null : JSON.stringify(snapshot.reference),
     ])
     return changes === 0 ? null : lastInsertRowid
   }
@@ -216,6 +220,20 @@ export class SnapshotsRepo {
     for (const row of this.ctx.all(LATEST_PER_POOL(COLUMNS), [jsonList([...poolIds])])) {
       const snapshot = rowToSnapshot(row)
       out.set(snapshot.poolId, snapshot)
+    }
+    return out
+  }
+
+  /**
+   * The newest snapshot's `reference` of each pool, in one query: null for a pool without a stock
+   * and for a snapshot stored before schema version 8. Pools without snapshots are absent.
+   */
+  latestReferences(poolIds: readonly string[]): Map<string, PoolReference | null> {
+    const out = new Map<string, PoolReference | null>()
+    if (poolIds.length === 0) return out
+    const sql = LATEST_PER_POOL('id, pool_id, timestamp, reference_json', 'pool_id, reference_json')
+    for (const row of this.ctx.all(sql, [jsonList([...poolIds])])) {
+      out.set(colText(row, 'pool_id'), colJsonOrNull<PoolReference>(row, 'reference_json'))
     }
     return out
   }

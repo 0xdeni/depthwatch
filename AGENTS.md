@@ -24,7 +24,7 @@ runs TypeScript directly and workspace imports resolve to each package's `src/in
 | Path                     | Package / content   | What lives there                                                                             |
 | ------------------------ | ------------------- | -------------------------------------------------------------------------------------------- |
 | `packages/core`          | `@depthwatch/core`  | Tick math, swap simulation, every metric, USD price graph, scorecards. Pure: no I/O.         |
-| `packages/chain`         | `@depthwatch/chain` | viem adapters for Base, contract addresses (`src/addresses.ts`), fixture transports.         |
+| `packages/chain`         | `@depthwatch/chain` | viem adapters for Base, addresses (`src/addresses.ts`, stocks in `src/stocks.ts`), fixtures. |
 | `packages/db`            | `@depthwatch/db`    | `node:sqlite` schema, migrations, typed repositories.                                        |
 | `apps/api`               | `@depthwatch/api`   | Hono REST API (zod validation), agent documents, static serving of the dashboard.            |
 | `apps/web`               | `@depthwatch/web`   | React 19 dashboard: reads `/api` or the bundle, swaps use the wallet. Vite build `plugins/`. |
@@ -109,7 +109,9 @@ static copy at <https://depthwatch.pages.dev> about every three hours from `main
 Every address Depthwatch reads (factories, pool managers, position managers, StateView, quoters,
 Multicall3, reference tokens), and every router and token the dashboard's swap panel may send to
 (`TRADE_ROUTES`, `TRADE_TOKENS`, browser-safe through `@depthwatch/chain/addresses`), is in
-`packages/chain/src/addresses.ts`, taken from
+`packages/chain/src/addresses.ts`; the tokenized stocks, their Chainlink feed proxies and Coinbase's
+oracle registry are in `packages/chain/src/stocks.ts` (`BASE_STOCKS`; never in `addresses.ts` and
+never trade tokens). Both are taken from
 [docs/research/base-contracts.md](docs/research/base-contracts.md), which records the sources and
 an independent-verification verdict per address; items marked unconfirmed must be checked on the
 first live run, where the factory logs read by `depthwatch discover` are the ground truth. DEX and

@@ -1,8 +1,8 @@
 /**
  * "trade in this pool": shown under cost to trade only when the static bundle's switch is on for
  * the pool's venue and the pool is one the panel can check (`tradeGate`); never in demo, mock or
- * connecting mode. Before the click it shows the snapshot's figure with its time and no wallet
- * code; the click loads the lazy panel.
+ * connecting mode, and never for a tokenized stock's pool. Before the click it shows the
+ * snapshot's figure with its time and no wallet code; the click loads the lazy panel.
  */
 import type { TradeFlags } from '@depthwatch/core'
 import { QueryClient } from '@tanstack/react-query'
@@ -10,9 +10,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { MemoryRouter, type NavigateFunction, useNavigate } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AppRoutes, Providers } from '../../App.js'
-import { createMockClient } from '../../api/mock.js'
+import { createMockClient, MOCK_STOCK_POOLS } from '../../api/mock.js'
 import type { ApiClient, PoolDetail, PoolMetaDto } from '../../api/types.js'
 import { full } from '../../lib/format.js'
+import { expectNoTradeControls } from '../../testing/noTrade.js'
 import { tradeTakeaway } from './TradeSection.js'
 import { tradeGate } from './tradeGate.js'
 
@@ -75,6 +76,32 @@ describe('tradeGate', () => {
     }
     expect(tradeGate(at({}, { token1: other }), env)).toBeNull()
     expect(tradeGate(at({}, { kind: 'constant-product' }), env)).toBeNull()
+  })
+})
+
+describe('tradeGate and tokenized stocks (docs/design/stocks-api.md §3)', () => {
+  it('never opens for a stock pool, even rated, fresh and unhooked on an enabled venue', async () => {
+    const stock = await base.pool(MOCK_STOCK_POOLS.nvdaWethV3)
+    // Everything the gate checks holds but the allowlist: the stock is on no trade list.
+    expect(stock.pool.dex).toBe('uniswap-v3')
+    expect(stock.pool.kind).toBe('concentrated')
+    expect(stock.score?.rated).toBe(true)
+    expect(stock.latest?.reference).not.toBeNull()
+    expect(tradeGate(stock, { mock: false, trade: ON })).toBeNull()
+    expect(
+      tradeGate(stock, {
+        mock: false,
+        trade: { ...ON, venues: ['uniswap-v3', 'aero-slipstream'] },
+      }),
+    ).toBeNull()
+  })
+
+  it('shows no trade section on a stock pool’s page with the switch on', async () => {
+    await renderPage(MOCK_STOCK_POOLS.nvdaWethV3, ON)
+    expect(headings()).toContain('tokenized stock')
+    expect(headings()).not.toContain('trade in this pool')
+    expect(screen.queryByRole('button', { name: 'Swap in this pool' })).toBeNull()
+    expectNoTradeControls()
   })
 })
 

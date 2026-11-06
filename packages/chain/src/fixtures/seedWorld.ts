@@ -1,15 +1,16 @@
 /**
  * A fixture world for seeded discovery (`ChainReader.seedPools`), shared by the chain and CLI
- * tests: every factory / StateView candidate the seeders ask for answers "no pool" at every block,
- * except the given pools, which answer from their creation block on (contract code, `getPool`,
- * StateView `getSlot0` and the PoolManager slot0 word), so the creation-block search can be run
- * against them. The Aero v2 factories' `feeModule()` answers the pinned module at every block.
- * Token metadata of the reference tokens, Aerodrome v2 `getFee`, Aero v2 `getBaseFee`, Slipstream
- * `fee()` / `tickSpacingToFee` and Aero Slipstream `getPoolSwapHook` / `dynamicFeeConfig` (the
- * reviewed hook, initial fee off unless a pool says otherwise) are registered at `latest`. The
- * clock is the caller's.
+ * tests: every factory / StateView candidate the seeders ask for (the pairs of `seedPairs` over
+ * the reference tokens and the `crossTokens`) answers "no pool" at every block, except the given
+ * pools, which answer from their creation block on (contract code, `getPool`, StateView `getSlot0`
+ * and the PoolManager slot0 word), so the creation-block search can be run against them. The Aero
+ * v2 factories' `feeModule()` answers the pinned module at every block. Token metadata of the
+ * reference and cross tokens, Aerodrome v2 `getFee`, Aero v2 `getBaseFee`, Slipstream `fee()` /
+ * `tickSpacingToFee` and Aero Slipstream `getPoolSwapHook` / `dynamicFeeConfig` (the reviewed hook,
+ * initial fee off unless a pool says otherwise) are registered at `latest`. The clock is the
+ * caller's.
  */
-import { type Address, type Dex, type Hex, NATIVE_ETH } from '@depthwatch/core'
+import { type Address, type Dex, type Hex, NATIVE_ETH, type TokenInfo } from '@depthwatch/core'
 import { numberToHex } from 'viem'
 import { aeroCLFactoryAbi } from '../abi/aeroCLFactory.js'
 import { aerodromeCLFactoryAbi } from '../abi/aerodromeCLFactory.js'
@@ -24,7 +25,9 @@ import { v4StateViewAbi } from '../abi/v4StateView.js'
 import { computePoolId } from '../adapters/uniswapV4Pools.js'
 import type { ChainAddresses } from '../addresses.js'
 import {
-  sortedPairs,
+  erc20Pairs,
+  type SeedPair,
+  seedPairs,
   UNISWAP_V3_CANDIDATE_FEES,
   UNISWAP_V4_STANDARD_KEYS,
 } from '../seed/candidates.js'
@@ -60,6 +63,8 @@ export interface SeedWorldPool {
 export interface SeedWorldOptions {
   /** Resolved (lowercase) addresses; the reference tokens are the seeded token list. */
   addresses: ChainAddresses
+  /** `SeedPoolsOptions.crossTokens` (lowercase): each paired with every reference token. */
+  crossTokens?: readonly TokenInfo[]
   pools: readonly SeedWorldPool[]
   /** `feeAmountTickSpacing` per candidate fee; a fee missing here answers 0 (not enabled). */
   v3TickSpacings?: Readonly<Record<number, number>>
@@ -130,9 +135,13 @@ function poolsByCandidate(pools: readonly SeedWorldPool[]): Map<string, SeedWorl
 export function registerSeedWorld(fixture: Fixture, opts: SeedWorldOptions): void {
   const { addresses } = opts
   const byCandidate = poolsByCandidate(opts.pools)
-  const all = addresses.referenceTokens.map((t) => t.address)
-  const erc20Pairs = sortedPairs(all.filter((t) => t !== ZERO))
-  for (const t of addresses.referenceTokens) {
+  const cross = opts.crossTokens ?? []
+  const pairs = seedPairs(
+    addresses.referenceTokens.map((t) => t.address),
+    cross.map((t) => t.address),
+  )
+  const erc20 = erc20Pairs(pairs)
+  for (const t of [...addresses.referenceTokens, ...cross]) {
     if (t.address === ZERO) continue
     registerCall(fixture, {
       to: t.address,
@@ -172,7 +181,7 @@ export function registerSeedWorld(fixture: Fixture, opts: SeedWorldOptions): voi
       history,
     })
     if (tickSpacing === 0) continue
-    for (const [t0, t1] of erc20Pairs)
+    for (const [t0, t1] of erc20)
       registerCallHistory(fixture, {
         to: v3,
         abi: uniswapV3FactoryAbi,
@@ -183,7 +192,7 @@ export function registerSeedWorld(fixture: Fixture, opts: SeedWorldOptions): voi
   }
 
   const v2 = addresses.aerodromeV2.poolFactory
-  for (const [t0, t1] of erc20Pairs)
+  for (const [t0, t1] of erc20)
     for (const stable of [false, true]) {
       const key = candidateKey('aerodrome-v2', t0, t1, String(stable))
       registerCallHistory(fixture, {
@@ -224,7 +233,7 @@ export function registerSeedWorld(fixture: Fixture, opts: SeedWorldOptions): voi
         args: [tickSpacing],
         result,
       })
-      for (const [t0, t1] of erc20Pairs) {
+      for (const [t0, t1] of erc20) {
         const key = candidateKey('aerodrome-slipstream', t0, t1, `${i}|${tickSpacing}`)
         registerCallHistory(fixture, {
           to: factory,
@@ -245,9 +254,9 @@ export function registerSeedWorld(fixture: Fixture, opts: SeedWorldOptions): voi
     }
   })
 
-  registerAeroCandidates(fixture, opts, byCandidate, erc20Pairs, answer)
+  registerAeroCandidates(fixture, opts, byCandidate, erc20, answer)
 
-  for (const [currency0, currency1] of sortedPairs(all))
+  for (const [currency0, currency1] of pairs)
     for (const { fee, tickSpacing } of UNISWAP_V4_STANDARD_KEYS) {
       const id = computePoolId({ currency0, currency1, fee, tickSpacing, hooks: ZERO })
       const pool = byCandidate.get(
@@ -282,7 +291,7 @@ function registerAeroCandidates(
   fixture: Fixture,
   opts: SeedWorldOptions,
   byCandidate: ReadonlyMap<string, SeedWorldPool>,
-  erc20Pairs: readonly (readonly [Address, Address])[],
+  erc20: readonly SeedPair[],
   answer: (key: string) => { fromBlock: bigint; result: unknown }[],
 ): void {
   const { aeroV2, aeroSlipstream } = opts.addresses
@@ -298,7 +307,7 @@ function registerAeroCandidates(
       functionName: 'feeModule',
       history: [{ fromBlock: 0n, result: factory.feeModule }],
     })
-    for (const [t0, t1] of erc20Pairs) {
+    for (const [t0, t1] of erc20) {
       const key = candidateKey('aero-v2', t0, t1, String(factory.stable))
       registerCallHistory(fixture, {
         to: factory.address,
@@ -336,7 +345,7 @@ function registerAeroCandidates(
         args: [tickSpacing],
         result: SLIPSTREAM_DEFAULT_FEES[tickSpacing] ?? 3_000,
       })
-      for (const [t0, t1] of erc20Pairs) {
+      for (const [t0, t1] of erc20) {
         const key = candidateKey('aero-slipstream', t0, t1, `${i}|${tickSpacing}`)
         registerCallHistory(fixture, {
           to: factory,

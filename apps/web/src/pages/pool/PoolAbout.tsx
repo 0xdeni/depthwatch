@@ -26,6 +26,7 @@ import {
   tokenHref,
   tokenText,
 } from '../../lib/format.js'
+import { VALUATION_LABEL } from '../../lib/stockText.js'
 
 const KIND: Readonly<Record<PoolKind, string>> = {
   concentrated: 'concentrated liquidity',
@@ -147,6 +148,7 @@ export function PoolAbout({ detail }: { detail: PoolDetail }) {
           {latest
             ? `${tokenText(pool.token0)} ${usdPrice(latest.token0Usd)}, ${tokenText(pool.token1)} ${usdPrice(latest.token1Usd)}`
             : DASH}
+          {latest?.reference ? <span className="about-note">{VALUATION_LABEL}</span> : null}
         </Row>
         <Row
           term={

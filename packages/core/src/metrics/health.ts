@@ -8,8 +8,8 @@
  *                       20 · (1 − top1Share); else a concentrated pool's 20 · (1 − rangeHhi);
  *                       else 10 (`concentrationBasis` owners / ranges / neutral)
  * - persistence (20):   20 · (0.5 · stability + 0.5 · uptime), else 10 (unknown)
- * Rated: not a hooked Uniswap v4 pool, both sides known and the thinner at least
- * HEALTH_RATING_MIN_SIDE_USD.
+ * Rated: not a hooked pool, not a stock pool whose stock's transfers are paused, both sides known
+ * and the thinner at least HEALTH_RATING_MIN_SIDE_USD.
  * Grade (rated pools only): A ≥ 80, B ≥ 65, C ≥ 50, D ≥ 35, else F.
  */
 
@@ -110,6 +110,11 @@ export function isHookedPool(pool: Pick<PoolMeta, 'hooks'>): boolean {
 export interface RateDepthOptions {
   /** The pool is hooked (`isHookedPool`): unrated whatever its sides. */
   hooked?: boolean
+  /**
+   * A stock pool whose stock's transfers are paused at the snapshot's block, so that every swap in
+   * it reverts (docs/METRICS.md, "Stock tradability"): unrated whatever its sides, after `hooked`.
+   */
+  transfersPaused?: boolean
 }
 
 /** Rated or not, from the two ±2 % sides in USD (docs/METRICS.md, "Rated and unrated pools"). */
@@ -119,6 +124,7 @@ export function rateDepth(
   opts: RateDepthOptions = {},
 ): DepthRating {
   if (opts.hooked === true) return { rated: false, unratedReason: 'hooked' }
+  if (opts.transfersPaused === true) return { rated: false, unratedReason: 'transfers-paused' }
   if (!known(upUsd) || !known(downUsd)) return { rated: false, unratedReason: 'unpriced' }
   const thinner = Math.min(upUsd, downUsd)
   if (thinner >= HEALTH_RATING_MIN_SIDE_USD) return { rated: true, unratedReason: null }
@@ -185,6 +191,7 @@ export function computeHealthScore(inputs: HealthInputs): HealthScore {
   )
   const { rated, unratedReason } = rateDepth(inputs.depth2UpUsd, inputs.depth2DownUsd, {
     hooked: inputs.hooked,
+    transfersPaused: inputs.transfersPaused,
   })
   return {
     total,

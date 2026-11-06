@@ -11,7 +11,10 @@ below), with no mismatch; §2.8 also flags the Aerodrome Voter's current state. 
 allowlist (`## trade`) were read on 2026-11-03 at blocks 53,467,794–53,468,151 through the public
 endpoint `https://mainnet.base.org` (§2.10, §2.11). Base's block schedule, 2 s blocks and then
 200 ms blocks from Denim's activation at block 53,556,127 on 2026-11-05, was read on chain the
-same day (§2.13).
+same day (§2.13). The Coinbase tokenized stocks, their Chainlink feeds and the B20 and Coinbase
+contracts behind them (`## stocks`) were taken from base.org, docs.base.org, the issuer's API and
+Chainlink on 2026-11-05 and read on chain at block 53,663,272, with every feed round since
+2026-08-05 (§2.14).
 
 Base-native addresses (here the `weth` WETH9 predeploy) can also be re-checked on the first live run against Base's contract-address reference, <https://docs.base.org/specifications/reference/base-contracts.md>, which Base's AGENTS.md describes as "canonical contract addresses for Base Mainnet and Base Sepolia" (see [../base/base-agents-reference.md](../base/base-agents-reference.md)). Whether that page lists any DEX or Multicall3 address is unverified: those stay tied to the per-address sources and verdicts below and to the factory logs read on the first live run.
 
@@ -1297,6 +1300,206 @@ viem's `base` chain definition already wires `contracts.multicall3 = { address: 
 
 All evidence came from web-search result snippets; no page was read in full (unverified in full). EIP-55 checksums above were computed locally with viem `getAddress` and match the casing shown on Circle/Coinbase/Basescan pages.
 
+## stocks
+
+Coinbase Tokenized Stocks: B20 Asset tokens issued by Coinbase (tickers end in "c"), 8 decimals
+each, and the Chainlink "Coinbase <ticker>" feed of each, which Depthwatch reads on chain
+(`eth_call`) to measure how far a stock pool's price is from the stock's reference value. They are
+in `packages/chain/src/stocks.ts` (`STOCK_TOKENS`, `STOCK_FEEDS`, `STOCK_PROTOCOL`), not in
+`addresses.ts`: they are no reference token (no USD anchor or pricing hop; discovery seeds them
+against the reference tokens only) and no trade token. base.org/stocks: "Coinbase Tokenized Stocks
+are issued by Coinbase and offered under Regulation S; only available in eligible jurisdictions
+outside of the US."; docs.base.org: "Coinbase tokenized stocks are only available to persons in
+eligible jurisdictions outside of the U.S."; the swap panel never offers them. Every source below
+was read on 2026-11-05 between 23:50 and 23:59 UTC unless it says otherwise (pages in full: HTML
+for base.org, Markdown for docs.base.org and docs.chain.link, JSON for the APIs), and every address
+was read on Base mainnet through Alchemy's endpoint at block 53,663,272 (2026-11-05 23:57:10 UTC;
+§2.14).
+
+| key      | name                                           | address                                      | source confidence | independent check |
+| -------- | ---------------------------------------------- | -------------------------------------------- | ----------------- | ----------------- |
+| `nvdac`  | NVDAc ('NVIDIA Corporation')                   | `0xb20000000000000000000078ee7ce2fE4908108C` | high              | confirmed         |
+| `metac`  | METAc ('Meta Platforms Inc.')                  | `0xb2000000000000000000008bC8786B856E61707C` | high              | confirmed         |
+| `aaplc`  | AAPLc ('Apple Inc.')                           | `0xb200000000000000000000C2e324d24d7eEcd1fb` | high              | confirmed         |
+| `googlc` | GOOGLc ('Alphabet Inc.')                       | `0xb2000000000000000000002D0BA3164cc74f58B7` | high              | confirmed         |
+| `amznc`  | AMZNc ('Amazon.com Inc.')                      | `0xb200000000000000000000d9192b6B456483C2E8` | high              | confirmed         |
+| `msftc`  | MSFTc ('Microsoft Corporation')                | `0xB200000000000000000000Ab99cFa739E253872B` | high              | confirmed         |
+| `mstrc`  | MSTRc ('Strategy Inc.')                        | `0xb2000000000000000000004884b426556b92883d` | high              | confirmed         |
+| `sndkc`  | SNDKc ('Sandisk Corporation')                  | `0xb200000000000000000000397293Cb8cda9a10c5` | high              | confirmed         |
+| `spcxc`  | SPCXc ('Space Exploration Technologies Corp.') | `0xb2000000000000000000007b9fcbd005511aCBd5` | high              | confirmed         |
+| `tslac`  | TSLAc ('Tesla Inc.')                           | `0xb2000000000000000000001e800a7f5189430cD0` | high              | confirmed         |
+
+| key           | name                                   | address                                      | source confidence | independent check |
+| ------------- | -------------------------------------- | -------------------------------------------- | ----------------- | ----------------- |
+| `nvdac_feed`  | Chainlink 'Coinbase NVDA' proxy, 24/5  | `0x04689a41629776563E6822F76f2e57D148d28513` | high              | confirmed         |
+| `metac_feed`  | Chainlink 'Coinbase META' proxy, 24/5  | `0x6526aE6797A76123638b863AeE4dD27Ba4E4b27D` | high              | confirmed         |
+| `aaplc_feed`  | Chainlink 'Coinbase AAPL' proxy, 24/5  | `0x787f13dEa48Db0897CbCDD985de77809D837F988` | high              | confirmed         |
+| `googlc_feed` | Chainlink 'Coinbase GOOGL' proxy, 24/5 | `0x5bF49E0ffA937CE2FfF033c739aD7C634c4D34F2` | high              | confirmed         |
+| `amznc_feed`  | Chainlink 'Coinbase AMZN' proxy, 24/5  | `0x06A8E4b3aBB3B7543d8396FB2B763d22820cB295` | high              | confirmed         |
+| `msftc_feed`  | Chainlink 'Coinbase MSFT' proxy, 24/5  | `0xeB10A6c9aa7E537aEd766C08c35Dae35B321b18c` | high              | confirmed         |
+| `mstrc_feed`  | Chainlink 'Coinbase MSTR' proxy, 24/5  | `0xB3cE282CD188b35DA0E38D8Bc7d58e33173D202a` | high              | confirmed         |
+| `sndkc_feed`  | Chainlink 'Coinbase SNDK' proxy, 24/5  | `0x388b0dC46C0Fb05A74BeE0994fa5b02c6Fcca2eA` | high              | confirmed         |
+| `spcxc_feed`  | Chainlink 'Coinbase SPCX' proxy, 24/5  | `0x6A634B235903C4ad6376892180d6fF8612e3Fa68` | high              | confirmed         |
+| `tslac_feed`  | Chainlink 'Coinbase TSLA' proxy, 24/5  | `0xFaf869185383a24F8cb00e27BdA6b63B9905DCb4` | high              | confirmed         |
+
+| key                        | name                                                    | address                                      | source confidence | independent check |
+| -------------------------- | ------------------------------------------------------- | -------------------------------------------- | ----------------- | ----------------- |
+| `b20_factory`              | B20 Factory precompile (`isB20`)                        | `0xB20f000000000000000000000000000000000000` | high              | on chain only     |
+| `b20_policy_registry`      | B20 PolicyRegistry precompile (`isAuthorized`)          | `0x8453000000000000000000000000000000000002` | high              | confirmed         |
+| `coinbase_oracle_registry` | Coinbase oracle registry (the feeds' multiplier, pause) | `0x3f3E8cf41cdd3b1D118c16471aB0113DfDDd5CaD` | medium            | on chain only     |
+
+Sources and notes per item (`stocks.ts`: `STOCK_TOKENS`, `STOCK_FEEDS`, `STOCK_PROTOCOL`):
+- Tokens (`nvdac` … `tslac`): <https://www.base.org/stocks> and <https://www.base.org/assets>
+  (each row links `https://basescan.org/token/<address>` with `aria-label="View NVDAc on
+  BaseScan"`; the same ten addresses on both pages, in the order above) and the issuer's API
+  <https://api.coinbase.com/v1/tokenized-stocks?page_size=500> (documented at
+  <https://docs.base.org/sdks/tokenized-stocks/overview.md>), whose record of each address carries
+  the same symbol, `decimals` 8 and an ISIN. base.org shows short names ('NVIDIA', 'SanDisk',
+  'Strategy'); the API's `name` and the token's `name()` are the names in the table, which
+  `STOCK_TOKENS` uses. <https://docs.base.org/build-on-base/integrate-defi/list-tokenized-stocks.md>
+  (byte-identical to `/base-chain/asset-issuance/tokenized-stocks-on-base.md`) points to
+  base.org/assets for the addresses and says "Tokens should be identified by address rather than
+  ticker or symbol. Metadata is mutable onchain" (`updateName`, `updateSymbol`).
+  - verifier: confirmed: Base's site and Coinbase's issuer API agree on every address and symbol;
+    on chain each address answers `isB20` true on the B20 Factory, its `symbol()` and `decimals()`
+    8 (§2.14). Byte 0 of each address is 0xb2 and byte 10 is 0x00, the Asset variant
+    (<https://docs.base.org/specifications/b20/concepts/token-types.md>).
+- Multiplier: the list page: "One B20 token does not permanently equal one share. Always apply the
+  current multiplier when converting between token units and the number of underlying shares";
+  for `balanceOfUI`, "`raw` is the number of B20 units and `ui` is the quantity of stocks
+  redeemable". <https://docs.base.org/specifications/b20/concepts/multipliers.md>: `balanceOf`,
+  `transfer` amounts and `totalSupply` "stay raw"; `uiMultiplier()` "returns the effective
+  multiplier at `block.timestamp`", and a scheduled update flips at `effectiveAt` with no event and
+  no storage write; "detect a live pending update with `effectiveAt() > block.timestamp`. Do not
+  check `effectiveAt() == 0`." A multiplier is shares per token (WAD).
+- Feeds (`nvdac_feed` … `tslac_feed`): the table "Chainlink data feeds on Base" of the list page
+  (ten rows, 'Coinbase AAPL' … 'Coinbase TSLA'): "All feeds return 8 decimals, cover US equities
+  (24/5 market hours), and update on a 0.5% price deviation or a 24-hour heartbeat." Chainlink's
+  page <https://docs.chain.link/data-feeds/tokenized-equity-feeds/coinbase.md> fills its feed table
+  in the browser and its Markdown holds no row, so it names no address. Cross-check: Chainlink's
+  directory <https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-base-1.json> lists
+  each proxy under that name with `decimals` 8, `heartbeat` 86400, `threshold` 0.5,
+  `docs.marketHours` 'us_equities_24/5' and an aggregator (`contractAddress`) that the proxy's
+  `aggregator()` returns on chain. `STOCK_FEEDS` records the two sources' 0.5 % as
+  `deviationThresholdBps` 50 for each feed.
+  - verifier: confirmed: Base's docs and Chainlink's directory agree on every proxy; on chain each
+    `description()` is 'Coinbase <ticker>' with its token's ticker (the symbol less its "c") and
+    `decimals()` is 8 (§2.14). The proxies are no token addresses: none starts 0xb2, and `isB20`
+    answers false for the NVDA proxy.
+- What an answer is: the list page: "Token Price = Underlying Equity Market Price × Multiplier";
+  "Coinbase feeds report **Total Return Values** rather than raw equity prices"; "Normal (`paused =
+  false`): the feed publishes underlying price × multiplier"; "the token's DEX price does not feed
+  the oracle". Chainlink's page: "The corresponding Chainlink feed reports the Total Return Value of
+  the token by combining the underlying equity's market price with a multiplier read from
+  Coinbase's on-chain oracle registry"; "Normal mode (`paused == false`): The feed returns the
+  current underlying equity market price multiplied by the current multiplier"; its dividend
+  example: stock price $200, "Multiplier: 1.00 → 1.02", "Token price: $204". An answer is therefore
+  **USD per token**, the unit of a pool's price against USDC: a deviation compares the two without
+  dividing by the multiplier. On chain (§2.14) each answer whose token's multiplier is not 1 is a
+  share price times the multiplier, truncated to 8 decimals (NVDA: 180.165 × 1.000537939576369481
+  = 180.26191788377…, answer 180.26191788), and AMZNc's largest USDC pool traded 0.72 bps from
+  its feed.
+- Hours: the list page: "Each tokenized equity has a Chainlink feed that runs 24/5, holds the last
+  close on weekends and holidays, and freezes during corporate actions"; "Off-hours (nights,
+  weekends, holidays, and corporate-action pauses) it stops updating and holds the last value, so
+  `updatedAt` stops advancing while the contract stays callable"; "never settle or liquidate
+  against a frozen feed". Chainlink's page: "configured as 24/5 tokenized equity feeds (regular,
+  pre-market, post-market, and overnight sessions), where underlying liquidity and session data
+  quality support it"; "When underlying equity markets are closed (weekends, holidays, thin
+  overnight windows), the feed holds the last close"; and off-hours "These feeds do not have
+  heartbeats". So Chainlink covers the overnight session where liquidity supports it, and Base
+  says feeds hold at nights. On chain (§2.14) every feed updates overnight (NVDA at 2026-11-05
+  08:37 UTC, 03:37 ET; 2,259 of 15,903 rounds since 2026-08-05 between 20:00 and 04:00 ET), no
+  round falls between Friday 20:00 and Sunday 20:00 America/New_York, and on Sunday 2026-11-01 all
+  ten held Friday's values, 36.4–40.9 h old. The 24 h heartbeat bounds an answer's age only while
+  the market is open.
+- Pause: the list page: "Paused (`paused = true`): the feed stops publishing and holds the last
+  known good value"; during a corporate action "the token is not paused onchain, so transfers are
+  not blocked", and the feed "resumes only after Coinbase confirms the underlying price and
+  multiplier both reflect the new values". A token's own pause is separate: `pausedFeatures()`
+  (<https://docs.base.org/specifications/b20/concepts/roles-and-pause.md>: `TRANSFER`, `MINT`,
+  `BURN`, `SEIZE`, bits 0–3); a paused `TRANSFER` stops every pool of the token.
+- `b20_factory`: <https://docs.base.org/specifications/b20/reference/constants.md>
+  (`B20_FACTORY_ADDRESS`: "every asset and stablecoin instance is created through the
+  `IB20Factory` at this address") and
+  <https://docs.base.org/specifications/b20/reference/interfaces/ib20-factory.md> (`isB20`
+  0xfa19b927: "Returns whether `token` was created by this factory, recovered from the address
+  prefix. Never reverts."). `eth_getCode` answers "0x" here while `isB20` answers, so a code check
+  cannot stand in for the factory. One source (Base's specification); checked on chain only.
+- `b20_policy_registry`: the constants page (`POLICY_REGISTRY_ADDRESS`) and the issuer API's
+  <https://api.coinbase.com/v1/tokenized-stocks/chains> (`policy_registry_address`). Every stock
+  binds policy 5 to its transfer sender, receiver and executor scopes (§2.14).
+- Policy 5 is a **BLOCKLIST** (read 2026-11-06): an account is authorized unless it is in the set.
+  <https://docs.base.org/specifications/b20/reference/interfaces/i-policy-registry/is-authorized.md>:
+  "The invert flag (bit 63) is cleared before the type check, so an ID is malformed when the
+  remaining top byte is outside `PolicyType`": the top byte of a policy ID is its type. base-std's
+  `src/interfaces/IPolicyRegistry.sol` (branch `main`) declares `enum PolicyType { BLOCKLIST,
+  ALLOWLIST, UNION, INTERSECT }`; its `master` branch holds an older two-value enum with
+  `ALLOWLIST` first, so the source alone does not settle it. `policyId()` is 5 for every scope, so
+  the type byte is 0, `BLOCKLIST` on `main`; the chain settles it: at block 53,663,272, from
+  `policyAdmin(5)`, `eth_call` `updateBlocklist(5, false, [0x…dEaD])` succeeds and
+  `updateAllowlist(5, true, [0x…dEaD])` reverts `IncompatiblePolicyType` (0xf1011ef5), the error
+  the IPolicyRegistry reference gives for an update that does not match the policy's type. It also
+  authorizes a fresh address (§2.14). The admin `0xEC0F05C174e54FBf0Fe16ad930a8AFEbCe612812` is an
+  EOA: no code (so no EIP-7702 delegation) and nonce 111 at that block.
+- `coinbase_oracle_registry`: only the list page names it ("the Onchain Registry
+  (`0x3f3E8cf41cdd3b1D118c16471aB0113DfDDd5CaD`)"; "The feed reads the multiplier and a pause flag
+  from Coinbase's onchain oracle registry, a single contract (separate from the tokens) that
+  returns both values for a token in one call"). Chainlink's page describes it without an address.
+  The list page also says the List Protocol Contract Addresses endpoint returns "protocol
+  contracts, including the Onchain Registry (`0x3f3E8cf41cdd3b1D118c16471aB0113DfDDd5CaD`)", but
+  that endpoint's schema
+  (<https://docs.base.org/sdks/tokenized-stocks/api-reference/list-protocol-contract-addresses.md>,
+  `v1ChainContractAddresses`: `chain_id`, `chain`, `policy_registry_address`,
+  `token_supply_manager_address`, `token_factory_address`) and its live answer (`/chains`) have no
+  oracle-registry field: a mismatch worth flagging to Base. The name `getOracleParams(address)`
+  (0xd4197e82) comes from the earlier research, not from a page read here: on chain the 1,548
+  bytes of runtime code hold that PUSH4, the call answers (multiplier, false) with each stock's
+  own `multiplier()`, and it reverts for USDC and for an unregistered B20 address (§2.14).
+
+The list: base.org/stocks says "The full list of Coinbase Tokenized Stocks on Base. Match the
+contract address before you buy. If a token is not on this list, Coinbase did not issue it." and
+lists ten (base.org/assets, "A reference list of verified assets on Base", the same ten). The
+issuer's API (one page at `page_size=500`, no `next_page_token`) returns 298 records, all at
+0xb200… addresses with 8 decimals and a symbol ending in "c"; 71 carry a `first_mint_date` and a
+`total_supply`, 12 a `nav_price` (the ten, CRCLc and INTCc). Its docs: "Presence in the response
+does not imply trading availability or eligibility." So base.org's "full list" leaves out 61
+minted tokens that the issuer's own API lists, and its last sentence would deny that Coinbase
+issued them: worth flagging to Base (AGENTS.md routing rules). Depthwatch indexes base.org's ten.
+
+Read, not used:
+- 'Coinbase NVDA (24/7)' `0x48D9731AF6cc55b879FE76a4Bd1A6c2C0bDaf944` and 'Coinbase GOOGL (24/7)'
+  `0xdD9b9EC942477AA672a15adF91AC5089BD86cD85`: in the directory with `docs.hidden` true and no
+  market hours, absent from Base's docs; neither had code on 2026-11-01 (§2.14).
+- 'Coinbase COIN' `0x408e44f504A7371a345F03a73dDC96A4b48e8aa7`, 'Coinbase CRCL'
+  `0x0231cF2635D1E17bB5c2462cc7504Ba1fBd61f33` and 'Coinbase INTC'
+  `0xAB657C39bac0D5886250D70849e2E3E008F2EECB` (24/5, in the directory, not in Base's docs). The
+  issuer API has no COINc; CRCLc `0xB20000000000000000000019f6E7C675b73C2e4D` and INTCc
+  `0xB2000000000000000000004AFF16039bA04bdFBc` are minted but not on base.org.
+- The API's `token_factory_address` `0x4bA3E29E254F25E94E61C4c9d67b37027331534D` and
+  `token_supply_manager_address` `0xD1Ca4dAcdf3231011D175351f1f02D15C7c5664C`: EIP-1967 proxies
+  of 163 bytes (implementations 0xbBcb88b1…28Ca and 0x3F27d252…C6E3), Coinbase's issuance
+  contracts; Depthwatch reads neither. The supply manager holds `MINT_ROLE` and `BURN_ROLE` on
+  NVDAc and TSLAc (§2.14). The ActivationRegistry
+  `0x8453000000000000000000000000000000000001` (constants page) answers code 0xef; not read.
+
+Unresolved:
+- The tokens' role holders, in part: the issuer's TokenSupplyManager
+  `0xD1Ca4dAcdf3231011D175351f1f02D15C7c5664C` holds `MINT_ROLE` and `BURN_ROLE` on NVDAc and TSLAc
+  (`hasRole` at block 53,663,272, §2.14). The holders of `DEFAULT_ADMIN_ROLE`, `PAUSE_ROLE` and
+  `OPERATOR_ROLE` are unknown (no role enumeration without logs; the endpoint's free tier answers
+  `eth_getLogs` over 10 blocks only), so whether the tokens' admins are EOAs is unverified. Policy
+  5's admin is an EOA (above).
+- docs.base.org says "precompiles hold no bytecode", but `eth_getCode` answers the one byte 0xef
+  for each token and for the two registries: a mismatch worth flagging. The factory answers "0x".
+- A token's `pausedFeatures()`, its multiplier and the registry's pause flag are as of the block;
+  they change without a new address and are to be read with each snapshot. A pending multiplier
+  update is tested with `effectiveAt() > block.timestamp`, never with `effectiveAt() == 0`.
+
+Base docs mismatches worth flagging (AGENTS.md routing rules): base.org's "full list" against the
+issuer API (above); "precompiles hold no bytecode" against `eth_getCode`; the list page's
+"including the Onchain Registry" against the `/chains` endpoint (`coinbase_oracle_registry`). The
+list page's "nights" is also looser than the chain, where every feed updates overnight (Hours).
 
 ## Open items (Base mainnet, chainId 8453)
 
@@ -1808,6 +2011,163 @@ Verdict: **confirmed**. `BASE_BLOCK_SCHEDULE` in `packages/chain/src/schedule.ts
 eras (genesis at 1,686,789,347 s, 2,000 ms per block; block 53,556,127 at 1,793,901,601,000 ms,
 200 ms per block), and the reader relies on it only once real headers show its timestamps
 (`internal/timestamps.ts`, `internal/blocks.ts`).
+
+### 2.14 Tokenized stocks and their Chainlink feeds (2026-11-05)
+
+The entries of `## stocks` were read through Alchemy's endpoint at block **53,663,272** (hash
+0x1cfb0bce…8466, `timestamp` 1,793,923,030, 2026-11-05 23:57:10.000 UTC), 251 requests; the
+policy-type and role reads marked 2026-11-06 were added at the same block. Selectors
+were computed with viem's `toFunctionSelector` and equal those of Base's IB20, IB20Asset,
+IB20Factory and IPolicyRegistry references:
+- each token: `eth_getCode`; the B20 Factory's `isB20(token)` (0xfa19b927) and
+  `isB20Initialized(token)` (0x6a45ba98); `name()`, `symbol()`, `decimals()`, `totalSupply()`,
+  `supplyCap()`; `multiplier()` (0x1b3ed722), `uiMultiplier()` (0xa60bf13d), `newUIMultiplier()`
+  (0xdc767007), `effectiveAt()` (0x97a4064f), `WAD_PRECISION()`; `pausedFeatures()` (0xde9997e3);
+  `policyId(bytes32)` (0xdb3de624) for `keccak256("TRANSFER_SENDER_POLICY")`, `…RECEIVER…` and
+  `…EXECUTOR…`; the oracle registry's `getOracleParams(token)` (0xd4197e82).
+- each feed proxy: `eth_getCode`, `description()`, `decimals()`, `version()`, `aggregator()`,
+  `latestRoundData()`.
+
+| token  | address                                      | `name()`                               | `symbol()` | `totalSupply()` | `multiplier()` (WAD)      |
+| ------ | -------------------------------------------- | -------------------------------------- | ---------- | --------------- | ------------------------- |
+| NVDAc  | `0xb20000000000000000000078ee7ce2fe4908108c` | 'NVIDIA Corporation'                   | NVDAc      | 34,082.89300177 | 1,000,537,939,576,369,481 |
+| METAc  | `0xb2000000000000000000008bc8786b856e61707c` | 'Meta Platforms Inc.'                  | METAc      | 8,594.45032345  | 1,000,313,792,289,598,084 |
+| AAPLc  | `0xb200000000000000000000c2e324d24d7eecd1fb` | 'Apple Inc.'                           | AAPLc      | 6,720.40361951  | 10¹⁸                      |
+| GOOGLc | `0xb2000000000000000000002d0ba3164cc74f58b7` | 'Alphabet Inc.'                        | GOOGLc     | 34,237.83525384 | 1,000,377,118,676,784,179 |
+| AMZNc  | `0xb200000000000000000000d9192b6b456483c2e8` | 'Amazon.com Inc.'                      | AMZNc      | 9,577.17071438  | 10¹⁸                      |
+| MSFTc  | `0xb200000000000000000000ab99cfa739e253872b` | 'Microsoft Corporation'                | MSFTc      | 2,868.22202695  | 10¹⁸                      |
+| MSTRc  | `0xb2000000000000000000004884b426556b92883d` | 'Strategy Inc.'                        | MSTRc      | 13,353.9847689  | 10¹⁸                      |
+| SNDKc  | `0xb200000000000000000000397293cb8cda9a10c5` | 'Sandisk Corporation'                  | SNDKc      | 2,233.95020895  | 10¹⁸                      |
+| SPCXc  | `0xb2000000000000000000007b9fcbd005511acbd5` | 'Space Exploration Technologies Corp.' | SPCXc      | 23,172.56761682 | 10¹⁸                      |
+| TSLAc  | `0xb2000000000000000000001e800a7f5189430cd0` | 'Tesla Inc.'                           | TSLAc      | 6,408.74951293  | 10¹⁸                      |
+
+Every token: `eth_getCode` 0xef (1 byte); `isB20` and `isB20Initialized` true; `decimals()` 8;
+`supplyCap()` 2¹²⁸ − 1 (no cap); `uiMultiplier()` = `newUIMultiplier()` = `multiplier()` and
+`effectiveAt()` 0, not after the block's timestamp, so no update is pending (code tests
+`effectiveAt() > block.timestamp`, as multipliers.md says, never `effectiveAt() == 0`);
+`WAD_PRECISION()` 10¹⁸; `pausedFeatures()` empty; policy 5 on all three transfer scopes;
+`getOracleParams` answers (the token's `multiplier()`, false). Names, symbols, supplies
+(`totalSupply()` / 10⁸) and multipliers equal the issuer API's records read minutes before.
+
+| feed  | proxy                                        | `description()`  | answer (USD per token) | `updatedAt` (UTC) | age at the block | `aggregator()` |
+| ----- | -------------------------------------------- | ---------------- | ---------------------- | ----------------- | ---------------- | -------------- |
+| NVDA  | `0x04689a41629776563e6822f76f2e57d148d28513` | 'Coinbase NVDA'  | 180.26191788           | 23:36:02          | 1,268 s          | 0xF72B…9675    |
+| META  | `0x6526ae6797a76123638b863aee4dd27ba4e4b27d` | 'Coinbase META'  | 596.59514823           | 23:37:45          | 1,165 s          | 0xA715…D3EE    |
+| AAPL  | `0x787f13dea48db0897cbcdd985de77809d837f988` | 'Coinbase AAPL'  | 343.72                 | 23:56:28          | 42 s             | 0xc37B…0d9D    |
+| GOOGL | `0x5bf49e0ffa937ce2fff033c739ad7c634c4d34f2` | 'Coinbase GOOGL' | 278.77509166           | 23:12:53          | 2,657 s          | 0x6bF3…B308    |
+| AMZN  | `0x06a8e4b3abb3b7543d8396fb2b763d22820cb295` | 'Coinbase AMZN'  | 255.075                | 23:44:25          | 765 s            | 0x4816…db7C    |
+| MSFT  | `0xeb10a6c9aa7e537aed766c08c35dae35b321b18c` | 'Coinbase MSFT'  | 529.19499999           | 23:27:43          | 1,767 s          | 0xD72B…3eD3    |
+| MSTR  | `0xb3ce282cd188b35da0e38d8bc7d58e33173d202a` | 'Coinbase MSTR'  | 127.46                 | 23:26:38          | 1,832 s          | 0xBC94…5EdB    |
+| SNDK  | `0x388b0dc46c0fb05a74bee0994fa5b02c6fcca2ea` | 'Coinbase SNDK'  | 810.56015              | 23:43:18          | 832 s            | 0x767B…b55b    |
+| SPCX  | `0x6a634b235903c4ad6376892180d6ff8612e3fa68` | 'Coinbase SPCX'  | 122.219                | 23:10:54          | 2,776 s          | 0xa994…87a7    |
+| TSLA  | `0xfaf869185383a24f8cb00e27bda6b63b9905dcb4` | 'Coinbase TSLA'  | 338.66                 | 23:26:40          | 1,830 s          | 0x0288…aA82    |
+
+Every proxy: 9,571 bytes of code, `decimals()` 8, `version()` 6, `roundId` = `answeredInRound`,
+`aggregator()` the directory's `contractAddress`. Nine answers equal the API's `nav_price` and
+their `updatedAt` its `nav_price_updated_at`; AAPL's feed updated after the API was read.
+
+The answer is USD per token. For each feed whose token's multiplier m (WAD) is not 1, a share
+price p gives the answer as p × 10⁸ × m / 10¹⁸ to the unit (remainders 0.38, 0.17 and 0.19):
+
+| feed  | answer         | `multiplier()`            | answer / m    | p × 10⁸ × m / 10¹⁸ for that p  |
+| ----- | -------------- | ------------------------- | ------------- | ------------------------------ |
+| NVDA  | 18,026,191,788 | 1,000,537,939,576,369,481 | 180.164999996 | p = 180.165: 18,026,191,788.38 |
+| GOOGL | 27,877,509,166 | 1,000,377,118,676,784,179 | 278.669999998 | p = 278.67: 27,877,509,166.17  |
+| META  | 59,659,514,823 | 1,000,313,792,289,598,084 | 596.407999998 | p = 596.408: 59,659,514,823.19 |
+
+Each of these three answers has eight decimals, and divided by m it is, to 10⁻⁸, a share price of
+at most three decimals; a per-share answer would be that price itself. The feed truncates: over 90
+rounds (the last 30 of NVDA, GOOGL and META, from the round history below, with these
+multipliers), 48 answers fit `floor(p × 10⁸ × m / 10¹⁸)` for a p of at most six decimals and fit
+no rounding, none fit rounding only, 35 fit both and 7 neither. "At most three decimals" holds for
+the three answers above, not in general: p reaches five or six decimals in some rounds (NVDA
+182.70845 and 181.859075, META 607.194575).
+
+Worked check against a pool, AMZNc/USDC on Aero Slipstream, tick spacing 10, pool
+`0x532e0f46d1e528507fc9454d5847c231f23bddf6` (the CLFactory 0x9cb2…7a76's `getPool(AMZNc, USDC,
+10)`): `token0()` USDC, `token1()` AMZNc; `slot0()` sqrtPriceX96
+49,605,531,335,119,284,843,924,024,161, tick −9,366; `liquidity()` 18,364,366,058,279; balances
+4,059.0986 AMZNc and 664,247.62 USDC. Price (token1 per token0, raw) = (sqrtPriceX96 / 2⁹⁶)² =
+0.3920135187817; USD per AMZNc (USDC at $1) = 10⁸⁻⁶ / 0.3920135187817 = 255.0932; the feed's
+255.075 (765 s old) is 0.72 bps below. AMZNc's multiplier is 1, so this pool agrees with both
+readings; NVDAc's largest USDC pool, `0xf668e21993f0acd7ab00bb1cfbaed0df28a3c8ec` (Aero Slipstream,
+tick spacing 10; sqrtPriceX96 58,977,342,723,604,087,960,932,729,566, tick −5,904; 3,169.8147
+NVDAc and 72,348.31 USDC) priced NVDAc at 180.4632: 11.17 bps above the answer and 16.55 bps above
+answer / m. The two readings differ by 5.4 bps, less than the pools' spread (Aerodrome Slipstream
+gauges-v3 0x853f5f1b… 180.4241, Uniswap v3 0.3 % 0x60661b31… 180.4773) and the drift of a
+21-minute-old answer, so no pool tells them apart; the arithmetic above does. The PolicyRegistry's
+`isAuthorized(5, pool)` is true for each of the 13 AMZNc/USDC and NVDAc/USDC pools that the
+factories' `getPool` returned (Aero Slipstream, the three Aerodrome Slipstream factories, Uniswap
+v3; 7 of them held under 2 USDC and under 0.0001 of the stock).
+
+Off-hours, at block 53,372,526 (`timestamp` 2026-11-01 11:59:59 UTC, a Sunday; the number from
+the 2 s schedule of §2.13, the header confirming it): NVDA's `updatedAt` 2026-10-30 19:51:03 UTC,
+AMZN's 19:54:17, TSLA's 19:08:55, read at the block. All ten feeds held Friday 2026-10-30 values
+36.4–40.9 h old (the round history below), the latest MSTR's at 23:34:45 UTC, past the 86,400 s
+heartbeat. Neither 24/7 proxy (NVDA, GOOGL) had code at that block; both have 9,571 bytes at block
+53,663,272.
+
+Protocol contracts at block 53,663,272:
+- B20 Factory `0xb20f000000000000000000000000000000000000`: `eth_getCode` "0x"; `isB20` true for
+  the ten tokens and for CRCLc, false for USDC and for the NVDA feed proxy.
+- PolicyRegistry `0x8453000000000000000000000000000000000002`: code 0xef; `policyExists(5)` true,
+  `policyExists(999999)` false; `policyAdmin(5)` 0xEC0F05C174e54FBf0Fe16ad930a8AFEbCe612812, an
+  EOA (no code, so no EIP-7702 delegation; nonce 111); `isAuthorized(5, 0x…deadbeef)` true. Read
+  on 2026-11-06 at the same block, `eth_call` from that admin: `updateBlocklist(5, false,
+  [0x…dEaD])` (0x5c4e51b8) succeeds and `updateAllowlist(5, true, [0x…dEaD])` (0x3388fb5b)
+  reverts `IncompatiblePolicyType` (0xf1011ef5), so policy 5 is a BLOCKLIST (its ID's top byte, 0,
+  is `BLOCKLIST` in base-std's `main`; `## stocks`).
+- Oracle registry `0x3f3e8cf41cdd3b1d118c16471ab0113dfddd5cad`: 1,548 bytes, holding PUSH4
+  0xd4197e82; `getOracleParams` answers (10¹⁸, false) for CRCLc and reverts for USDC and for
+  0xb200…0001.
+- ActivationRegistry 0x8453…0001: code 0xef. The issuer API's token factory 0x4bA3…534D and token
+  supply manager 0xD1Ca4dAcdf3231011D175351f1f02D15C7c5664C: 163 bytes each, EIP-1967
+  implementation slots 0xbBcb88b1…28Ca and 0x3F27d252…C6E3. Read on 2026-11-06 at the same block,
+  `hasRole(role, account)` on NVDAc and TSLAc (roles `keccak256("MINT_ROLE")` and so on,
+  `DEFAULT_ADMIN_ROLE` 0x00…00): the supply manager holds `MINT_ROLE` and `BURN_ROLE` and not
+  `DEFAULT_ADMIN_ROLE`, `PAUSE_ROLE` or `OPERATOR_ROLE`; policy 5's admin holds none of the five.
+- The other Coinbase feeds of the directory: 'Coinbase NVDA (24/7)' 180.23690443 and 'Coinbase
+  GOOGL (24/7)' 279.51852191 (`updatedAt` 23:31:39 and 23:08:45), 'Coinbase COIN' 135.03,
+  'Coinbase CRCL' 67.9, 'Coinbase INTC' 51.16; all 8 decimals.
+
+**Feed round history.** `getRoundData` for every round of each proxy's current phase (phase 2,
+aggregator rounds 1 to the latest), by Multicall3 `aggregate3` at the latest block of 2026-11-05
+around 23:57 UTC through the same endpoint (its newest rounds are those of the feed table above):
+15,903 rounds from 2026-08-05 21:20:23 to 2026-11-05 23:56:28 UTC (AAPL 521, AMZN 724, GOOGL 686,
+META 1,212, MSFT 632, MSTR 3,716, NVDA 879, SNDK 3,972, SPCX 2,316, TSLA 1,245), every answer
+above 0. Times are the rounds' `updatedAt`; ET is America/New_York (EDT to 2026-11-01, EST after).
+- Gaps between consecutive rounds (15,893): with no Saturday (UTC) inside, the longest is
+  86,418 s (GOOGL, from 2026-08-27 05:55:13 UTC), the heartbeat plus 18 s; two exceed 86,400 s
+  (that one and MSFT's 86,410 s from 2026-08-20 13:26:55), none 90,000 s; 212 exceed 12 h and 14
+  exceed 20 h. Across a weekend or a holiday (130 gaps, 13 weekends × 10 feeds) every gap is at
+  least 172,968 s (MSTR, from Friday 2026-10-23 23:57:53 UTC); the longest is 293,756 s (GOOGL
+  over Labor Day, from Friday 2026-09-04 14:24:41 UTC).
+- Overnight: 2,259 rounds (14.2 %) fall between 20:00 and 04:00 ET, from every feed (8.5 % of
+  META's rounds to 18.4 % of SNDK's). Read through `getRoundData` at block 53,663,272, the last
+  overnight rounds before it are NVDA's at 2026-11-05 08:37 UTC (03:37 ET), AMZN's at 08:21
+  (03:21 ET) and TSLA's at 05:33 (00:33 ET), with 9, 15 and 4 overnight rounds among their last 80.
+  The feed-table read itself (18:57 ET, post-market) says nothing about nights.
+- Weekly close, [Friday 20:00, Sunday 20:00) ET (`Intl.DateTimeFormat` with time zone
+  America/New_York): **no round of the 15,903** falls inside one of the 13 closes from 2026-08-07
+  to 2026-11-01 (48 h each; 49 h across the end of daylight saving time on 2026-11-01). Each of
+  the 130 weekend gaps begins before its close, 127 s to 37,097 s before (median 15,834 s), and
+  ends after it: 19 s to 99 s after Sunday 20:00 ET (00:00 UTC to 2026-11-01, 01:00 UTC after
+  it), and 86,429 s to 86,455 s after it over Labor Day, when sessions resumed on Monday
+  2026-09-07 at 20:00 ET.
+- The held rule of METRICS.md ("Reference deviation": a 24/5 feed is held when its age exceeds
+  86,400 + 3,600 s, or when the reading time lies in a weekly close and `updatedAt` is before that
+  close began), applied to these rounds: no weekday second is held. Of the 7,110.6 h inside the
+  130 weekend gaps it holds 91.3 %, every second from Friday 20:00 ET to the next round (per gap
+  82.3 % to 99.9 %, median 91.7 %; per weekend 88.4 % to 94.1 %); its age part alone holds
+  54.3 % (per gap 48.0 % to 69.4 %). The 619.3 h it leaves live are Friday's quiet tails, from a
+  feed's last round to 20:00 ET, while the market is open.
+
+Verdict: **confirmed** for the ten tokens and the ten feeds; the B20 Factory and the oracle
+registry behave as Base's documents describe, each from one source. Policy 5 is a BLOCKLIST (the
+PolicyRegistry entry above). Not established read-only: the holders of the tokens'
+`DEFAULT_ADMIN_ROLE`, `PAUSE_ROLE` and `OPERATOR_ROLE` (the supply manager holds `MINT_ROLE` and
+`BURN_ROLE` on NVDAc and TSLAc), and what the feed does through a corporate action (none happened;
+the registry's pause flag was false for all ten).
 
 ## 3. Still unresolved (do not guess; resolve at first run)
 

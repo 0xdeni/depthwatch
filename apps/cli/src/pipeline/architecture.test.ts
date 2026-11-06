@@ -5,9 +5,6 @@
  * `start` and the pipeline steps. These checks pin that prose to the code, so a default that moves
  * fails a test instead of silently dating the page.
  */
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import {
   BASE_ADDRESSES,
   BASE_BLOCK_SCHEDULE,
@@ -29,28 +26,10 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULTS, loadConfig, parseCliArgs } from '../config.js'
 import { ALCHEMY_CU, ALCHEMY_FREE_CU_PER_MONTH } from '../start/meter.js'
 import { SCHEDULE_DEFAULTS } from '../start/settings.js'
+import { numbers, section } from '../testing/architectureDoc.js'
 import { DAY_SECONDS, HOUR_SECONDS, syncKeys } from './context.js'
 import { PIPELINE_STEPS } from './run.js'
 import { VOLUME_WINDOWS_BY_TIME } from './volume.js'
-
-const HERE = dirname(fileURLToPath(import.meta.url))
-const doc = readFileSync(join(HERE, '..', '..', '..', '..', 'docs', 'ARCHITECTURE.md'), 'utf8')
-
-/** One heading's body up to the next heading, with line wraps collapsed to single spaces. */
-function section(heading: string): string {
-  const start = doc.indexOf(`\n${heading}\n`)
-  if (start < 0) throw new Error(`${heading} not found in ARCHITECTURE.md`)
-  const body = doc.slice(start + heading.length + 2)
-  const end = body.search(/\n#{1,3} /)
-  return (end < 0 ? body : body.slice(0, end)).replace(/\s+/g, ' ')
-}
-
-/** The capture groups of `re` in `text` as bigints (digit-group commas stripped). */
-function numbers(text: string, re: RegExp): bigint[] {
-  const match = text.match(re)
-  if (!match) throw new Error(`expected ${re} in:\n${text}`)
-  return match.slice(1).map((n) => BigInt(n.replaceAll(',', '')))
-}
 
 /** `getLogs` requests for a range of `blocks` blocks: one per started chunk (internal/logs.ts). */
 const chunksFor = (blocks: bigint, chunk: bigint): bigint => (blocks + chunk - 1n) / chunk

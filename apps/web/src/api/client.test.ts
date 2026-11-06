@@ -8,6 +8,7 @@ import {
   poolPath,
   probeApi,
   resolveClient,
+  stockPath,
   tokenPath,
 } from './client.js'
 import type { ApiClient, GapsResponse, StatsResponse, TokenDetail } from './types.js'
@@ -50,6 +51,7 @@ describe('paths', () => {
       `/pools/uniswap-v4%3A0x${'7a'.repeat(32)}`,
     )
     expect(tokenPath(' 0xABCdef ')).toBe('/tokens/0xabcdef')
+    expect(stockPath(' 0xB2ABCdef ')).toBe('/stocks/0xb2abcdef')
   })
 })
 
@@ -80,6 +82,21 @@ describe('createHttpClient', () => {
       '/api/tokens/0xabc?sort=health&dir=asc&limit=20&offset=40',
       '/api/tokens/0xabc',
     ])
+  })
+
+  it('builds the stock URLs: the list, and one stock by its lowercased address', async () => {
+    const { client, calls } = recording({ items: [] })
+    await client.stocks()
+    await client.stock('0xB26E766461630000000000000000000000000000')
+    expect(calls).toEqual(['/api/stocks', '/api/stocks/0xb26e766461630000000000000000000000000000'])
+    const missing = createHttpClient({
+      fetchFn: async () => jsonResponse({ error: 'stock not found' }, 404),
+    })
+    await expect(missing.stock(`0x${'b2'.repeat(20)}`)).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 404,
+      message: 'stock not found',
+    })
   })
 
   it('sends the rating filter of the pools list as true or false', async () => {

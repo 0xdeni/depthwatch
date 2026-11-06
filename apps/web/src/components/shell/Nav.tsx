@@ -10,17 +10,21 @@ import { useCallback, useLayoutEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { animate, DUR, EASE, prefersReducedMotion } from '../../lib/motion.js'
 
-/** Primary navigation, in order. Pools stays current on `/pools/:id` and token pages. */
+/**
+ * Primary navigation, in order. Pools stays current on `/pools/:id` and token pages, Stocks on
+ * `/stocks/:token`.
+ */
 export const NAV_ITEMS: ReadonlyArray<{
   to: string
   label: string
-  /** The dock's shorter label, where four tabs share a phone's width. */
+  /** The dock's shorter label, where five tabs share a phone's width (57.6 px each at 320 px). */
   short?: string
   also?: RegExp
 }> = [
   { to: '/pools', label: 'Pools', also: /^\/tokens\// },
+  { to: '/stocks', label: 'Stocks' },
   { to: '/gaps', label: 'Gaps' },
-  { to: '/mm', label: 'Scorecards' },
+  { to: '/mm', label: 'Scorecards', short: 'Scores' },
   { to: '/methodology', label: 'Methodology', short: 'Method' },
 ]
 
@@ -64,7 +68,7 @@ export function Nav({ animate: slide }: { animate: boolean }) {
         { duration: DUR.indicator, easing: EASE.inOut },
       )
     }
-    // Keep the current tab in view where the strip scrolls (below 360 px).
+    // Keep the current tab in view where the strip scrolls (below about 425 px).
     const pad = Number.parseFloat(getComputedStyle(nav).paddingRight) || 0
     if (r.right > n.right - pad) nav.scrollLeft += r.right - (n.right - pad)
     else if (r.left < n.left + pad) nav.scrollLeft -= n.left + pad - r.left

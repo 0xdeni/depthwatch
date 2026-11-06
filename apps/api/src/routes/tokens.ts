@@ -1,12 +1,11 @@
 import { Hono } from 'hono'
 import type { ApiContext } from '../context.js'
 import type { ErrorResponse, TokenDetail } from '../dto.js'
-import { parseAddress, parseQuery, tokenQuerySchema } from '../query.js'
+import { INVALID_ADDRESS, parseAddress, parseQuery, tokenQuerySchema } from '../query.js'
 import { toPoolSummary } from '../summary.js'
 import { labelToken } from '../tokenLabels.js'
 
 const TOKEN_NOT_FOUND: ErrorResponse = { error: 'token not found' }
-const BAD_ADDRESS: ErrorResponse = { error: 'invalid token address: expected 0x + 40 hex chars' }
 
 /**
  * `GET /api/tokens/:address`: token info, derived USD price and the scored pools containing the
@@ -19,7 +18,7 @@ export function tokensRoutes(ctx: ApiContext): Hono {
   const app = new Hono()
   app.get('/:address', (c) => {
     const address = parseAddress(c.req.param('address'))
-    if (!address) return c.json(BAD_ADDRESS, 400)
+    if (!address) return c.json(INVALID_ADDRESS, 400)
     const parsed = parseQuery(tokenQuerySchema, c.req.query())
     if (!parsed.ok) return c.json(parsed.error, 400)
     const token = ctx.db.tokens.get(address)

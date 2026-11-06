@@ -1,7 +1,8 @@
 /**
  * `score` over an in-memory database: scores follow the tracked set, so a pool that drops out of
  * it (top-N re-selection or a removed `--pool`) leaves `/api/pools`, `/api/gaps` and `/api/stats`
- * on the next run instead of being served with weeks-old numbers.
+ * on the next run instead of being served with weeks-old numbers. A stock pool whose stock's
+ * transfers are paused at its newest snapshot is unrated `transfers-paused`.
  */
 import {
   createApp,
@@ -15,6 +16,7 @@ import {
   fixtureAddress,
   fixtureBucket,
   fixturePool,
+  fixturePoolReference,
   fixtureSnapshot,
   IN_MEMORY,
   openDatabase,
@@ -22,7 +24,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { loadConfig } from '../config.js'
 import { createPipelineContext, DAY_SECONDS, type PipelineContext, syncKeys } from './context.js'
-import { scoreStep } from './score.js'
+import { scorePool, scoreStep } from './score.js'
 
 const NOW = 1_700_000_000
 const HOUR = 3_600
@@ -282,5 +284,30 @@ describe('scoreStep', () => {
       })
       expect(reserve?.notes).toContain('concentration neutral: LP owners not indexed')
     })
+  })
+})
+
+describe('scorePool on a stock pool', () => {
+  const pool = fixturePool({ address: fixtureAddress(5) })
+  const at = (transfersPaused: boolean | null) =>
+    fixtureSnapshot({
+      poolId: pool.id,
+      timestamp: NOW,
+      blockNumber: 1n,
+      reference: fixturePoolReference({ transfersPaused }),
+    })
+
+  it("unrates the pool while its stock's transfers are paused, and only then", () => {
+    const paused = at(true)
+    expect(scorePool(pool.id, pool, [paused], paused, null, NOW).health).toMatchObject({
+      rated: false,
+      unratedReason: 'transfers-paused',
+      grade: null,
+    })
+    // Not paused, or unknown (a failed `pausedFeatures()`): unknown is not a pause.
+    for (const transfersPaused of [false, null]) {
+      const open = at(transfersPaused)
+      expect(scorePool(pool.id, pool, [open], open, null, NOW).health.rated).toBe(true)
+    }
   })
 })

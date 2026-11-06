@@ -1,13 +1,14 @@
 /**
  * `ChainReader.seedPools`: pool discovery without `eth_getLogs`, for endpoints that cannot serve
  * factory log scans (Alchemy's free tier: 10-block ranges). Each DEX is asked directly for the
- * pools of a token list (./candidates.ts, ./aero.ts: a dozen multicalls in all at the seed block),
- * then each pool's creation block is found by binary search over archive state (./createdAt.ts,
- * about 26 to 28 requests per pool, the log2 of the height, which grows 432,000 blocks a day since
- * Denim; skipped for pools whose creation block is already known), in batches whose
- * pools are handed to `onPools` as each one completes. The PoolMeta are the ones log discovery
- * produces for the same pools. Pairs outside the token list, hooked v4 pools and
- * non-standard v4 tiers are not found this way. The DEX seeders run independently: one whose
+ * pools of a pair list, built once (`seedPairs`: every pair of a token list, plus each cross token
+ * with each of those tokens) and handed to every seeder (./candidates.ts, ./aero.ts: a dozen
+ * multicalls in all at the seed block), then each pool's creation block is found by binary search
+ * over archive state (./createdAt.ts, about 26 to 28 requests per pool, the log2 of the height,
+ * which grows 432,000 blocks a day since Denim; skipped for pools whose creation block is already
+ * known), in batches whose pools are handed to `onPools` as each one completes. The PoolMeta are
+ * the ones log discovery produces for the same pools. Pairs outside the pair list, hooked v4 pools
+ * and non-standard v4 tiers are not found this way. The DEX seeders run independently: one whose
  * factory views fail (an outage of one contract, a factory whose interface changed) is reported in
  * `SeedResult.failed` and the other DEXes' pools are still dated and returned.
  */
@@ -20,6 +21,7 @@ import {
   type DexSeed,
   type DexSeeder,
   seedAerodromeV2,
+  seedPairs,
   seedSlipstream,
   seedUniswapV3,
   seedUniswapV4,
@@ -28,8 +30,11 @@ import { type CreationSearchProgress, findCreationBlocks } from './createdAt.js'
 
 export type { BackoffEvent } from '../internal/backoff.js'
 export {
+  crossPairs,
   type DexSeed,
   type DexSeeder,
+  type SeedPair,
+  seedPairs,
   sortedPairs,
   UNISWAP_V3_CANDIDATE_FEES,
   UNISWAP_V4_STANDARD_KEYS,
@@ -74,6 +79,11 @@ export interface SeedPoolsOptions {
    * (address 0) only pairs on Uniswap v4; the other DEXes pair the ERC-20s.
    */
   tokens?: readonly Address[]
+  /**
+   * Tokens paired with every token of `tokens` and never with each other (`crossPairs`): the
+   * stocks, against the reference tokens, so their pairs grow linearly with the list.
+   */
+  crossTokens?: readonly Address[]
   /** Block of every factory read and upper bound of the creation search (default: latest). */
   blockNumber?: bigint
   /** A creation block already known for a pool id (e.g. stored); that pool is not searched. */
@@ -137,9 +147,10 @@ export async function seedPools(
   const concurrency = positive(opts.concurrency ?? DEFAULT_SEED_CONCURRENCY, 'seed concurrency')
   const batchSize = positive(opts.batchSize ?? DEFAULT_SEED_BATCH, 'seed batch size')
   const tokens = opts.tokens ?? ctx.addresses.referenceTokens.map((t) => t.address)
+  const pairs = seedPairs(tokens, opts.crossTokens)
   const dexes = opts.dexes ?? DEXES
   const settled = await Promise.allSettled(
-    dexes.map((dex) => SEEDERS[dex](ctx, blockNumber, tokens)),
+    dexes.map((dex) => SEEDERS[dex](ctx, blockNumber, pairs)),
   )
   const seeds: DexSeed[] = []
   const failed: SeedDexFailure[] = []

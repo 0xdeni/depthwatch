@@ -48,7 +48,7 @@ export const SECTIONS: readonly MetricSection[] = [
           {`The buy side is the money spent buying the first token to lift the price; the sell side is the first token sold to push it down. Both sides added at ±${u(2, '%')} give the headline number used for sorting and scoring. A stretch with no liquidity costs nothing to cross, as it does onchain, so when the ±${u(5, '%')} amount equals the ±${u(2, '%')} amount, nothing sits between the two prices. When the target lies past the liquidity the snapshot read, the side is marked “Liquidity runs out”, and the amount is what it took to get that far.`}
         </p>
         <p>
-          {`A pool whose own price sits ${u(5, '%')} or more from the price its tokens’ dollar prices imply is marked “Stale price”: its depth is measured at a price nobody trades, so it stays out of the totals and sorts last by depth. A pool with a swap hook Depthwatch does not model (a Uniswap v4 pool with a hook, or an Aero Slipstream pool off its reviewed hook) runs that code on every swap, so its depth and spread are not modelled at all.`}
+          {`A pool whose own price sits ${u(5, '%')} or more from the price its tokens’ dollar prices imply is marked “Stale price”: its depth is measured at a price nobody trades, so it stays out of the totals and sorts last by depth. A pool of a tokenized stock whose transfers are paused stays out of the totals too: every swap in it reverts. A pool with a swap hook Depthwatch does not model (a Uniswap v4 pool with a hook, or an Aero Slipstream pool off its reviewed hook) runs that code on every swap, so its depth and spread are not modelled at all.`}
         </p>
       </>
     ),
@@ -142,7 +142,7 @@ export const SECTIONS: readonly MetricSection[] = [
           {`Concentration counts the largest LP’s share only when the indexed owners cover at least ${u(90, '%')} of the liquidity near the price; otherwise a concentrated pool is scored from how its liquidity spreads over price ranges, and an Aerodrome v2 or Aero v2 pool, one full range by construction, scores the neutral 10. A grade that does not rest on LP owners carries a star that says so.`}
         </p>
         <p>
-          {`A grade only means something where there is liquidity to grade. A pool is rated when both sides within ±${u(2, '%')} are known and the thinner one holds at least $5K. Any other pool shows “Not rated” instead of a letter, with the reason: too thin to rate, too thin on one side, no USD price, or a hooked pool that is not modelled. It keeps its score and its four parts, and stays in every list; the median health on Home and in the stats counts rated pools only.`}
+          {`A grade only means something where there is liquidity to grade. A pool is rated when both sides within ±${u(2, '%')} are known and the thinner one holds at least $5K. Any other pool shows “Not rated” instead of a letter, with the reason: too thin to rate, too thin on one side, no USD price, a hooked pool that is not modelled, or transfers paused, a tokenized stock’s pool in which every swap reverts. It keeps its score and its four parts, and stays in every list; the median health on Home and in the stats counts rated pools only.`}
         </p>
       </>
     ),

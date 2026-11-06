@@ -29,7 +29,7 @@ this page explains it.
 | `@depthwatch/chain` | core, viem                                                                                         | Base addresses and ABIs, `ChainReader` (discovery, overview, state, positions, swaps, LP holdings and gauge-staked owners), fixture and recording transports                                                                                                                                                           |
 | `@depthwatch/db`    | core                                                                                               | `openDatabase`, migrations, repositories (`pools`, `tokens`, `snapshots`, `volume`, `positions`, `prices`, `scores`, `syncState`, `mandates`, `mmSamples`, `mmAlerts`), fixture builders for other packages' tests                                                                                                     |
 | `@depthwatch/api`   | core, db, hono, zod                                                                                | `createApp(db, { staticDir, adminToken })`: REST routes, validation, static SPA serving; `/api/mm` scorecards and badge                                                                                                                                                                                                |
-| `@depthwatch/web`   | core, chain (`./addresses` only), react, tanstack-query, react-router, viem (lazy swap panel only) | Dashboard (pools, gaps, tokens, scorecards); HTTP client and mock client behind one `ApiClient` interface; the lazy swap panel (`src/trade/`), off unless the trade switch is on                                                                                                                                       |
+| `@depthwatch/web`   | core, chain (`./addresses` only), react, tanstack-query, react-router, viem (lazy swap panel only) | Dashboard (pools, stocks, gaps, tokens, scorecards); HTTP client and mock client behind one `ApiClient` interface; the lazy swap panel (`src/trade/`), off unless the trade switch is on                                                                                                                               |
 | `@depthwatch/cli`   | everything                                                                                         | `depthwatch` commands (`mm …` included), the mandate sampling hook and alert delivery; the only place that wires chain → core → db → api                                                                                                                                                                               |
 
 There is no build step for Node packages. Package entry points are `src/index.ts`, `tsx` runs
@@ -41,19 +41,24 @@ dashboard is built (Vite) and only so that `depthwatch serve` can serve static f
 ```
                  ┌────────────┐
   factory logs ─►│  discover  │─► pools, sync_state
+ factory views ─►│  (--seed)  │   reference × reference, stock × reference pairs
                  └────────────┘
                         │ all pools
                         ▼
                  ┌────────────┐     ┌────────────┐     ┌────────────┐
                  │  overview  │────►│   prices   │────►│    rank    │─► tracked = top N by TVL
-                 └────────────┘     └────────────┘     └────────────┘
+                 └────────────┘     └────────────┘     └────────────┘   + stock pools ≥ $10k
                    slot0/reserves     widest-path USD          │
                         │                                      ▼
                         │                               ┌────────────┐     ┌────────────┐
                         │                               │   state    │────►│  metrics   │─► snapshots
                         │                               └────────────┘     └────────────┘
                         │                             tick-bitmap walk    depth / spread /
-                        │                                                 concentration / TVL
+                        │                                                 concentration / TVL,
+                        │                               ┌────────────┐    reference (stock pools)
+  feeds, B20 tokens ────┼──────────────────────────────►│   stocks   │─► stocks, stock_readings
+                        │                               └────────────┘
+                        │                             one multicall, same block
                         ▼
                  ┌────────────┐                         ┌────────────┐
   Swap events ─►│   volume   │─► volume_hourly ───────►│   scores   │─► scores
@@ -76,8 +81,9 @@ Each step reads what the previous one stored, so any step can be rerun on its ow
    symbol), lowercase every address and upsert. Uniswap v4 pools have no address: they are keyed
    by `poolId` and `currency0 == 0x0` is native ETH. Without a logs endpoint that serves wide
    ranges, `depthwatch discover --seed` finds the pools of every pair of the reference tokens
-   instead, from factory views at the head, and dates each by binary search over archive state
-   (see [Seeded discovery](#seeded-discovery-factory-views-and-archive-state)); it records
+   instead, and those of each tokenized stock of the stock list with each reference token (never
+   of two stocks), from factory views at the head, and dates each by binary search over archive
+   state (see [Seeded discovery](#seeded-discovery-factory-views-and-archive-state)); it records
    `seed:<dex>:lastBlock` and leaves the log cursors alone.
 2. **overview** (first half of `snapshot`). For every pool, read the cheap state in one pass:
    `slot0` and `liquidity` for concentrated pools, `getReserves` for Aerodrome v2 and Aero v2,
@@ -93,24 +99,35 @@ Each step reads what the previous one stored, so any step can be rerun on its ow
    native ETH ↔ WETH step.
 4. **rank**. Pools are ranked by `tvlUsd`, a Uniswap v4 pool (no reserves of its own, so no TVL)
    by the USD value of its ±2 % depth and a hooked pool not at all; the top N
-   (`DEPTHWATCH_TOP_POOLS`, default 200) are marked `tracked`, plus the pools named with `--pool`
-   and those of active mandates. Everything downstream runs for tracked pools only; untracked pools still have
-   an overview, a price and a TVL.
+   (`DEPTHWATCH_TOP_POOLS`, default 200) are marked `tracked`, plus the pools named with `--pool`,
+   those of active mandates, and every ranked pool of a tokenized stock whose rank is at least
+   $10,000 (`STOCK_TRACK_MIN_RANK_USD`, twice the side a pool needs to be rated), whatever its
+   place; a smaller stock pool is tracked only if it ranks in. Everything downstream runs for
+   tracked pools only; untracked pools still have an overview, a price and a TVL.
 5. **state** (second half of `snapshot`). For each tracked pool, read a full `PoolState`.
    Concentrated pools need the initialised ticks around the current price: walk `tickBitmap`
    words covering at least ±10 % (twice the 5 % concentration band), then read `ticks()` for every
    initialised tick, all multicall batched. The resulting `ConcentratedState` carries
    `tickLowerBound` / `tickUpperBound` so the simulator knows where its knowledge ends. Reserve
-   pools are complete after `getReserves`.
+   pools are complete after `getReserves`. Beside the state reads, at the same block, one multicall
+   reads every stock of the stock list (`ChainReader.readStocks`, `packages/chain/src/stocks.ts`:
+   the ten of base.org/stocks): its Chainlink feed's `latestRoundData`, `decimals` and
+   `description`, the oracle registry's `getOracleParams`, the token's `multiplier` and
+   `pausedFeatures`, 60 calls for the ten; core's `evaluateStockReading` judges each reading. A
+   failed stock read is stored as `unread` and never fails the snapshot.
 6. **metrics**. Pure calls into core: `computeDepth` at 1 / 2 / 5 %, `depthToUsd`,
    `computeEffectiveSpread` at $1k / $10k / $100k / $1M, `computeConcentration` (or
-   `computeConcentrationForReserves`), `tvlUsd`. The output is one `PoolSnapshot` per pool.
+   `computeConcentrationForReserves`), `tvlUsd`, and for a stock pool its `reference` to the
+   stock's reading (`poolReference`: the deviation from Chainlink's answer, docs/METRICS.md
+   "Reference deviation"). The output is one `PoolSnapshot` per pool.
 7. **snapshots**. Inserted with the block number and block timestamp. Three denormalised columns
    (`depth2_usd`, `spread10k_bps`, `owner_top1_share`) are filled from the JSON so that the
    dashboard's sorts are plain SQL; `owner_top1_share` only where the owners cover the pool (core's
    `poolOwnerTop1Share`, NULL otherwise). A read does not trust `spread10k_bps`: a row stored before the
    price impact cap holds the uncapped number, so the repositories take the $10k spread, and every
-   point of `spreads_json`, through core's `feasibleSpreadBps` rule.
+   point of `spreads_json`, through core's `feasibleSpreadBps` rule. The same transaction rewrites
+   `stocks` and stores one `stock_readings` row per stock and block, with the stock's depth over
+   the pass's snapshots (`summarizeStock`, docs/METRICS.md "Stock aggregates").
 8. **volume** (`depthwatch volume`). `Swap` events for tracked pools over the last 24 h (or
    `--hours`), chunked `getLogs`, bucketed per hour; token amounts stay `bigint`, the USD value
    uses the `prices` table. Upserted into `volume_hourly`, so reruns are idempotent. Incremental:
@@ -288,6 +305,17 @@ metadata and fees for the pools found. Every non-zero answer goes through the sa
 builder as the creation log would. The six DEXes are asked independently: one whose factory reads fail is reported (`SeedResult.failed`) and gets no
 `seed:<dex>:lastBlock`, while the others' pools are dated and stored; the command then exits 1
 and the next seed asks that DEX again.
+
+The tokenized stocks are seeded too, as cross tokens (`SeedPoolsOptions.crossTokens`,
+[stocks.md §3](design/stocks.md#3-chain-packageschain)): every seed asks for each stock of the
+reader's stock list (`BASE_STOCKS` in `packages/chain/src/stocks.ts`, the 10 stocks of
+base.org/stocks) against every reference token and `--seed-token` address, and against no other
+stock, so their candidates grow linearly with the list. Each stock adds 14 ERC-20 pairs and 15
+currency pairs: 98 v3, 28 Aerodrome v2, 28 Aero v2, 60 v4, 308 Aerodrome Slipstream and 98 Aero
+Slipstream calls, 620 calls a stock and 6,200 for the 10, about 13 more multicalls. Given as
+`--seed-token` addresses instead, the 10 would add 8,180 calls, their 45 stock × stock pairs
+included, a count that grows with the square of the list. The stock pools found are dated and
+stored like any other, and log discovery finds them like any pool.
 
 The creation block of each new pool is found exactly by binary search between its factory's
 `startBlock` and the head: a contract pool exists at block N when `eth_getCode` at N is not empty;
@@ -608,7 +636,9 @@ default 200 tracked:
   sent 528 requests, 13,718 units by the meter, HTTP 429 retries included. 48 passes a day make
   about 20 M units a month. Hourly passes (`DEPTHWATCH_SNAPSHOT_INTERVAL=1h`) halve that; 492
   tracked pools every 30 minutes would need about 42 M, more than the free tier, and about 21 M
-  hourly.
+  hourly. The stock reads add one multicall a pass (60 calls for the ten stocks, 26 units), and
+  every stock pool ranked at $10,000 or more is tracked beside the 200, its state read like any
+  tracked pool's.
 - **Volume** sends its `eth_getLogs` to the logs endpoint; on Alchemy it costs only the block
   headers that find its first blocks and time the swaps, a few per pass. Volume on Alchemy alone,
   at its 10-block ranges, would read 18,000 to 36,000 blocks per event source an hourly pass (the
@@ -619,7 +649,9 @@ default 200 tracked:
   of the tokens touched since the last run: one pass over each manager's history while catching
   up, then the tokens of six hours. Neither has been measured on mainnet: the `daily total` line
   shows them.
-- **The seed** costs about 380,000 units with all six DEXes, once.
+- **The seed** costs about 380,000 units with all six DEXes, once; the stocks' 6,200 candidate
+  calls add about 13 multicalls to it and to every later seed, and each stock pool found costs
+  one creation-block search, once.
 
 The logs endpoint sees about 110 to 135 `eth_getLogs` an hour once discovery is current (eight
 discovery filters, 5 chunks each, twice an hour; 10 to 18 per event source for hourly volume,
@@ -635,19 +667,21 @@ migrations from `packages/db/src/schema.ts`; `MIGRATIONS[i]` brings the schema t
 each entry is a batch of SQL run in one transaction and recorded in `schema_version`. Shipped
 migrations are never edited, only appended; `packages/db/src/schema.test.ts` pins a sha256 of each.
 
-| Table           | Key                     | Holds                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| --------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `tokens`        | `address`               | symbol, name, decimals                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `pools`         | `id`                    | `PoolMeta` columns, `tracked` flag, `first_seen_at`                                                                                                                                                                                                                                                                                                                                                                      |
-| `snapshots`     | autoincrement `id`      | per pool and block: price, USD prices, TVL, active liquidity, `depth_json`, `depth_usd_json`, `spreads_json`, `concentration_json`, denormalised `depth2_usd`, `spread10k_bps`, `owner_top1_share`; `price_deviation_bps` (schema version 5) and `fee_pips` (the LP fee the snapshot used, schema version 7, NULL in older rows); indexes on `(pool_id, timestamp)` and `timestamp`, unique on `(pool_id, block_number)` |
-| `volume_hourly` | `(pool_id, hour_start)` | token volumes (TEXT bigints), USD volume, swap count                                                                                                                                                                                                                                                                                                                                                                     |
-| `positions`     | `(pool_id, token_id)`   | owner, tick range, liquidity, last updated block; rows under `<pool id>#catch-up` hold a first windowed scan until it reaches the head                                                                                                                                                                                                                                                                                   |
-| `prices`        | `token`                 | USD price, `via_json` route, `updated_at`                                                                                                                                                                                                                                                                                                                                                                                |
-| `scores`        | `pool_id`               | `health_json`, `gap_json`, `persistence_24h_json`, `persistence_7d_json`, `volume_24h_usd`, `depth2_usd`, denormalised `health_total`, `gap_score`                                                                                                                                                                                                                                                                       |
-| `sync_state`    | `key`                   | pipeline cursors, e.g. `discover:uniswap-v3:lastBlock`, `positions:<pool>:lastBlock` (`:catchUpBlock` while a first windowed scan is staged), `start:volume:lastRunAt`, `prune:lastRunAt`                                                                                                                                                                                                                                |
-| `mandates`      | `id`                    | name, `pool_id`, `market_maker`, `addresses_json`, `kpis_json`, `alert_webhook_url`, `alert_after_samples`, `active`, `created_at`, `notes`; index on `(pool_id)`                                                                                                                                                                                                                                                        |
-| `mm_samples`    | autoincrement `id`      | per mandate and block: `pool_id`, `block_number` (TEXT), `timestamp`, `attribution_json` (`MmAttribution`), `within_kpi` (NULL = not evaluable), `breaches_json`; indexes on `(mandate_id, timestamp)` and `timestamp`, unique on `(mandate_id, block_number)`                                                                                                                                                           |
-| `mm_alerts`     | autoincrement `id`      | per delivery attempt: `mandate_id`, `timestamp`, `kind` (`breach` / `recovered`), `streak_samples`, `payload_json`, `delivered`, `response_status`, `error`; indexes on `(mandate_id, timestamp)` and `timestamp`                                                                                                                                                                                                        |
+| Table            | Key                     | Holds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tokens`         | `address`               | symbol, name, decimals                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `pools`          | `id`                    | `PoolMeta` columns, `tracked` flag, `first_seen_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `snapshots`      | autoincrement `id`      | per pool and block: price, USD prices, TVL, active liquidity, `depth_json`, `depth_usd_json`, `spreads_json`, `concentration_json`, denormalised `depth2_usd`, `spread10k_bps`, `owner_top1_share`; `price_deviation_bps` (schema version 5), `fee_pips` (the LP fee the snapshot used, schema version 7, NULL in older rows) and `reference_json` (a stock pool's `PoolReference`, schema version 8, NULL without a stock and in older rows); indexes on `(pool_id, timestamp)` and `timestamp`, unique on `(pool_id, block_number)` |
+| `volume_hourly`  | `(pool_id, hour_start)` | token volumes (TEXT bigints), USD volume, swap count                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `positions`      | `(pool_id, token_id)`   | owner, tick range, liquidity, last updated block; rows under `<pool id>#catch-up` hold a first windowed scan until it reaches the head                                                                                                                                                                                                                                                                                                                                                                                                |
+| `prices`         | `token`                 | USD price, `via_json` route, `updated_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `scores`         | `pool_id`               | `health_json`, `gap_json`, `persistence_24h_json`, `persistence_7d_json`, `volume_24h_usd`, `depth2_usd`, denormalised `health_total`, `gap_score`                                                                                                                                                                                                                                                                                                                                                                                    |
+| `sync_state`     | `key`                   | pipeline cursors, e.g. `discover:uniswap-v3:lastBlock`, `positions:<pool>:lastBlock` (`:catchUpBlock` while a first windowed scan is staged), `start:volume:lastRunAt`, `prune:lastRunAt`                                                                                                                                                                                                                                                                                                                                             |
+| `mandates`       | `id`                    | name, `pool_id`, `market_maker`, `addresses_json`, `kpis_json`, `alert_webhook_url`, `alert_after_samples`, `active`, `created_at`, `notes`; index on `(pool_id)`                                                                                                                                                                                                                                                                                                                                                                     |
+| `mm_samples`     | autoincrement `id`      | per mandate and block: `pool_id`, `block_number` (TEXT), `timestamp`, `attribution_json` (`MmAttribution`), `within_kpi` (NULL = not evaluable), `breaches_json`; indexes on `(mandate_id, timestamp)` and `timestamp`, unique on `(mandate_id, block_number)`                                                                                                                                                                                                                                                                        |
+| `mm_alerts`      | autoincrement `id`      | per delivery attempt: `mandate_id`, `timestamp`, `kind` (`breach` / `recovered`), `streak_samples`, `payload_json`, `delivered`, `response_status`, `error`; indexes on `(mandate_id, timestamp)` and `timestamp`                                                                                                                                                                                                                                                                                                                     |
+| `stocks`         | `token`                 | the stock list as the last snapshot pass wrote it: symbol, name, decimals, ticker, the feed's address, decimals, heartbeat, deviation threshold and hours (NULL without a feed), `updated_at` (schema version 8)                                                                                                                                                                                                                                                                                                                      |
+| `stock_readings` | `(token, block_number)` | per stock and snapshot block: the reading's status, `reference_usd`, `feed_age_seconds`, the feed's and the oracle registry's answers (TEXT bigints), `paused_features`, `error`, and `pass_depth_json` (`StockPassDepth`); indexes on `timestamp` and `(token, timestamp)`; never pruned (schema version 8)                                                                                                                                                                                                                          |
 
 Conventions:
 - Bigints are stored as TEXT decimal strings; SQLite REAL would lose precision above 2^53.

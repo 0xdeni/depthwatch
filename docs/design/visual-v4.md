@@ -838,8 +838,10 @@ there is never a blank frame and never two views near full opacity (prototype
 in past 8 px of scroll.
 - **Wordmark:** the 22 px mark and "Depthwatch" at 21 px, 850, −0.045em, 10 px apart; the link is
   at least 44 px high.
-- **Nav:** Pools, Gaps, Scorecards, Methodology; 15 px, 650, 28 px apart, `--text-2`, the current
-  item `--text-1` with `aria-current="page"`. The indicator is a 4 px bar (radius 2 2 0 0) in
+- **Nav:** Pools, Stocks, Gaps, Scorecards, Methodology; 15 px, 650, 28 px apart, `--text-2`, the
+  current item `--text-1` with `aria-current="page"` (Stocks on `/stocks` and `/stocks/:token`,
+  docs/design/stocks-api.md §3); the five fit beside the wordmark and the freshness button at
+  840 px. The indicator is a 4 px bar (radius 2 2 0 0) in
   `--nav-ind` under the current item, placed with `left` and `width` and moved by transform only.
 - **Freshness** (pushed right): an 8 px Green **circle** and the eyebrow "Block 53,069,244"; a
   40 px button, radius 12, `--surface-2` on hover; its popover gives the snapshot time, block and
@@ -847,13 +849,16 @@ in past 8 px of scroll.
 
 **Phone chrome, below 840 px** (100 px):
 - **Bar, 56 px:** the wordmark and the freshness dot as a 44 × 44 button at the right gutter.
-- **Tab strip, 44 px,** under the bar, same landmark name: Pools, Gaps, Scorecards, Methodology at
-  15 px, 700; the current tab `--text-1` with a 4 px `--nav-ind` bar inset 10 px; scrolls sideways
-  below 360 px. The bar and strip never hide. No theme toggle (PH2).
+- **Tab strip, 44 px,** under the bar, same landmark name: Pools, Stocks, Gaps, Scorecards,
+  Methodology at 15 px, 700; the current tab `--text-1` with a 4 px `--nav-ind` bar inset 10 px;
+  scrolls sideways below about 425 px (`26.56em`: the five tabs need 392.6 px plus two 16 px
+  gutters), its trailing edge fading, and keeps the current tab in view. The bar and strip never
+  hide. No theme toggle (PH2).
 - **No fixed bottom bar in a browser tab** (PH3). In an installed app only
   (`@media (display-mode: standalone)`), the strip is replaced by a bottom dock: Gray 100, radius
-  20 20 0 0, four 48 px tabs, the current one Base Blue with white text, padded by the bottom safe
-  area, sticky at the bottom of the app column.
+  20 20 0 0, five 48 px tabs, the current one Base Blue with white text, padded by the bottom safe
+  area, sticky at the bottom of the app column. At 320 px a tab is 57.6 px wide, so Scorecards and
+  Methodology read "Scores" and "Method", their links keeping the full name as `aria-label`.
 
 **Main:** `id="main"`, `tabindex="-1"`, the view-transition boundary; focus moves here after
 keyboard navigation. The app column is a flex column of at least `100dvh`, so a short page rests
@@ -862,8 +867,8 @@ its footer on the viewport bottom.
 **Footer:** the ink block in both themes (Gray 100, a Gray 80 top rule in dark); 64 px above it
 (48 on phones), 48 px padding (32 on phones) plus the bottom safe area.
 - Desktop (from 1024): one row of three columns: the wordmark at 28 px; the promise plus the data
-  source ("Data: a Base mainnet snapshot.") in `--on-ink-2`; the links Methodology, API and GitHub
-  (15 px, 650, 44 px targets, underline on hover).
+  source ("Data: a Base mainnet snapshot.") in `--on-ink-2`, then the stock line as a paragraph of
+  its own; the links Methodology, API and GitHub (15 px, 650, 44 px targets, underline on hover).
 - The promise follows the trade switch the page loaded with (`tradeSwitchOn`), and a page already
   open keeps it until it reloads. While the switch is off: "Open source and read-only. No token, no
   custody. It indexes Uniswap, Aerodrome and Aero pools on Base mainnet. Independent: not
@@ -871,6 +876,10 @@ its footer on the viewport bottom.
   "Open source. No token, no custody, no fee added to swaps. It indexes Uniswap, Aerodrome and Aero
   pools on Base mainnet. The swap panel is on and non-custodial: a swap goes from your own wallet
   straight to the pool’s router. Independent: not affiliated with or endorsed by Base."
+- The stock line (`FOOTER_STOCKS`, docs/design/stocks-api.md §3) follows the promise on every page,
+  whatever the switch: "Coinbase tokenized stocks are only available to persons in eligible
+  jurisdictions outside of the U.S. Depthwatch measures their markets; it does not offer, route or
+  recommend trades in them."
 - Phones: one column in that order, links left-aligned 20 px apart.
 
 ### 5.2 The band and blocks
@@ -1305,8 +1314,8 @@ the winning study, v4 cut Home by 19 % on desktop and 25 % on phones, Pool by 28
 
 **Focal:** the depth butterfly of Base on the band. **Answer:** "$49.8M sits within 2 % of the
 price across 327 pools on Base." (the pools the figure sums, `depthKnownPools`: scored, with a
-known depth and no stale quote, so it never reads as every pool on Base). The butterfly's totals
-leave the stale quotes out the same way and still draw their rows. **First facts:** 24 h volume, median health, biggest gap.
+known depth, no stale quote and its stock's transfers not paused, so it never reads as every pool
+on Base). The butterfly's totals leave those pools out the same way and still draw their rows. **First facts:** 24 h volume, median health, biggest gap.
 
 | Element (1440)      |        y | Height | Element (390)        |          y |
 | ------------------- | -------: | -----: | -------------------- | ---------: |

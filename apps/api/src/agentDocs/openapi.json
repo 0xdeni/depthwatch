@@ -4,7 +4,7 @@
     "title": "Depthwatch API",
     "version": "0.1.0",
     "summary": "Read-only liquidity metrics for Uniswap v3/v4, Aerodrome and Aero pools on Base mainnet (chain id 8453).",
-    "description": "Depthwatch measures executable liquidity: USD depth at ±1/2/5 % per side, round-trip effective spread at $1k/$10k/$100k (fees included), LP concentration, liquidity persistence over 24 h and 7 d, a 0–100 Liquidity Health Score and a liquidity gaps feed. Conventions: price is token1 per token0, decimal adjusted; the up side is buy pressure on token0 (input token1), the down side sell pressure (input token0); raw token amounts and block numbers are decimal strings; times are unix seconds; null means not known, never zero; USD prices are derived from the pools and are not an oracle. Check GET /api/health first: source \"demo\" means synthetic data; snapshotAgeSeconds says how old the newest snapshot is, and ?maxAge=<seconds> makes it answer 503 when older. Responses are compressed when Accept-Encoding allows it and carry an ETag (304 on If-None-Match); GET /AGENTS.md \"Caching\" has the Cache-Control values. Errors are JSON { error, issues? }. This document lists every GET route; the operator-only write routes POST /api/mm and DELETE /api/mm/{id} (bearer DEPTHWATCH_ADMIN_TOKEN) are not described here. The full guide is GET /AGENTS.md; metric definitions are in docs/METRICS.md of the repository.",
+    "description": "Depthwatch measures executable liquidity: USD depth at ±1/2/5 % per side, round-trip effective spread at $1k/$10k/$100k (fees included), LP concentration, liquidity persistence over 24 h and 7 d, a 0–100 Liquidity Health Score and a liquidity gaps feed. Conventions: price is token1 per token0, decimal adjusted; the up side is buy pressure on token0 (input token1), the down side sell pressure (input token0); raw token amounts and block numbers are decimal strings; times are unix seconds; null means not known, never zero; USD prices are derived from the pools and are not an oracle. For the tokenized stocks of base.org/stocks it adds, per stock, depth, spread and venue shares, and each pool's deviation from the stock's Chainlink feed (GET /api/stocks); Chainlink's answer is passed on with its status and age, and Depthwatch publishes no stock price. Coinbase tokenized stocks are offered under Regulation S and are only available to persons in eligible jurisdictions outside of the U.S.; Depthwatch does not offer, route or recommend trades in them. Check GET /api/health first: source \"demo\" means synthetic data; snapshotAgeSeconds says how old the newest snapshot is, and ?maxAge=<seconds> makes it answer 503 when older. Responses are compressed when Accept-Encoding allows it and carry an ETag (304 on If-None-Match); GET /AGENTS.md \"Caching\" has the Cache-Control values. Errors are JSON { error, issues? }. This document lists every GET route; the operator-only write routes POST /api/mm and DELETE /api/mm/{id} (bearer DEPTHWATCH_ADMIN_TOKEN) are not described here. The full guide is GET /AGENTS.md; metric definitions are in docs/METRICS.md of the repository.",
     "license": { "name": "MIT", "identifier": "MIT" }
   },
   "externalDocs": {
@@ -19,6 +19,10 @@
   ],
   "tags": [
     { "name": "observatory", "description": "Pools, tokens, gaps and totals." },
+    {
+      "name": "stocks",
+      "description": "Tokenized stocks: depth, venues and each pool's deviation from the stock's Chainlink feed. Not a trading interface."
+    },
     { "name": "scorecards", "description": "Market-maker mandates evaluated against their KPIs." },
     { "name": "docs", "description": "Documents for agents." }
   ],
@@ -225,6 +229,49 @@
         }
       }
     },
+    "/api/stocks": {
+      "get": {
+        "operationId": "listStocks",
+        "tags": ["stocks"],
+        "summary": "Every tokenized stock of the stock list: depth, spread, venues and its deepest pool's deviation from the stock's Chainlink feed",
+        "responses": {
+          "200": {
+            "description": "Every stored stock, with pools or not, by depth2BuyUsd + depth2SellUsd descending (unknown last), then ticker; items is empty when the server tracks no stock.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/StocksResponse" } }
+            }
+          },
+          "500": { "$ref": "#/components/responses/Internal" }
+        }
+      }
+    },
+    "/api/stocks/{token}": {
+      "get": {
+        "operationId": "getStock",
+        "tags": ["stocks"],
+        "summary": "One tokenized stock with every scored pool of it, each oriented to the stock with its reference deviation",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "description": "The stock token's address, any case (lowercased by the server); never a symbol.",
+            "schema": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stock's summary plus pools: the counted pools first, then the larger thinner ±2 % side (unknown last), then the pool id.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/StockDetail" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/Internal" }
+        }
+      }
+    },
     "/api/mm": {
       "get": {
         "operationId": "listScorecards",
@@ -417,13 +464,13 @@
     },
     "responses": {
       "BadRequest": {
-        "description": "Invalid query parameter (issues has one entry per parameter) or, on /api/tokens/{address}, a malformed address.",
+        "description": "Invalid query parameter (issues has one entry per parameter) or, on /api/tokens/{address} and /api/stocks/{token}, a malformed address.",
         "content": {
           "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
         }
       },
       "NotFound": {
-        "description": "Unknown pool, token or mandate (error is \"pool not found\", \"token not found\" or \"mandate not found\").",
+        "description": "Unknown pool, token, stock or mandate (error is \"pool not found\", \"token not found\", \"stock not found\" or \"mandate not found\").",
         "content": {
           "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } }
         }
@@ -489,8 +536,8 @@
       },
       "UnratedReason": {
         "type": ["string", "null"],
-        "enum": ["hooked", "unpriced", "one-sided", "thin", null],
-        "description": "Why a pool has no grade, null when it is rated: hooked (a pool with a swap hook Depthwatch does not model, PoolMeta.hooks: depth, spread and concentration are not computed), unpriced (a side has no USD price), one-sided (the deeper ±2 % side holds $5,000, the thinner does not) or thin (neither side does)."
+        "enum": ["hooked", "transfers-paused", "unpriced", "one-sided", "thin", null],
+        "description": "Why a pool has no grade, null when it is rated, tested in this order: hooked (a pool with a swap hook Depthwatch does not model, PoolMeta.hooks: depth, spread and concentration are not computed), transfers-paused (a pool of a tokenized stock whose transfers are paused at the snapshot's block, so every swap in it reverts; its depth and spread are published as measured and left out of the depth sums), unpriced (a side has no USD price), one-sided (the deeper ±2 % side holds $5,000, the thinner does not) or thin (neither side does)."
       },
       "ConcentrationBasis": {
         "type": ["string", "null"],
@@ -558,11 +605,11 @@
           },
           "depth2Usd": {
             "type": "number",
-            "description": "Sum of ±2 % depth (USD) over scored pools, stale quotes (staleQuote) left out."
+            "description": "Sum of ±2 % depth (USD) over scored pools, stale quotes (staleQuote) and pools unrated transfers-paused left out."
           },
           "depthKnownPools": {
             "type": "integer",
-            "description": "Scored pools with a known ±2 % depth and no stale quote: the pools depth2Usd sums."
+            "description": "Scored pools with a known ±2 % depth, no stale quote and transfers not paused: the pools depth2Usd sums."
           },
           "volume24hUsd": {
             "type": ["number", "null"],
@@ -595,11 +642,11 @@
           "rated": { "type": "integer" },
           "depth2Usd": {
             "type": "number",
-            "description": "Sum of ±2 % depth (USD) over the DEX's scored pools, stale quotes (staleQuote) left out."
+            "description": "Sum of ±2 % depth (USD) over the DEX's scored pools, stale quotes (staleQuote) and pools unrated transfers-paused left out."
           },
           "depthKnownPools": {
             "type": "integer",
-            "description": "The DEX's scored pools with a known ±2 % depth and no stale quote: the pools depth2Usd sums."
+            "description": "The DEX's scored pools with a known ±2 % depth, no stale quote and transfers not paused: the pools depth2Usd sums."
           },
           "volume24hUsd": { "type": ["number", "null"] },
           "medianHealth": { "$ref": "#/components/schemas/NullableNumber" }
@@ -870,7 +917,8 @@
           "spreads",
           "concentration",
           "priceDeviationBps",
-          "feePips"
+          "feePips",
+          "reference"
         ],
         "properties": {
           "poolId": { "type": "string" },
@@ -900,6 +948,93 @@
           "feePips": {
             "type": ["integer", "null"],
             "description": "The LP fee in millionths this snapshot's depth and spread used (Uniswap v4: the LP fee; the protocol fee is charged on top). A Slipstream pool's fee is read at the snapshot's block and can change from one block to the next. null in snapshots stored before schema version 7."
+          },
+          "reference": {
+            "anyOf": [{ "$ref": "#/components/schemas/PoolReference" }, { "type": "null" }],
+            "description": "A stock pool set against its stock's Chainlink reading at this snapshot's block (docs/METRICS.md, Reference deviation); null for a pool without a tokenized stock, and in snapshots stored before schema version 8."
+          }
+        }
+      },
+      "ReferenceStatus": {
+        "type": "string",
+        "enum": ["live", "held", "paused", "invalid", "unread", "no-feed"],
+        "description": "A stock's Chainlink reading at a snapshot block, the first that applies: no-feed (the stock list records no feed for the stock), unread (a required call, latestRoundData, decimals, description or the oracle registry's getOracleParams, failed, reverted or did not decode), paused (the oracle registry's paused flag: during a corporate action the feed holds its last good value), invalid (answer not positive, updatedAt 0 or after the block, decimals or description not the recorded feed's), held (the feed holds a closed market's value: its age is above its heartbeat plus 3,600 s, 90,000 s for the ten feeds, or the block lies in the weekly close, Friday 20:00 to Sunday 20:00 New York time, and the round is from before the close began), live (otherwise). Only a live reading is compared with a pool."
+      },
+      "ReferenceNullReason": {
+        "type": ["string", "null"],
+        "enum": [
+          "hooked",
+          "thin",
+          "stock-pair",
+          "no-feed",
+          "unread",
+          "paused",
+          "invalid",
+          "held",
+          "quote-unpriced",
+          null
+        ],
+        "description": "Why a stock pool has no deviation, null when it has one; the first that applies: hooked (a pool with a swap hook Depthwatch does not model), thin (the thinner ±2 % side is not known to hold $5,000), stock-pair (both tokens are stocks), the reading's status when it is not live (no-feed, unread, paused, invalid, held: no pool is compared with a value that is no market price) or quote-unpriced (the quote's USD price is routed through a pool of the stock itself)."
+      },
+      "PoolReference": {
+        "type": "object",
+        "description": "A stock pool against its stock's reading at the snapshot's block. Not an oracle: referenceUsd is Chainlink's answer passed on with its status and age, poolUsd this one pool's mid in dollars; neither is a price to settle, mark or liquidate against, and Depthwatch publishes no stock price.",
+        "required": [
+          "stock",
+          "poolUsd",
+          "referenceUsd",
+          "referenceStatus",
+          "feedAgeSeconds",
+          "deviationBps",
+          "toleranceBps",
+          "deviationThresholdBps",
+          "feeBps",
+          "withinTolerance",
+          "deviationNull",
+          "transfersPaused"
+        ],
+        "properties": {
+          "stock": {
+            "$ref": "#/components/schemas/Address",
+            "description": "The pool's stock token; token0's when both tokens are stocks (deviationNull stock-pair)."
+          },
+          "poolUsd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "USD per stock token at the pool's mid, from the quote token's USD price only (the price graph's valuation convention); null when the pool is hooked, the quote has no USD price or the quote's price route runs through a pool of the stock."
+          },
+          "referenceUsd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "Chainlink's answer / 10^decimals, USD per stock token (the feeds answer per token: the token's multiplier is never applied); published for live, held and paused readings, null for the others."
+          },
+          "referenceStatus": { "$ref": "#/components/schemas/ReferenceStatus" },
+          "feedAgeSeconds": {
+            "type": ["integer", "null"],
+            "description": "Seconds from the feed's latest round (updatedAt) to the snapshot's block, both chain times; null without a feed, after a failed read, or when updatedAt is 0 or after the block. A live reading with a large age may be a quiet market or a weekday holiday."
+          },
+          "deviationBps": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "(poolUsd / referenceUsd − 1) × 10,000, signed: positive when the pool prices the stock above the feed. Not rounded. null when deviationNull says why."
+          },
+          "toleranceBps": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "The feed's deviation threshold (50 bps for the ten feeds) plus the pool's LP fee in bps at the snapshot's block: deviationThresholdBps + feeBps. null with the deviation, and when the fee is unknown."
+          },
+          "deviationThresholdBps": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "The first part of toleranceBps: the feed's deviation threshold in bps (a feed publishes a round on a move this large while its market is open). null when toleranceBps is."
+          },
+          "feeBps": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "The second part of toleranceBps: the pool's LP fee at the snapshot's block in bps (feePips / 100), which an arbitrage against the pool pays. null when toleranceBps is."
+          },
+          "withinTolerance": {
+            "type": ["boolean", "null"],
+            "description": "|deviationBps| ≤ toleranceBps: no larger than the feed's band and the pool's fee explain, so no sign of mispricing; false: the pool and the feed's last round disagree by more. null when either is null."
+          },
+          "deviationNull": { "$ref": "#/components/schemas/ReferenceNullReason" },
+          "transfersPaused": {
+            "type": ["boolean", "null"],
+            "description": "The stock's pausedFeatures() holds TRANSFER at the snapshot's block (either stock's in a pool of two): every swap in the pool reverts, its score is unrated (transfers-paused) and its depth is left out of the depth sums. null when pausedFeatures() failed: unknown is not a pause."
           }
         }
       },
@@ -1117,11 +1252,412 @@
           },
           "depth2UsdTotal": {
             "$ref": "#/components/schemas/NullableNumber",
-            "description": "±2 % depth (depth2Usd) summed over every scored pool containing the token with a known depth and no stale quote (staleQuote), ignoring limit and offset; null when none has one."
+            "description": "±2 % depth (depth2Usd) summed over every scored pool containing the token with a known depth, no stale quote (staleQuote) and not unrated transfers-paused, ignoring limit and offset; null when none has one."
           },
           "depthKnownPools": {
             "type": "integer",
-            "description": "Scored pools of the token whose depth2Usd is known and whose quote is not stale: the pools depth2UsdTotal sums."
+            "description": "Scored pools of the token whose depth2Usd is known, whose quote is not stale and whose transfers are not paused: the pools depth2UsdTotal sums."
+          }
+        }
+      },
+      "PausableFeature": {
+        "type": "string",
+        "enum": ["transfer", "mint", "burn", "seize"],
+        "description": "A B20 token's pausable features, by ordinal TRANSFER 0, MINT 1, BURN 2, SEIZE 3. Only transfer changes anything here: while it is paused every swap in the stock's pools reverts. Minting and redeeming are the issuer's flow, not the market's."
+      },
+      "StockFeedInfo": {
+        "type": "object",
+        "description": "A stock's Chainlink feed as the stock list records it.",
+        "required": ["address", "decimals", "heartbeatSeconds", "deviationThresholdBps", "hours"],
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/Address",
+            "description": "The feed proxy, read with latestRoundData() at each snapshot block."
+          },
+          "decimals": {
+            "type": "integer",
+            "description": "The feed's decimals (8 for the ten feeds); a feed answering other decimals reads invalid."
+          },
+          "heartbeatSeconds": {
+            "type": "integer",
+            "description": "The feed's heartbeat while its market is open (86,400 s for the ten); none off-hours."
+          },
+          "deviationThresholdBps": {
+            "type": "integer",
+            "description": "The move, in bps, that makes the feed publish a round while open (50 for the ten): the band of toleranceBps."
+          },
+          "hours": {
+            "type": "string",
+            "enum": ["24/5", "24/7"],
+            "description": "24/5: US equity sessions, the feed held through the weekly close (Friday 20:00 to Sunday 20:00 New York time); 24/7: no weekly close."
+          }
+        }
+      },
+      "StockReading": {
+        "type": "object",
+        "description": "A stock's Chainlink reading at a snapshot block (docs/METRICS.md, Reference deviation), with the token's own multiplier and paused features. Not an oracle: referenceUsd is Chainlink's answer passed on with its status and age; it is not a price to settle, mark or liquidate against.",
+        "required": [
+          "token",
+          "blockNumber",
+          "timestamp",
+          "referenceStatus",
+          "referenceUsd",
+          "feedAgeSeconds",
+          "feedRoundId",
+          "feedAnswer",
+          "feedUpdatedAt",
+          "oracleMultiplierWad",
+          "oraclePaused",
+          "tokenMultiplierWad",
+          "pausedFeatures",
+          "transfersPaused",
+          "error"
+        ],
+        "properties": {
+          "token": { "$ref": "#/components/schemas/Address", "description": "The stock token." },
+          "blockNumber": {
+            "$ref": "#/components/schemas/DecimalString",
+            "description": "The snapshot block the reading was taken at."
+          },
+          "timestamp": {
+            "$ref": "#/components/schemas/UnixSeconds",
+            "description": "That block's timestamp."
+          },
+          "referenceStatus": { "$ref": "#/components/schemas/ReferenceStatus" },
+          "referenceUsd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "Chainlink's answer / 10^decimals, USD per stock token (the feeds answer per token: the token's multiplier is never applied); published for live, held and paused readings, null for the others."
+          },
+          "feedAgeSeconds": {
+            "type": ["integer", "null"],
+            "description": "timestamp − feedUpdatedAt, both chain times; null without a feed, after a failed required call, or when updatedAt is 0 or after the block. A live reading with a large age may be a quiet market or a weekday holiday."
+          },
+          "feedRoundId": {
+            "anyOf": [{ "$ref": "#/components/schemas/DecimalString" }, { "type": "null" }],
+            "description": "latestRoundData()'s roundId; null when the call failed."
+          },
+          "feedAnswer": {
+            "anyOf": [{ "$ref": "#/components/schemas/DecimalString" }, { "type": "null" }],
+            "description": "latestRoundData()'s answer, raw (the feed's decimals); null when the call failed."
+          },
+          "feedUpdatedAt": {
+            "type": ["integer", "null"],
+            "description": "latestRoundData()'s updatedAt, unix seconds; null when the call failed."
+          },
+          "oracleMultiplierWad": {
+            "anyOf": [{ "$ref": "#/components/schemas/DecimalString" }, { "type": "null" }],
+            "description": "The multiplier Coinbase's oracle registry answers for the stock (getOracleParams), shares per token in WAD (10^18 = 1); null when the call failed, reverted or did not decode."
+          },
+          "oraclePaused": {
+            "type": ["boolean", "null"],
+            "description": "The oracle registry's paused flag: during a corporate action the feed holds its last good value (referenceStatus paused). Not a token pause. null when the call failed."
+          },
+          "tokenMultiplierWad": {
+            "anyOf": [{ "$ref": "#/components/schemas/DecimalString" }, { "type": "null" }],
+            "description": "The token's own multiplier(), shares per token in WAD (1000538000000000000: one token is 1.000538 shares); never applied to the answer. null when the call failed."
+          },
+          "pausedFeatures": {
+            "type": ["array", "null"],
+            "items": { "$ref": "#/components/schemas/PausableFeature" },
+            "description": "pausedFeatures() decoded, in ordinal order; empty when nothing is paused, null when the call failed."
+          },
+          "transfersPaused": {
+            "type": ["boolean", "null"],
+            "description": "pausedFeatures holds transfer: every swap in every pool of the stock reverts, so none of them counts in the depth sums. null when pausedFeatures() failed: unknown is not a pause."
+          },
+          "error": {
+            "type": ["string", "null"],
+            "description": "The failed calls (\"<call>: <reason>\", \"; \"-joined), or why the reading is invalid; null otherwise."
+          }
+        }
+      },
+      "StockDeviationNull": {
+        "type": ["string", "null"],
+        "enum": [
+          "hooked",
+          "thin",
+          "stock-pair",
+          "no-feed",
+          "unread",
+          "paused",
+          "invalid",
+          "held",
+          "quote-unpriced",
+          "no-pool",
+          null
+        ],
+        "description": "Why a stock has no deviation, null when it has one: its deepest pool's deviationNull (ReferenceNullReason), unread when that pool's newest snapshot carries no reference (one stored before schema version 8), or no-pool when no pool is in the depth sums (none has both sides known, every quote is stale, or the stock's transfers are paused)."
+      },
+      "StockVenue": {
+        "type": "object",
+        "description": "A stock's pools on one DEX. Shares are 0..1.",
+        "required": ["dex", "poolCount", "depth2Usd", "depthShare", "volume24hUsd", "volumeShare"],
+        "properties": {
+          "dex": { "$ref": "#/components/schemas/Dex" },
+          "poolCount": { "type": "integer", "description": "The stock's pools on this DEX." },
+          "depth2Usd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "Σ (buy + sell) ±2 % over the venue's pools in the depth sums; null when none is."
+          },
+          "depthShare": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "depth2Usd / (depth2BuyUsd + depth2SellUsd); null when depth2Usd is null or the total is 0."
+          },
+          "volume24hUsd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "Σ of the venue's known 24 h volumes, counted pools or not; null when none is known."
+          },
+          "volumeShare": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "volume24hUsd / the stock's volume24hUsd; null when the venue's volume is unknown or the total is 0."
+          }
+        }
+      },
+      "StockSummary": {
+        "type": "object",
+        "description": "One tokenized stock across every scored pool of it (docs/METRICS.md, Stock aggregates), with its newest reading. A pool counts in the depth sums, the spread and the deepest-pool choice when its quote is not stale and the stock's transfers are not paused; TVL and volume take every pool. A stock's usd on GET /api/tokens/{address}, and a snapshot's token0Usd or token1Usd, are the price graph's valuation convention for depth and TVL, not a stock price; Depthwatch publishes none.",
+        "required": [
+          "stock",
+          "reading",
+          "poolCount",
+          "tvlUsd",
+          "tvlKnownPools",
+          "depth2BuyUsd",
+          "depth2SellUsd",
+          "sidesKnownPools",
+          "spread10kBps",
+          "spread10kPoolId",
+          "volume24hUsd",
+          "volumeKnownPools",
+          "venues",
+          "deepestPoolId",
+          "deviationBps",
+          "withinTolerance",
+          "deviationNull",
+          "updatedAt"
+        ],
+        "properties": {
+          "stock": {
+            "type": "object",
+            "required": ["token", "ticker", "feed"],
+            "properties": {
+              "token": {
+                "$ref": "#/components/schemas/TokenInfo",
+                "description": "The stock token. Match it by address, never by symbol or label: a token's metadata is mutable onchain."
+              },
+              "ticker": {
+                "type": "string",
+                "description": "The ticker of the feed's description, \"Coinbase <ticker>\" (NVDA for NVDAc)."
+              },
+              "feed": {
+                "anyOf": [{ "$ref": "#/components/schemas/StockFeedInfo" }, { "type": "null" }],
+                "description": "The stock's Chainlink feed; null when the stock list records none (referenceStatus no-feed)."
+              }
+            }
+          },
+          "reading": {
+            "anyOf": [{ "$ref": "#/components/schemas/StockReading" }, { "type": "null" }],
+            "description": "The stock's newest stored reading; null before the first one."
+          },
+          "poolCount": { "type": "integer", "description": "Scored pools holding the stock." },
+          "tvlUsd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "Σ tvlUsd of the pools whose TVL is known (tvlKnownPools), counted or not; a lower bound while a Uniswap v4 pool's is unknown; null when none is known."
+          },
+          "tvlKnownPools": { "type": "integer" },
+          "depth2BuyUsd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "Σ of the stock's ±2 % buy sides (the quote as input: depth2UpUsd where the stock is token0, depth2DownUsd where it is token1) over the counted pools with both sides known (sidesKnownPools); null when there is none."
+          },
+          "depth2SellUsd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "Σ of the stock's ±2 % sell sides (the stock as input) over the same pools as depth2BuyUsd; null when there is none."
+          },
+          "sidesKnownPools": {
+            "type": "integer",
+            "description": "The counted pools with both sides known: the pools depth2BuyUsd and depth2SellUsd sum. A pool counts when its quote is not stale and the stock's transfers are not paused."
+          },
+          "spread10kBps": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "The lowest feasible $10k round-trip spread among the counted pools; null when none is feasible."
+          },
+          "spread10kPoolId": {
+            "type": ["string", "null"],
+            "description": "The pool of spread10kBps, ties to the lower pool id."
+          },
+          "volume24hUsd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "Σ 24 h volume of the pools whose volume is known (volumeKnownPools), counted or not: it is what traded; null when none is."
+          },
+          "volumeKnownPools": { "type": "integer" },
+          "venues": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/StockVenue" },
+            "description": "One row per DEX holding a pool of the stock, in the fixed DEX order."
+          },
+          "deepestPoolId": {
+            "type": ["string", "null"],
+            "description": "Among the pools in the depth sums, the one with the largest thinner side (ties: the larger total, then the lower pool id); null when there is none."
+          },
+          "deviationBps": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "The deepest pool's deviationBps from Chainlink's answer (PoolReference); null when deviationNull says why. A deviation, not a stock price."
+          },
+          "withinTolerance": {
+            "type": ["boolean", "null"],
+            "description": "The deepest pool's withinTolerance: true means the deviation is no larger than the feed's 0.5 % band plus the pool's fee explain, no sign of mispricing."
+          },
+          "deviationNull": { "$ref": "#/components/schemas/StockDeviationNull" },
+          "updatedAt": {
+            "$ref": "#/components/schemas/UnixSeconds",
+            "description": "When the stock list was last written: the block time of the newest snapshot pass."
+          }
+        }
+      },
+      "StocksResponse": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/StockSummary" },
+            "description": "Every stock of the stock list, by depth2BuyUsd + depth2SellUsd descending (unknown last), then ticker."
+          }
+        }
+      },
+      "StockPoolRow": {
+        "type": "object",
+        "description": "One scored pool of a stock, oriented to the stock.",
+        "required": ["pool", "stockIs", "depth2BuyUsd", "depth2SellUsd", "counted", "reference"],
+        "properties": {
+          "pool": { "$ref": "#/components/schemas/PoolSummary" },
+          "stockIs": {
+            "type": "string",
+            "enum": ["token0", "token1"],
+            "description": "Which of the pool's tokens is the stock."
+          },
+          "depth2BuyUsd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "The pool's ±2 % side whose input is the quote, buying the stock: depth2UpUsd when the stock is token0, depth2DownUsd when it is token1."
+          },
+          "depth2SellUsd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "The other ±2 % side: the stock as input."
+          },
+          "counted": {
+            "type": "boolean",
+            "description": "The pool counts in the stock's spread and, with both sides known, in its depth sums and deepest-pool choice: its quote is not stale, and the stock's transfers are paused neither at the pool's snapshot (reference.transfersPaused) nor at a newer reading of the stock (either stock's, in a pool of two)."
+          },
+          "reference": {
+            "anyOf": [{ "$ref": "#/components/schemas/PoolReference" }, { "type": "null" }],
+            "description": "The newest snapshot's reference, as latest.reference on GET /api/pools/{id}; null for a snapshot stored before schema version 8."
+          }
+        }
+      },
+      "StockDetail": {
+        "type": "object",
+        "description": "A StockSummary plus pools.",
+        "required": [
+          "stock",
+          "reading",
+          "poolCount",
+          "tvlUsd",
+          "tvlKnownPools",
+          "depth2BuyUsd",
+          "depth2SellUsd",
+          "sidesKnownPools",
+          "spread10kBps",
+          "spread10kPoolId",
+          "volume24hUsd",
+          "volumeKnownPools",
+          "venues",
+          "deepestPoolId",
+          "deviationBps",
+          "withinTolerance",
+          "deviationNull",
+          "updatedAt",
+          "pools"
+        ],
+        "properties": {
+          "stock": {
+            "type": "object",
+            "required": ["token", "ticker", "feed"],
+            "properties": {
+              "token": {
+                "$ref": "#/components/schemas/TokenInfo",
+                "description": "The stock token. Match it by address, never by symbol or label: a token's metadata is mutable onchain."
+              },
+              "ticker": {
+                "type": "string",
+                "description": "The ticker of the feed's description, \"Coinbase <ticker>\" (NVDA for NVDAc)."
+              },
+              "feed": {
+                "anyOf": [{ "$ref": "#/components/schemas/StockFeedInfo" }, { "type": "null" }],
+                "description": "The stock's Chainlink feed; null when the stock list records none (referenceStatus no-feed)."
+              }
+            }
+          },
+          "reading": {
+            "anyOf": [{ "$ref": "#/components/schemas/StockReading" }, { "type": "null" }],
+            "description": "The stock's newest stored reading; null before the first one."
+          },
+          "poolCount": { "type": "integer", "description": "Scored pools holding the stock." },
+          "tvlUsd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "Σ tvlUsd of the pools whose TVL is known (tvlKnownPools), counted or not; a lower bound while a Uniswap v4 pool's is unknown; null when none is known."
+          },
+          "tvlKnownPools": { "type": "integer" },
+          "depth2BuyUsd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "Σ of the stock's ±2 % buy sides (the quote as input: depth2UpUsd where the stock is token0, depth2DownUsd where it is token1) over the counted pools with both sides known (sidesKnownPools); null when there is none."
+          },
+          "depth2SellUsd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "Σ of the stock's ±2 % sell sides (the stock as input) over the same pools as depth2BuyUsd; null when there is none."
+          },
+          "sidesKnownPools": {
+            "type": "integer",
+            "description": "The counted pools with both sides known: the pools depth2BuyUsd and depth2SellUsd sum. A pool counts when its quote is not stale and the stock's transfers are not paused."
+          },
+          "spread10kBps": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "The lowest feasible $10k round-trip spread among the counted pools; null when none is feasible."
+          },
+          "spread10kPoolId": {
+            "type": ["string", "null"],
+            "description": "The pool of spread10kBps, ties to the lower pool id."
+          },
+          "volume24hUsd": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "Σ 24 h volume of the pools whose volume is known (volumeKnownPools), counted or not: it is what traded; null when none is."
+          },
+          "volumeKnownPools": { "type": "integer" },
+          "venues": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/StockVenue" },
+            "description": "One row per DEX holding a pool of the stock, in the fixed DEX order."
+          },
+          "deepestPoolId": {
+            "type": ["string", "null"],
+            "description": "Among the pools in the depth sums, the one with the largest thinner side (ties: the larger total, then the lower pool id); null when there is none."
+          },
+          "deviationBps": {
+            "$ref": "#/components/schemas/NullableNumber",
+            "description": "The deepest pool's deviationBps from Chainlink's answer (PoolReference); null when deviationNull says why. A deviation, not a stock price."
+          },
+          "withinTolerance": {
+            "type": ["boolean", "null"],
+            "description": "The deepest pool's withinTolerance: true means the deviation is no larger than the feed's 0.5 % band plus the pool's fee explain, no sign of mispricing."
+          },
+          "deviationNull": { "$ref": "#/components/schemas/StockDeviationNull" },
+          "updatedAt": {
+            "$ref": "#/components/schemas/UnixSeconds",
+            "description": "When the stock list was last written: the block time of the newest snapshot pass."
+          },
+          "pools": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/StockPoolRow" },
+            "description": "Every scored pool of the stock: the counted pools first, then the larger thinner ±2 % side (unknown last), then the pool id."
           }
         }
       },

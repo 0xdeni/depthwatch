@@ -112,6 +112,11 @@ export type SamplesQuery = z.infer<typeof samplesQuerySchema>
 
 const ADDRESS_RE = /^0x[0-9a-f]{40}$/
 
+/** The 400 body for a path address `parseAddress` rejects (`/api/tokens/:address`, `/api/stocks/:token`). */
+export const INVALID_ADDRESS: ErrorResponse = Object.freeze({
+  error: 'invalid token address: expected 0x + 40 hex chars',
+})
+
 /** The address lowercased (DESIGN.md rule 2), or undefined when it is not 0x + 40 hex chars. */
 export function parseAddress(raw: string): `0x${string}` | undefined {
   const lower = raw.trim().toLowerCase()

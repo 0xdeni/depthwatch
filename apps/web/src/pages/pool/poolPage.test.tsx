@@ -1,12 +1,15 @@
 /**
  * The Pool page's edge cases: stored sides with the price read from the base token, About this
- * pool's identifiers, a pool with no grade, a stale quote, and not found.
+ * pool's identifiers, a pool with no grade, a stale quote, not found, and a tokenized stock's pool
+ * (its stock row and eligibility line, docs/design/stocks-api.md §3).
  */
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createMockClient } from '../../api/mock.js'
+import { createMockClient, MOCK_STOCK_POOLS } from '../../api/mock.js'
 import { NB, usd } from '../../lib/format.js'
+import { ELIGIBILITY_LINE, VALUATION_LABEL } from '../../lib/stockText.js'
+import { expectNoTradeControls } from '../../testing/noTrade.js'
 import { PoolTitle } from './PoolTitle.js'
 import {
   facts,
@@ -260,5 +263,44 @@ describe('Pool page: owners that cover too little of the pool', () => {
     expect(row('Coverage')).toBe(`Coverage1${NB}%`)
     expect(row('Top indexed LP')).toBe(`Top indexed LP100${NB}%`)
     expect(within(who).getByText(/^Indexed owners cover 1/)).toBeTruthy()
+  })
+})
+
+describe('Pool page: a tokenized stock’s pool', () => {
+  it('opens its sheet with the stock row and the eligibility line, and links to the stock', async () => {
+    renderPool(MOCK_STOCK_POOLS.nvdaUsdcAero)
+    await screen.findByRole('heading', { level: 1, name: /^USDC.\/ NVDAc$/ })
+    const titles = [...document.querySelectorAll('.secs .sec h2')].map((h) => h.textContent)
+    expect(titles.slice(0, 3)).toEqual(['tokenized stock', 'health', 'cost to trade'])
+    const stock = screen.getByRole('region', { name: 'tokenized stock' })
+    const text = (stock.textContent ?? '').replace(/ /g, ' ')
+    expect(text).toContain(
+      '+25.06 bps from Chainlink’s answer, within the feed’s 0.5 % band plus the pool’s 0.05 % fee.',
+    )
+    expect(text).toContain('Chainlink’s answer$199.50, Live, 30 min old')
+    expect(text).toContain('This pool’s mid$200.00')
+    expect(text).toContain(VALUATION_LABEL)
+    expect(within(stock).getByText(ELIGIBILITY_LINE)).toBeTruthy()
+    expect(within(stock).getByRole('link', { name: 'NVDAc' }).getAttribute('href')).toBe(
+      '/stocks/0xb26e766461630000000000000000000000000000',
+    )
+    // The stock's price in "Prices used" carries the valuation label too.
+    const about = document.querySelector('.sec-about')?.textContent ?? ''
+    expect(about).toContain(`NVDAc $200.00${VALUATION_LABEL}`)
+    expectNoTradeControls()
+  })
+
+  it('says why a stock pool has no deviation', async () => {
+    renderPool(MOCK_STOCK_POOLS.nvdaUsdcV4)
+    await screen.findByRole('heading', { level: 1, name: /^USDC.\/ NVDAc$/ })
+    const stock = screen.getByRole('region', { name: 'tokenized stock' })
+    expect(within(stock).getByText(/^No deviation from Chainlink’s answer: Too thin/)).toBeTruthy()
+  })
+
+  it('shows no stock row on a pool without a stock', async () => {
+    renderPool(V3_WETH_USDC)
+    await loaded()
+    expect(screen.queryByRole('region', { name: 'tokenized stock' })).toBeNull()
+    expect(document.querySelector('main')?.textContent).not.toContain(ELIGIBILITY_LINE)
   })
 })

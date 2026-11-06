@@ -2,8 +2,10 @@
  * `discover --seed` (and `run --seed`, `start`): pool discovery without `eth_getLogs`, for an
  * endpoint that cannot serve factory log scans (Alchemy's free tier answers 10-block ranges only).
  * The chain reader asks each DEX for the pools of every pair of the reference tokens and the
- * configured extra tokens (`--seed-token`, DEPTHWATCH_SEED_TOKENS) at the head
- * (`ChainReader.seedPools`, about a dozen multicalls) and finds each new pool's creation block by
+ * configured extra tokens (`--seed-token`, DEPTHWATCH_SEED_TOKENS), and of each tokenized stock of
+ * the reader's stock list (`chain.stocks`, the ten of base.org/stocks) with each of those tokens,
+ * never with another stock (`crossTokens`, docs/design/stocks.md §3, §4), at the head
+ * (`ChainReader.seedPools`, about two dozen multicalls) and finds each new pool's creation block by
  * binary search over archive state (about 26 to 28 requests per pool, the log2 of the height,
  * which grows 432,000 blocks a day since Denim). Pools already in the database
  * keep their stored creation block and cost no search, so a rerun costs only the factory reads.
@@ -64,15 +66,20 @@ export async function seedStep(
       ...ctx.config.seedTokens,
     ]),
   ]
+  // The stocks are cross tokens: each with every token above, never with another stock, so their
+  // candidates grow linearly with the stock list (docs/design/stocks.md §3).
+  const crossTokens = chain.stocks.tokens.map((t) => t.address)
   log.info('seeding from factory views', {
     dexes: dexes.join(','),
     tokens: tokens.length,
     ...(ctx.config.seedTokens.length > 0 ? { extra: ctx.config.seedTokens.join(',') } : {}),
+    stocks: crossTokens.length,
   })
   let added = 0
   const result = await chain.seedPools({
     dexes,
     tokens,
+    crossTokens,
     knownCreatedAt: (id) => db.pools.get(id)?.createdAtBlock,
     concurrency: ctx.config.concurrency,
     batchSize: opts.batchSize,

@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
 import type { ScorecardsResponse } from '../dto.js'
 import { createSeededDatabase, type Seed } from '../testing/seed.js'
+import { seedStocks } from '../testing/stocks.js'
 
 const ADMIN_TOKEN = 'test-admin-token'
 const CANARY = 'canary-9f3a7c1e5d42b8'
@@ -47,6 +48,7 @@ function parameterValues(path: string, db: Database, seed: Seed): string[] | und
   if (path.startsWith('/api/tokens/'))
     return Object.values(seed.tokens).map((token) => token.address)
   if (path.startsWith('/api/mm/')) return db.mandates.list().map((mandate) => mandate.id)
+  if (path.startsWith('/api/stocks/')) return db.stocks.list().map((stock) => stock.token.address)
   return undefined
 }
 
@@ -83,6 +85,8 @@ describe('the alert webhook URL never leaves the database', () => {
 
   beforeEach(async () => {
     ;({ db, seed } = createSeededDatabase())
+    // Stocks too, so that the stock routes are read with stocks to answer about.
+    seedStocks(db, seed)
     app = createApp(db, { now: () => seed.now, adminToken: ADMIN_TOKEN })
   })
   afterEach(() => db.close())
@@ -173,6 +177,8 @@ describe('the alert webhook URL never leaves the database', () => {
         '/api/pools/:id',
         '/api/pools/:id/history',
         '/api/tokens/:address',
+        '/api/stocks',
+        '/api/stocks/:token',
       ]),
     )
     let reads = 0

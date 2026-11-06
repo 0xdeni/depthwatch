@@ -28,7 +28,8 @@ jobs:
     # would deploy that branch's build and save its database in that branch's cache.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # A first run seeds the pools of the reference tokens. On 29 October 2026 the seed took 24
+    # A first run seeds the pools of the reference tokens (and, since the stocks change, of the
+    # ten tokenized stocks with them: 6,200 more factory calls). On 29 October 2026 the seed took 24
     # minutes on Alchemy's free tier (about 14,600 creation-block search requests) and the whole run
     # about 28. Later runs are expected to take a few minutes.
     timeout-minutes: 45

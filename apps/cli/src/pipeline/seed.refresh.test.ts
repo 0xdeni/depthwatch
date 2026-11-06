@@ -5,6 +5,7 @@
  * pool with a snapshot keeps its stored fee; a failed re-read fails `aero-slipstream`.
  */
 import {
+  BASE_STOCKS,
   createChainReader,
   createFixture,
   createFixtureTransport,
@@ -36,6 +37,8 @@ const OUTSIDE_ID = `aero-slipstream:${OUTSIDE}`
 const OTHER_HOOK = addr(0x4004)
 const WORLD = {
   addresses: resolveAddresses({ referenceTokens: [...addresses.referenceTokens, PROJECT] }),
+  // The reader's default stock list is seeded as cross tokens; none of them has a pool here.
+  crossTokens: BASE_STOCKS.tokens,
   pools: [
     {
       dex: 'aero-slipstream',

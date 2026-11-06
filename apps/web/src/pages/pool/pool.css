@@ -119,3 +119,15 @@
     gap: var(--s6);
   }
 }
+
+/* A stock pool's eligibility line, under its tokenized stock facts. */
+.pool-elig {
+  max-width: 64ch;
+}
+/* A note under a value in a definition list: the valuation-convention label. */
+.about-note {
+  flex-basis: 100%;
+  font-size: var(--t-small);
+  font-weight: 500;
+  color: var(--text-2);
+}

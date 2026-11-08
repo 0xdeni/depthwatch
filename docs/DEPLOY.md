@@ -384,10 +384,18 @@ switch off and exits with code 3, the workflow publishes the site with trading o
 run fails, so a mistyped `off` still switches off and the failure is still seen. The limits,
 $1,000 per swap and at most 3 % slippage, are set in the code, not by the variable.
 
+On 8 November 2026 the production site's switch was turned on for Uniswap v3 and Aerodrome
+Slipstream: `DEPTHWATCH_TRADE` was set to `uniswap-v3,aerodrome-slipstream` and a Trade switch run
+published it, after which <https://depthwatch.pages.dev/data/flags.json> served `"enabled":true`
+with both venues, `"maxUsd":1000` and `"maxSlippageBps":300`. The live test before it covered the
+smart-wallet path only: the extension-wallet half of the third condition of
+[Before switching on](#before-switching-on) was not run live and rests on the fork test
+([The live test](#the-live-test)). That file, not this page, says what the site serves now.
+
 ### Before switching on
 
 Trading ships switched off. Until all three of these hold, the only values to use are unset (the
-default) or `off`:
+default) or `off`, apart from a live test on the production site as the third allows:
 - The wording is still switch-agnostic, so switching on needs no release of its own. README.md,
   AGENTS.md, DESIGN.md, the non-goals of docs/ROADMAP.md, the scope of SECURITY.md and
   docs/ARCHITECTURE.md describe the swap panel as optional and off unless switched on, and none
@@ -402,10 +410,77 @@ default) or `off`:
   trading on (production off), in an extension wallet and a smart wallet, each checked on
   Basescan (the router, the exact approval, the Builder Code at the end of the input or of the
   user operation); the steps and the checklist are in
-  [Trade preview (the live test)](#trade-preview-the-live-test).
+  [Trade preview (the live test)](#trade-preview-the-live-test). A wallet whose browser blocks the
+  preview address, as the Base App's did, makes its swaps on the production site instead, with the
+  same checks: Trade switch turns the switch on there for the venues under test, for the length of
+  the test only, and off again right after it ([The live test](#the-live-test)). While it is on,
+  anyone can use the production site's swap panel, within the limits set in the code.
 
 Flipping the variable needs no code release, so nothing in the code enforces this list: whoever
 changes the variable checks it.
+
+### The live test
+
+The live test ran on 5 November 2026, from 00:19 to 00:22 UTC (blocks 53,524,299 to 53,524,395,
+2 s blocks before Denim), with the Base App: a smart wallet, an EIP-7702 account that sends
+ERC-4337 user operations through EntryPoint v0.6 (`0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789`),
+so each transaction below is a bundle (`handleOps`) sent to the EntryPoint with the account's user
+operation inside it. It ran on the production site, <https://depthwatch.pages.dev>, with the
+switch on for about an hour, not on the preview: the Base App's in-app browser blocked the preview
+address ([Trade preview (the live test)](#trade-preview-the-live-test)). Each venue got one round
+trip of 0.001 ETH (about $2.4) in one WETH/USDC pool: ETH in, then the USDC received back to ETH
+through the ERC-20 approve path, an approval of exactly that USDC before the swap.
+
+| #   | Venue                | Transaction               | What it did                                                                   |
+| --- | -------------------- | ------------------------- | ----------------------------------------------------------------------------- |
+| 1   | Uniswap v3           | [0xbe1188f2…2739][live-1] | 0.001 ETH in, 2.425229 USDC out (minimum 2.423016)                            |
+| 2   | Uniswap v3           | [0x3b791828…d352][live-2] | Approval of exactly 2.425229 USDC to SwapRouter02                             |
+| 3   | Uniswap v3           | [0xd08031fe…dc2f][live-3] | 2.425229 USDC in, 0.000998786820554117 ETH out (minimum 0.000997788053190322) |
+| 4   | Aerodrome Slipstream | [0x486e1ce1…21cc][live-4] | 0.001 ETH in, 2.427474 USDC out (minimum 2.425046)                            |
+| 5   | Aerodrome Slipstream | [0xbdfaf67c…00fd][live-5] | Approval of exactly 2.427474 USDC to the gauges-v3 router                     |
+| 6   | Aerodrome Slipstream | [0xce2529cd…c00d][live-6] | 2.427474 USDC in, 0.000999467168059571 ETH out (minimum 0.000998500383434827) |
+
+[live-1]: https://basescan.org/tx/0xbe1188f2c926e60a91368f8ddfc0c70e42a79bce3695268b7544f090228c2739
+[live-2]: https://basescan.org/tx/0x3b7918280838420a98cb29bdb295bf2c6c33a987bb123067006a7ab0ad03d352
+[live-3]: https://basescan.org/tx/0xd08031fe197a52fe05ab5400c88cf6491a7d7ad1fa2982639ca08c0c25d8dc2f
+[live-4]: https://basescan.org/tx/0x486e1ce14bc72e8c9a124e5bcd6c60b0cda3e26e6bca8751e17d0364c1c021cc
+[live-5]: https://basescan.org/tx/0xbdfaf67cfd0adfe023bf003c6277d392d4a3d910c2388d008b778dd0d0e400fd
+[live-6]: https://basescan.org/tx/0xce2529cd55ee896b1f805ac1610b5711cf668bca6fcbcb8460f0a3adc271c00d
+
+The Uniswap v3 pool is WETH/USDC at 0.05 %
+([`0xd0b53d92…a798f224`](https://basescan.org/address/0xd0b53d9277642d899df5c87a3966a349a798f224)),
+traded through SwapRouter02: swap 1 calls `multicall(deadline, [exactInputSingle, refundETH])`,
+and swap 3 has the WETH paid to the router, which `unwrapWETH9` then pays to the account as ETH.
+The Aerodrome Slipstream pool is WETH/USDC at tick spacing 50
+([`0x3fe04a59…eb59392a`](https://basescan.org/address/0x3fe04a59ebd38cf06080a6f60a98d124eb59392a)),
+traded through the router of the gauges-v3 deployment: swap 6 calls `multicall` with
+`exactInputSingle` to the router and `unwrapWETH9` to the account. Approval 2 came in a bundle
+that also held another account's user operation. Every transaction and user operation succeeded.
+What was checked:
+- **Router.** Every swap went to the router that `TRADE_ROUTES` gives the pool's venue and
+  deployment (README, [Swap panel](../README.md#the-dashboard)).
+- **Approvals.** Both name that router as spender for exactly the swap's input amount, and the
+  allowance was 0 again after the swap.
+- **Amounts.** Each ETH-in swap received exactly what the venue's quoter quoted one block before
+  its inclusion. Each minimum is 0.1 % under the quote the review showed (the 0.1 % slippage
+  preset was chosen). The account's ETH and USDC balances moved as expected.
+- **Builder Code.** The `callData` of each of the six user operations ends with one ERC-8021
+  suffix carrying two codes, `bc_j6obesn8` and `bc_mnip`:
+  `0x62635f6a366f6265736e382c62635f6d6e6970130080218021802180218021802180218021`, that is the
+  codes `bc_j6obesn8,bc_mnip`, their length (`0x13`, 19), the schema (`00`) and the marker. The panel
+  hands its suffix to a smart wallet through the `dataSuffix` capability of `wallet_sendCalls`,
+  and the Base App merged it with its own code (`bc_mnip`) into one suffix, so Depthwatch's
+  29-byte suffix does not appear verbatim in them. A search for the transactions attributed to
+  `bc_j6obesn8` must therefore decode the ERC-8021 suffix at the end of each user operation's
+  `callData` (or of a transaction's input) and look for the code among its codes: matching the
+  29 bytes misses every transaction of a wallet that merges. The panel's read-back
+  (`apps/web/src/trade/readBack.ts`) decodes such a suffix, and the swap's Details report the code
+  when it is one of the suffix's codes.
+
+Not covered live: an extension wallet, a plain account to which the panel sends
+`eth_sendTransaction` with the suffix at the end of the transaction's own input. That path rests on
+the fork test of each venue, direction and ETH in and out. No pool but these two was traded, and
+no swap went to the routers of Aerodrome Slipstream's `initial` and `gauge-caps` deployments.
 
 ### Changing the switch
 
@@ -479,7 +554,8 @@ step 3 needs a computer:
    still serves the switch off. Its summary gives the preview's address, the switch, the run's own
    deployment address and the number of earlier deployments deleted.
 3. Open <https://trade-preview.depthwatch.pages.dev> in each wallet's browser and go through the
-   checklist below.
+   checklist below. A wallet whose browser blocks the preview, as the Base App's did, is tested on
+   the production site instead ([Before switching on](#before-switching-on)).
 4. Right after the test, run Trade preview again with `off`: while the preview is on, anyone with
    its address can use its swap panel, within the limits set in the code. That run serves the
    switch off and deletes the deployment that had it on; its summary says none is left.
@@ -516,7 +592,11 @@ step 3 needs a computer:
      delete that one too.
    - **Check the production switch is off**: open <https://depthwatch.pages.dev/data/flags.json>.
      If it does not serve `"enabled":false` while `DEPTHWATCH_TRADE` is unset or `off`, run Trade
-     switch now and check that the project's production branch is `main`.
+     switch now and check that the project's production branch is `main`. While the variable
+     switches production on, as it has since 8 November 2026 ([Trade switch](#trade-switch)), this
+     step fails every run by design, after the preview was published and the earlier previews
+     deleted; for a run that turns green, such as the live test of a further venue, switch
+     production off first.
 
 The live test, for each venue to be listed, with small amounts, from a browser-extension wallet
 and from a smart wallet (Base App):
@@ -536,7 +616,9 @@ Each transaction is checked on Basescan:
 - **Builder Code.** The transaction's input, or for a smart wallet the `callData` of its user
   operation, ends with `0x62635f6a366f6265736e380b0080218021802180218021802180218021`, the ERC-8021
   suffix of `bc_j6obesn8` (`apps/web/src/trade/builderCode.ts`): its last 58 hex digits. The
-  approval carries it too.
+  approval carries it too. A wallet with a code of its own may merge the two into one suffix, as
+  the Base App did: those 58 hex digits are then absent, and the codes of the suffix at the end
+  include `bc_j6obesn8` ([The live test](#the-live-test)).
 
 Seen on the first run (4 November 2026): Pages serves the alias `trade-preview.depthwatch.pages.dev`
 for this project, as Cloudflare documents for every branch of a Direct Upload project, and
@@ -553,6 +635,13 @@ pages, and the refusal to delete the deployment an alias points to); whether a p
 Basescan shows a user operation; and these steps on a phone. Cloudflare can also limit previews to
 the account (the project's Settings, General, Enable access policy); whether that covers the alias
 and works in a wallet's browser is unverified too.
+
+Seen during the live test (5 November 2026): the Base App's in-app browser blocked
+<https://trade-preview.depthwatch.pages.dev> with "This site has been blocked and flagged as
+potentially dangerous", while it opened <https://depthwatch.pages.dev> with a warning. Neither
+address was on MetaMask's eth-phishing-detect list, which holds over 14,000 `*.pages.dev` entries,
+or flagged by Google Safe Browsing at the time. That wallet's swaps were made on the production
+site instead ([The live test](#the-live-test)).
 
 ## Upgrading
 

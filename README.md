@@ -126,6 +126,29 @@ router; it never routes or recommends a pool, never holds the visitor's funds an
 swap carries Depthwatch's Builder Code (ERC-8021), which lets Base attribute the transaction
 onchain; the code adds no fee, only 29 bytes of calldata (a negligible amount of gas).
 
+A swap goes only to the router that `TRADE_ROUTES` (`packages/chain/src/addresses.ts`) binds to
+the pool's venue and factory; the routers are compiled in, never taken from the data:
+
+| Venue                  | Deployment   | Router                                                         | On hold |
+| ---------------------- | ------------ | -------------------------------------------------------------- | ------- |
+| `uniswap-v3`           | `uniswap-v3` | [`0x2626664c2603336e57b271c5c0b26f421741e481`][router-uniswap] | no      |
+| `aerodrome-slipstream` | `initial`    | [`0xbe6d8f0d05cc4be24d5167a3ef062215be6d18a5`][router-initial] | no      |
+| `aerodrome-slipstream` | `gauge-caps` | [`0xcbbb8035cac7d4b3ca7abb74cf7bdf900215ce0d`][router-caps]    | no      |
+| `aerodrome-slipstream` | `gauges-v3`  | [`0x698cb2b6dd822994581fea6ea4fc755d1363a92f`][router-v3]      | no      |
+| `aero-slipstream`      | `aero`       | [`0x9ee35bf1bd69a03c6f0393582030fce8bb93d418`][router-aero]    | yes     |
+
+[router-uniswap]: https://basescan.org/address/0x2626664c2603336e57b271c5c0b26f421741e481
+[router-initial]: https://basescan.org/address/0xbe6d8f0d05cc4be24d5167a3ef062215be6d18a5
+[router-caps]: https://basescan.org/address/0xcbbb8035cac7d4b3ca7abb74cf7bdf900215ce0d
+[router-v3]: https://basescan.org/address/0x698cb2b6dd822994581fea6ea4fc755d1363a92f
+[router-aero]: https://basescan.org/address/0x9ee35bf1bd69a03c6f0393582030fce8bb93d418
+
+A route on hold is never used, and the trade switch refuses a venue whose every route is on hold,
+until the checks it waits for in [docs/research/base-contracts.md](docs/research/base-contracts.md)
+are done. The panel offers a swap only in a pool whose two tokens are both in `TRADE_TOKENS`
+(WETH, USDC, cbBTC, cbETH, wstETH, Aero's AERO, DAI, EURC, USDT, USDbC, DEGEN, VIRTUAL and BRETT;
+native ETH trades as WETH), and the code caps a swap at $1,000 and 3 % slippage.
+
 ## Quick start
 
 Requirements: Node ≥ 22.13 (see `.nvmrc`) and pnpm 10 (`corepack enable` is enough).

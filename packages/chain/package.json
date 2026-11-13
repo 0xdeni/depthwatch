@@ -20,6 +20,6 @@
   },
   "dependencies": {
     "@depthwatch/core": "workspace:*",
-    "viem": "^2.37.0"
+    "viem": "^2.57.17"
   }
 }

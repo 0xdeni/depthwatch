@@ -271,6 +271,8 @@ export function assertStaticBundle(value: unknown): StaticBundle {
   if (typeof value.generatedAt !== 'number') return fail('generatedAt is not a number')
   if (value.note !== undefined && typeof value.note !== 'string')
     return fail('note is not a string')
+  if (value.updates !== undefined && value.updates !== 'several-times-a-day')
+    return fail('updates is not several-times-a-day')
   if (typeof value.gapsMinVolumeUsd !== 'number') return fail('gapsMinVolumeUsd is not a number')
   if (!isRecord(value.health) || !isRecord(value.stats)) return fail('health or stats missing')
   for (const key of ARRAY_KEYS) if (!Array.isArray(value[key])) fail(`${key} is not an array`)
@@ -293,12 +295,15 @@ export interface StaticSnapshot {
   block: string | null
   /** The exporter's note (`depthwatch export --note`), trimmed; null when there is none. */
   note: string | null
+  /** How often the publisher replaces the copy (`depthwatch export --updates`); null: never said. */
+  updates: 'several-times-a-day' | null
 }
 
 /**
  * A `live` bundle on the static site is a snapshot of Base mainnet that never updates: when it
- * was read, at which block, when it was exported and the exporter's note. A demo bundle is not a
- * snapshot (its clock is frozen instead, staticBoot.tsx), so it has none.
+ * was read, at which block, when it was exported, the exporter's note and how often the publisher
+ * replaces it. A demo bundle is not a snapshot (its clock is frozen instead, staticBoot.tsx), so
+ * it has none.
  */
 export function snapshotOf(bundle: StaticBundle): StaticSnapshot | undefined {
   if (bundle.source !== 'live') return undefined
@@ -308,6 +313,7 @@ export function snapshotOf(bundle: StaticBundle): StaticSnapshot | undefined {
     exportedAt: bundle.generatedAt,
     block: bundle.health.latestBlock,
     note: note === '' ? null : note,
+    updates: bundle.updates ?? null,
   }
 }
 

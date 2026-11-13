@@ -18,7 +18,7 @@ import type { HistoryWindow, PoolDetail as PoolDetailDto } from '../api/types.js
 import { BackLink } from '../components/ui/BackLink.js'
 import { SectionsSheet } from '../components/ui/Section.js'
 import { NotFoundState, SectionError, useDelayedPending } from '../components/ui/States.js'
-import { pairLabel } from '../lib/format.js'
+import { poolPageTitle } from '../lib/pageTitle.js'
 import { cachedPoolSummary } from '../routeData.js'
 import { OverTime } from './pool/OverTime.js'
 import { PoolAbout } from './pool/PoolAbout.js'
@@ -51,10 +51,9 @@ function PoolView({
   onWindow: (w: HistoryWindow) => void
 }) {
   const { pool, latest } = detail
-  const pair = pairLabel(pool.token0, pool.token1)
   return (
     <div className="pool">
-      <title>{`${pair} – Depthwatch`}</title>
+      <title>{poolPageTitle(pool)}</title>
       <PoolTitle
         pool={pool}
         spot={latest?.price ?? null}
@@ -111,11 +110,14 @@ export function PoolDetail() {
     content = <PoolView detail={pool.data} win={win} onWindow={onWindow} />
   } else if (pool.isError && isNotFound(pool.error)) {
     content = (
-      <NotFoundState
-        title="pool not found"
-        message="Depthwatch does not track this pool, or the link is wrong."
-        id={id}
-      />
+      <>
+        <title>Pool not found – Depthwatch</title>
+        <NotFoundState
+          title="pool not found"
+          message="Depthwatch does not track this pool, or the link is wrong."
+          id={id}
+        />
+      </>
     )
   } else if (pool.isError) {
     content = (

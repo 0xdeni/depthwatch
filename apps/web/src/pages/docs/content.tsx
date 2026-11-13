@@ -8,6 +8,7 @@
  */
 import { GAP_FEED_MIN_VOLUME_USD, SPREAD_NOTIONALS_USD } from '@depthwatch/core'
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { NB, usd } from '../../lib/format.js'
 import { DepthSchematic, KpiSchematic, PersistenceSchematic } from './figures.js'
 import { GapScale, HealthFigure } from './scales.js'
@@ -188,6 +189,13 @@ export const SECTIONS: readonly MetricSection[] = [
         </p>
         <p>
           {`Each sample is within KPI or breached; a sample with a missing USD price counts on neither side. Uptime is the share of evaluable samples within KPI over ${u(24, 'h')}, ${u(7, 'd')} and ${u(30, 'd')}. The agreed target uptime is shown for comparison and never decides the status.`}
+        </p>
+        <p>
+          The{' '}
+          <Link className="plink" to="/mm">
+            scorecards page
+          </Link>{' '}
+          lists every registered mandate with its scorecard.
         </p>
       </>
     ),

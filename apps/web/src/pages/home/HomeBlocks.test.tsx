@@ -173,14 +173,21 @@ describe('Home: previews', () => {
     await waitFor(() => expect(rows[0]?.textContent).toContain('Demo Markets on USDC / AERO'))
   })
 
-  it('turns the scorecards preview into one destination when no mandate is registered', async () => {
+  it('leaves the scorecards preview out while no mandate is registered, the gaps taking the row', async () => {
     renderHome(withClient({ scorecards: async () => ({ items: [] }) }))
-    await screen.findByText('No market-maker mandates are registered yet.')
-    const mm = preview('market makers on the record')
-    expect(mm.tagName).toBe('A')
-    expect(mm.getAttribute('href')).toBe('/methodology#scorecards')
-    expect(mm.textContent).toContain('How scorecards work')
-    expect(within(mm).queryByRole('list')).toBeNull()
+    const gaps = await screen.findByRole('heading', { level: 2, name: 'where liquidity is thin' })
+    await waitFor(() =>
+      expect(
+        within(gaps.closest('section') as HTMLElement).getAllByRole('listitem').length,
+      ).toBeGreaterThan(0),
+    )
+    expect(screen.queryByRole('heading', { name: 'market makers on the record' })).toBeNull()
+    expect(gaps.closest('section')?.classList.contains('c12')).toBe(true)
+    // With mandates, the two share the row.
+    cleanup()
+    renderHome()
+    await screen.findByRole('heading', { level: 2, name: 'market makers on the record' })
+    expect(preview('where liquidity is thin').classList.contains('c7')).toBe(true)
   })
 
   it('names an unscored mandated pool by its short address', async () => {

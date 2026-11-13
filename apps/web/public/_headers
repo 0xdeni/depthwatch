@@ -1,11 +1,21 @@
 # Response headers of the static site. Cloudflare Pages reads this file from the output directory
 # (apps/web/dist-static; docs/DEPLOY.md, "A free static copy"); `depthwatch serve` does not, and the
 # server build leaves it out. The script-src hash is that of the one inline script of index.html:
-# plugins/securityHeaders.ts fails the build when they differ.
+# plugins/securityHeaders.ts fails the build when they differ. Pages joins the values a header gets
+# from every rule that matches a path, so Cache-Control is set by one rule per path, never by /*.
 /*
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-+t75D1PcKfhe0LL2qhmuxA8LkyMeR1sdPObgo4Gr5rY='; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+# The build's scripts and styles: each name carries a hash of its content, so a copy never goes out
+# of date.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The self-hosted fonts keep their names from one build to the next: a month.
+/fonts/*
+  Cache-Control: public, max-age=2592000
 
 # The trade switch: the dashboard reads it again before every signature request.
 /data/flags.json

@@ -129,7 +129,7 @@ panel, and no stock page links to a swap.
   reading per stock with its depth; a pool whose stock's transfers are paused is unrated
   (`transfers-paused`) and left out of the depth sums; `GET /api/stocks` and
   `GET /api/stocks/:token`, the Stocks pages, a stock pool's tokenized-stock section and the
-  eligibility line in every page's footer; the served AGENTS.md section "How to read a stock's
+  eligibility line on those pages and their footer; the served AGENTS.md section "How to read a stock's
   liquidity".
 - **Next** ([design/stocks.md](design/stocks.md#8-deferred-not-in-the-mvp) §8): a history route
   per stock and the off-hours depth, computed from the stored readings (kept from the first pass

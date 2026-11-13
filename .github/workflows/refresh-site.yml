@@ -164,7 +164,8 @@ jobs:
         run: |
           code=0
           pnpm depthwatch export --out apps/web/static-data/bundle.json \
-            --note "Read from Base mainnet by the Depthwatch pipeline, about every three hours, through a free RPC plan. Each copy is a snapshot: it does not change until the next one replaces it." \
+            --note "Read from Base mainnet by the Depthwatch pipeline several times a day, through a free RPC plan. Each copy is a snapshot: it does not change until the next one replaces it." \
+            --updates several-times-a-day \
             || code=$?
           if [ "$code" = 3 ]; then
             echo "trade_refused=true" >> "$GITHUB_OUTPUT"

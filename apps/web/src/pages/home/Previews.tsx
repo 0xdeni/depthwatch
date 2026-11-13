@@ -3,9 +3,9 @@
  * - "where liquidity is thin" (7 columns): the count sentence, the three biggest gaps as rows
  *   (pool, "Trades 205× its depth a day", the turnover glyph and the gap score), then "See all
  *   gaps" and the glyph's caption;
- * - "market makers on the record" (5 columns): with no mandate, one destination panel saying so
- *   and what a scorecard is; with mandates, their rows (status, name, market maker and pool, 7 d
- *   uptime against its target) and "See all scorecards".
+ * - "market makers on the record" (5 columns): the mandates' rows (status, name, market maker and
+ *   pool, 7 d uptime against its target) and "See all scorecards". Home shows it only once a
+ *   mandate is registered; until then the gaps preview spans the whole row (`wide`).
  * The full feeds live on /gaps and /mm.
  */
 import type { UseQueryResult } from '@tanstack/react-query'
@@ -20,20 +20,13 @@ import type {
   ScorecardsResponse,
 } from '../../api/types.js'
 import { TurnoverGlyph } from '../../components/charts/index.js'
-import { Block, blockClass } from '../../components/ui/Block.js'
+import { blockClass } from '../../components/ui/Block.js'
 import { Glossary } from '../../components/ui/Glossary.js'
 import { MandateRow } from '../../components/ui/MandateRow.js'
 import { SectionError, Skeleton } from '../../components/ui/States.js'
 import { pairLabel, poolDesc, poolHref, ratio, score, shortAddress } from '../../lib/format.js'
 import { splitPoolId } from '../../lib/scorecard.js'
-import {
-  GAPS_QUIET_LINE,
-  gapsTakeaway,
-  KPIS_DEFINITION,
-  mandatesTakeaway,
-  noMandates,
-  SCORECARD_LINE,
-} from './copy.js'
+import { GAPS_QUIET_LINE, gapsTakeaway, KPIS_DEFINITION, mandatesTakeaway } from './copy.js'
 
 /** Rows in each preview (P7: previews hold at most 3 rows and link out). */
 export const PREVIEW_ROWS = 3
@@ -53,7 +46,7 @@ function Preview({
 }: {
   id: string
   title: string
-  span: 5 | 7
+  span: 5 | 7 | 12
   panel?: boolean
   takeaway: ReactNode
   busy?: boolean
@@ -133,6 +126,7 @@ export function GapsPreview({
   meaningful,
   count,
   waiting,
+  wide = false,
 }: {
   gaps: UseQueryResult<GapsResponse>
   /** The first page's pools trading 3× their depth or more, highest first. */
@@ -141,7 +135,10 @@ export function GapsPreview({
   count: number | undefined
   /** Loading for under 300 ms: the skeleton holds its space unseen (M10). */
   waiting: boolean
+  /** Alone in its row (no scorecards preview beside it): the full width. */
+  wide?: boolean
 }) {
+  const span = wide ? 12 : 7
   const foot = (caption: boolean) => (
     <div className="blk-foot">
       <Link className="ulink touch-hit" to="/gaps">
@@ -152,20 +149,20 @@ export function GapsPreview({
   )
   if (gaps.isError)
     return (
-      <Preview id="home-gaps" title={GAPS_TITLE} span={7} takeaway={null}>
+      <Preview id="home-gaps" title={GAPS_TITLE} span={span} takeaway={null}>
         <SectionError what="the gaps" onRetry={() => void gaps.refetch()} />
         {foot(false)}
       </Preview>
     )
   if (!meaningful || count === undefined)
     return (
-      <Preview id="home-gaps" title={GAPS_TITLE} span={7} takeaway={skeletonTake(waiting)} busy>
+      <Preview id="home-gaps" title={GAPS_TITLE} span={span} takeaway={skeletonTake(waiting)} busy>
         <SkeletonBody waiting={waiting} />
       </Preview>
     )
   const shown = meaningful.slice(0, PREVIEW_ROWS)
   return (
-    <Preview id="home-gaps" title={GAPS_TITLE} span={7} takeaway={gapsTakeaway(count)}>
+    <Preview id="home-gaps" title={GAPS_TITLE} span={span} takeaway={gapsTakeaway(count)}>
       {shown.length > 0 ? (
         <ul className="rowlist is-ruled">
           {shown.map((g) => (
@@ -188,14 +185,11 @@ function poolName(poolId: string, meta: PoolMetaDto | undefined): string {
 export function MandatesPreview({
   scorecards,
   pools,
-  snapshot,
   waiting,
 }: {
   scorecards: UseQueryResult<ScorecardsResponse>
   /** Every scored pool, for the mandated pools' names. */
   pools: readonly PoolSummary[] | undefined
-  /** The page shows a published snapshot, which speaks of itself as one. */
-  snapshot: boolean
   waiting: boolean
 }) {
   const items = scorecards.data?.items
@@ -216,19 +210,8 @@ export function MandatesPreview({
         <SkeletonBody waiting={waiting} />
       </Preview>
     )
-  if (items.length === 0)
-    return (
-      <Block variant="panel" span={5} to="/methodology#scorecards" className="home-pv home-mm">
-        <span className="blk-head">
-          <h2 className="h2" id="home-mm">
-            {MM_TITLE}
-          </h2>
-          <span className="take">{noMandates(snapshot)}</span>
-        </span>
-        <span className="take">{SCORECARD_LINE}</span>
-        <span className="ulink">How scorecards work</span>
-      </Block>
-    )
+  // Home leaves the block out while no mandate is registered.
+  if (items.length === 0) return null
   const words = mandatesTakeaway(items)
   return (
     <Preview

@@ -193,6 +193,14 @@ describe('loadStaticBundle', () => {
     // `note` is optional: bundles exported without --note (every demo export) have none.
     expect(Object.hasOwn(BUNDLE, 'note')).toBe(false)
     expect(assertStaticBundle({ ...BUNDLE, note: 'Top pools.' }).note).toBe('Top pools.')
+    // `updates` too: a copy exported once states no schedule; a stated one is the only value.
+    expect(Object.hasOwn(BUNDLE, 'updates')).toBe(false)
+    expect(() => assertStaticBundle({ ...BUNDLE, updates: 'hourly' })).toThrow(
+      /updates is not several-times-a-day/,
+    )
+    expect(assertStaticBundle({ ...BUNDLE, updates: 'several-times-a-day' }).updates).toBe(
+      'several-times-a-day',
+    )
   })
 })
 
@@ -203,9 +211,13 @@ describe('snapshotOf: a live bundle is a dated snapshot', () => {
       exportedAt: NOW + 600,
       block: BUNDLE.health.latestBlock,
       note: 'Top pools.',
+      updates: null,
     })
     expect(snapshotOf(BUNDLE)?.note).toBeNull()
     expect(snapshotOf({ ...BUNDLE, note: ' \n ' })?.note).toBeNull()
+    expect(snapshotOf({ ...BUNDLE, updates: 'several-times-a-day' })?.updates).toBe(
+      'several-times-a-day',
+    )
   })
 
   it('falls back to the export time before any snapshot', () => {
@@ -215,6 +227,7 @@ describe('snapshotOf: a live bundle is a dated snapshot', () => {
       exportedAt: NOW,
       block: null,
       note: null,
+      updates: null,
     })
   })
 

@@ -4,8 +4,9 @@
  * Content-Security-Policy runs only this origin's scripts plus the inline scripts of index.html by
  * hash, fetches go to this origin only (the static client reads `./data/bundle.json` and
  * `./data/flags.json`; the trade panel reads the chain through the user's wallet, not over HTTP),
- * and the trade switch is never cached. The build checks the built index.html the same way, and
- * refuses a URL pattern that opens two blocks (`securityHeaders` below);
+ * the trade switch is never cached, the hashed build output is cached for a year and the fonts for
+ * a month, each path by one Cache-Control rule only. The build checks the built index.html the
+ * same way, and refuses a URL pattern that opens two blocks (`securityHeaders` below);
  * `src/productionBundle.test.ts` runs that build.
  */
 import { spawnSync } from 'node:child_process'
@@ -34,9 +35,29 @@ const indexHtml = readFileSync(resolve(HEADERS_SOURCE, '..', '..', 'index.html')
 const policy = headersFor(rules, '/').get('content-security-policy') ?? ''
 const directives = cspDirectives(policy)
 
+/** The rules' patterns, in file order. */
+const PATTERNS = ['/*', '/assets/*', '/fonts/*', '/data/flags.json']
+
+/** Paths the static site serves, one or more under each rule. */
+const SERVED = [
+  '/',
+  '/index.html',
+  '/404.html',
+  '/og.png',
+  '/robots.txt',
+  '/site.webmanifest',
+  '/assets/index-DmZtxNsB.js',
+  '/assets/index-mGDWXUO6.css',
+  '/assets/index-DmZtxNsB.js.map',
+  '/fonts/hanken-grotesk-var.woff2',
+  '/fonts/ibm-plex-mono-500.woff2',
+  '/data/bundle.json',
+  '/data/flags.json',
+]
+
 describe('public/_headers', () => {
-  it('has one rule for every path and one for the trade switch, each pattern once', () => {
-    expect(rules.map((rule) => rule.pattern)).toEqual(['/*', '/data/flags.json'])
+  it('has one rule for every path, two cache rules and one for the trade switch, each once', () => {
+    expect(rules.map((rule) => rule.pattern)).toEqual(PATTERNS)
     expect(duplicatePatterns(rules)).toEqual([])
     expect(checkHeadersFile(headersText, '_headers')).toEqual(rules)
   })
@@ -75,6 +96,37 @@ describe('public/_headers', () => {
     expect(headersFor(rules, '/data/flags.json').get('cache-control')).toBe('no-store')
     expect(headersFor(rules, '/data/bundle.json').has('cache-control')).toBe(false)
     expect(headersFor(rules, '/').has('cache-control')).toBe(false)
+  })
+
+  it('caches the hashed build output for a year and the fonts for a month', () => {
+    for (const path of ['/assets/index-DmZtxNsB.js', '/assets/index-mGDWXUO6.css'])
+      expect(headersFor(rules, path).get('cache-control')).toBe(
+        'public, max-age=31536000, immutable',
+      )
+    expect(headersFor(rules, '/fonts/hanken-grotesk-var.woff2').get('cache-control')).toBe(
+      'public, max-age=2592000',
+    )
+    // The page and the data are revalidated as Pages does by default, so a new copy shows at once.
+    for (const path of ['/', '/index.html', '/data/bundle.json', '/og.png', '/site.webmanifest'])
+      expect(headersFor(rules, path).has('cache-control'), path).toBe(false)
+  })
+
+  it('gives no path two Cache-Control values, which Pages would join with a comma', () => {
+    const caching = rules.filter((rule) => rule.headers.some(([name]) => name === 'cache-control'))
+    expect(caching.map((rule) => rule.pattern)).toEqual([
+      '/assets/*',
+      '/fonts/*',
+      '/data/flags.json',
+    ])
+    // Every path one of those rules could match, and the paths the site serves.
+    const probes = [...SERVED, ...caching.map((rule) => rule.pattern.replace('*', 'x/y.js'))]
+    for (const path of probes) {
+      const setters = caching.filter((rule) => patternMatches(rule.pattern, path))
+      expect(setters.length, path).toBeLessThanOrEqual(1)
+      expect(headersFor(rules, path).get('cache-control') ?? '', path).not.toContain(', public')
+    }
+    // The rule for every path sets none.
+    expect(rules[0]?.headers.map(([name]) => name)).not.toContain('cache-control')
   })
 
   it('hashes exactly the inline scripts of index.html', () => {
@@ -138,14 +190,8 @@ describe("the preview's noindex header (.github/workflows/trade-preview.yml)", (
     lines.splice(lines.indexOf('/*') + 1, 0, '  X-Robots-Tag: noindex, nofollow')
     expect(result.text).toBe(lines.join('\n'))
     const preview = checkHeadersFile(result.text, 'the preview _headers')
-    expect(preview.map((rule) => rule.pattern)).toEqual(['/*', '/data/flags.json'])
-    for (const path of [
-      '/',
-      '/index.html',
-      '/assets/index-abc.js',
-      '/data/flags.json',
-      '/404.html',
-    ]) {
+    expect(preview.map((rule) => rule.pattern)).toEqual(PATTERNS)
+    for (const path of SERVED) {
       const before = headersFor(rules, path)
       const after = headersFor(preview, path)
       expect(before.has('x-robots-tag')).toBe(false)

@@ -267,8 +267,10 @@ Cloudflare Pages about every three hours, at no cost: a GitHub runner restores t
 the Actions cache, runs `discover --seed`, `snapshot`, `volume`, `score` and `prune`, saves the
 database back, exports the bundle and uploads the static build. The copy has every page and the
 agent documents, but no API (`/api/…` routes answer 404, and there is no scorecard registration)
-and no data newer than its last run; each page says when it was read. It suits a public site
-while no server runs. This repository's copy has been at <https://depthwatch.pages.dev> since
+and no data newer than its last run; each page says when it was read and, because the workflow
+exports with `--updates several-times-a-day`, that the site is updated several times a day (its
+freshness dot turns Tan once the data is more than 8 hours old). It suits a public site while no
+server runs. This repository's copy has been at <https://depthwatch.pages.dev> since
 29 October 2026; the workflow is scheduled at minute 23 of every third hour (UTC).
 1. **Cloudflare.** Create a free account. Note the Account ID (Workers & Pages, right-hand
    column) and create an API token: My Profile, API Tokens, Create Token, Create Custom Token,
@@ -299,9 +301,10 @@ first run once the stocks change is on `main` finds their pools and dates each o
 search of about 26 requests a pool; later runs pay only the factory reads. Every snapshot then
 reads the ten stocks at its block, one multicall of 60 calls on `DEPTHWATCH_RPC_URL` (the
 Chainlink feeds are read onchain, from no data vendor), and tracks every stock pool ranked at
-$10,000 or more besides the 200. The copy's Stocks pages and stock pool pages show them, and every
-page's footer carries the eligibility line (Coinbase tokenized stocks are only available to persons
-in eligible jurisdictions outside of the U.S.); no stock enters the swap panel. No new
+$10,000 or more besides the 200. The copy's Stocks pages and stock pool pages show them with the
+eligibility line (Coinbase tokenized stocks are only available to persons in eligible jurisdictions
+outside of the U.S.), which the footer of the Stocks pages and of a stock's token page repeats; no
+stock enters the swap panel. No new
 secret or variable is needed. The readings are never pruned: ten rows a run, about 30,000 a year
 ([stocks.md §4](design/stocks.md#4-pipeline-appscli)).
 
@@ -347,6 +350,17 @@ address is the free one. A domain of your own is registered and paid for separat
 Pages project (Custom domains) before creating any DNS record: a subdomain then needs a CNAME
 record to the `pages.dev` address at its DNS host, and an apex domain needs its nameservers on
 Cloudflare.
+
+**The site's address in link previews.** A link to the copy, pasted into a chat, a wallet's browser
+or a social post, unfolds into a card with a title, a description and a picture (`og.png`), read
+from tags the static build writes into `index.html`. Those tags need absolute addresses, so the
+build takes the site's address from `VITE_SITE_URL` and uses <https://depthwatch.pages.dev/> when
+it is unset, which is what the workflows publish to today; nothing needs setting. When the site
+moves to a domain of its own, set `VITE_SITE_URL=https://<your domain>/` in the environment of the
+"Build the static site" step of the Refresh site, Trade switch and Trade preview workflows (or
+change `DEFAULT_SITE_URL` in `apps/web/plugins/siteMeta.ts`). The server build carries no such
+tags: it does not know the address it will be served from.
+
 Repository secrets reach workflow runs started from this repository's own branches, never a pull
 request from a fork; only people with write access can start those, and this workflow publishes
 only from `main`.
@@ -357,7 +371,12 @@ Content-Security-Policy that runs only the site's own scripts and the inline scr
 `index.html` by its hash and lets pages fetch from the site itself only. Every build fails when
 that hash and the inline script differ, or when the file opens a URL pattern in more than one
 block: Pages was seen to serve only the last of them ([Trade preview (the live
-test)](#trade-preview-the-live-test)). `depthwatch serve` does not send these headers, and the
+test)](#trade-preview-the-live-test)). The same file sets caching: the build's scripts and styles
+under `/assets/`, whose names change with their content, may be kept a year (`immutable`); the
+fonts under `/fonts/`, whose names stay, a month; every other file is checked with Pages on each
+visit, so a new copy shows at once; and `data/flags.json` is never cached. Pages joins the values
+of one header from every rule that matches a path, so each path gets its `Cache-Control` from one
+rule only (`apps/web/plugins/securityHeaders.test.ts` checks it). `depthwatch serve` does not send these headers, and the
 server build leaves the file out. A Pages feature that adds a script to the pages, such as
 Cloudflare Web Analytics, would be blocked by this policy: leave it off, or add its host to the
 policy.

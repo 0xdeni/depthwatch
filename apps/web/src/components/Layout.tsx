@@ -1,8 +1,10 @@
 /**
- * The app shell (docs/design/visual-v4.md §5.1) and its motion (§4.1, §4.2): skip link, demo line
- * (or the snapshot line of a published live snapshot), app bar, <main>, footer, and in an installed
- * app on a phone the bottom dock. The app column (#root) is a flex column of at least 100dvh. A
- * route that fails to draw is replaced inside <main> only, until the next navigation.
+ * The app shell (docs/design/visual-v4.md §5.1) and its motion (§4.1, §4.2): skip link, the
+ * banner (the demo line, or the snapshot line of a published live snapshot, then the app bar),
+ * <main>, footer, and in an installed app on a phone the bottom dock. While a static build loads
+ * its data, an empty line holds the data line's place, so the bar never moves. The app column
+ * (#root) is a flex column of at least 100dvh. A route that fails to draw is replaced inside <main>
+ * only, until the next navigation.
  *
  * The first render of a session plays the first view on the landing route (`lib/firstView.ts`),
  * once. After that, a pointer click on an in-app link cross-fades <main> only (React
@@ -16,7 +18,15 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useRef, ViewTransition } from 'react'
 import { Outlet, useLocation, useNavigationType } from 'react-router-dom'
-import { useApi, useApiContext, useIsDemo, useIsMock, useSnapshot } from '../api/context.js'
+import {
+  useApi,
+  useApiContext,
+  useIsConnecting,
+  useIsDemo,
+  useIsMock,
+  useIsStatic,
+  useSnapshot,
+} from '../api/context.js'
 import { useFirstView } from '../lib/firstView.js'
 import { isKeyboardClick, prefersReducedMotion } from '../lib/motion.js'
 import { tradeSwitchOn } from '../lib/tradeSwitch.js'
@@ -26,9 +36,9 @@ import { type ClickHold, createClickHold, linkOf, prefetchRoute } from './routeI
 import { AppBar } from './shell/AppBar.js'
 import { DemoLine } from './shell/DemoLine.js'
 import { DOCK_QUERY, Dock } from './shell/Dock.js'
-import { type DataSourceKind, Footer } from './shell/Footer.js'
+import { type DataSourceKind, Footer, useStockPage } from './shell/Footer.js'
 import { SkipLink } from './shell/SkipLink.js'
-import { SnapshotLine } from './shell/SnapshotLine.js'
+import { DataLinePlaceholder, SnapshotLine } from './shell/SnapshotLine.js'
 
 export { REPO_URL } from './shell/Footer.js'
 export { NAV_ITEMS } from './shell/Nav.js'
@@ -103,13 +113,26 @@ function useThemeSwitchGuard() {
   }, [])
 }
 
+/** The line above the app bar: demo, mock or snapshot; its empty place while a static build loads. */
+function useDataLine(source: DataSourceKind) {
+  const snapshot = useSnapshot()
+  const connecting = useIsConnecting()
+  const staticBuild = useIsStatic()
+  if (source === 'demo' || source === 'mock') return <DemoLine mode={source} />
+  if (snapshot) return <SnapshotLine snapshot={snapshot} />
+  // A static build always shows one of the two once its bundle is in.
+  return connecting && staticBuild ? <DataLinePlaceholder /> : null
+}
+
 export function Layout() {
   const demo = useIsDemo()
   const mock = useIsMock()
   const snapshot = useSnapshot()
   const source: DataSourceKind = demo ? 'demo' : mock ? 'mock' : snapshot ? 'snapshot' : 'live'
+  const line = useDataLine(source)
   const trade = tradeSwitchOn(useApiContext()) !== null
   const location = useLocation()
+  const stockPage = useStockPage(location.pathname)
   const navType = useNavigationType()
   const intent = useRef<RouteIntent>(null)
   const mainRef = useRef<HTMLElement | null>(null)
@@ -171,9 +194,7 @@ export function Layout() {
   return (
     <>
       <SkipLink />
-      {source === 'demo' || source === 'mock' ? <DemoLine mode={source} /> : null}
-      {source === 'snapshot' && snapshot ? <SnapshotLine snapshot={snapshot} /> : null}
-      <AppBar navAnimate={pointer} />
+      <AppBar navAnimate={pointer} line={line} />
       <ViewTransition
         name="main"
         default="none"
@@ -187,7 +208,7 @@ export function Layout() {
           </RouteErrorBoundary>
         </main>
       </ViewTransition>
-      <Footer source={source} trade={trade} />
+      <Footer source={source} trade={trade} stocks={stockPage} />
       {docked ? <Dock /> : null}
     </>
   )

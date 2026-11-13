@@ -150,7 +150,7 @@ describe('static client: pools', () => {
     })
   })
 
-  it('matches q against symbols, names and addresses, pool addresses, v4 pool ids and the dex', async () => {
+  it('matches q against symbols, names and addresses, pool addresses and v4 pool ids', async () => {
     const client = createStaticClient(BASE)
     const symbol = async (q: string) => (await client.pools({ q, limit: 200 })).items
     const weth = await symbol('  wEtH ')
@@ -173,13 +173,12 @@ describe('static client: pools', () => {
     expect(ids(await symbol(v4.pool.poolId.slice(2, 14)))).toEqual([v4.pool.id])
     expect(ids(await symbol(v3.pool.address.slice(-10)))).toEqual([v3.pool.id])
 
-    // A token's name, the pair as written ("WETH / USDC") and the dex match too.
+    // A token's name and the pair as written ("WETH / USDC") match too; the dex does not.
     const name = BASE.pools[0]?.pool.token0.name ?? ''
     expect(name.length).toBeGreaterThan(4)
     expect(ids(await symbol(name))).toContain(BASE.pools[0]?.pool.id)
     expect(ids(await symbol('WETH / USDC'))).toContain(BASE.pools[0]?.pool.id)
-    const uniswap = await symbol('uniswap')
-    expect(uniswap.length).toBe(BASE.pools.filter((p) => p.pool.dex.startsWith('uniswap')).length)
+    expect(await symbol('uniswap')).toHaveLength(0)
     expect(await symbol('WETH / nothere')).toHaveLength(0)
   })
 

@@ -370,5 +370,17 @@ describe('rows and facts: rules a test of the markup cannot see', () => {
   it('takes the phone rows’ info button out of the head row’s flow, over the grade column', () => {
     expect(rulesFor(status, '.prow-head > .th-info')).toContain('position: absolute')
     expect(rulesFor(status, '.prow-head:has(> .th-info)')).toContain('position: relative')
+    // Only the head row's own labels make room for the grade column, not the button's icon.
+    const tables = read(join(STYLES, 'tables.css'))
+    expect(rulesFor(tables, '.prow-head > span:last-child')).toContain('padding-right: 52px')
+    expect(rulesFor(tables, '.prow-head span:last-child')).toBe('')
+  })
+
+  it('keeps the header info button’s 44 px touch layer off the sort button beside it', () => {
+    const info = rulesFor(status, '.th-info')
+    const width = Number(info.match(/(?:^|;|\s)width: (\d+)px/)?.[1])
+    const gap = Number(info.match(/margin-left: (\d+)px/)?.[1])
+    // touch-hit centres a 44 px layer on the button: it reaches (44 - width) / 2 past each side.
+    expect(gap).toBeGreaterThanOrEqual((44 - width) / 2)
   })
 })

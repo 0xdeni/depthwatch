@@ -58,9 +58,11 @@ function copy<T>(value: T): T {
 }
 
 /**
- * The API's `q` filter, core's rule (lib/poolQuery.ts): every term of the query ("WETH/USDC",
- * "usdc weth") matches either token's symbol or address, the pool address or the v4 pool id, or a
- * word start in either token's name or the DEX.
+ * The API's `q` filter, core's rule (lib/poolQuery.ts): a pasted pool id ("uniswap-v3:0xd0b5…",
+ * also with "%3A" or as the pool's link) finds the pools on that DEX whose address or v4 pool id
+ * starts with its hex; otherwise every term of the query ("WETH/USDC", "usdc weth") matches either
+ * token's symbol or address, the pool address or the v4 pool id, or a word start in either
+ * token's name, and terms never read the DEX.
  */
 export { matchesPoolQuery }
 

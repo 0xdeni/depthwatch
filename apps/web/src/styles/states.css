@@ -61,6 +61,10 @@
 .band .empty {
   color: var(--on-band);
 }
+/* A search quoted in the sentence may be a pasted pool id or link with no space to break at. */
+.empty p {
+  overflow-wrap: anywhere;
+}
 
 /* A failure inside a section: the rest of the page stays usable. */
 .sec-error {

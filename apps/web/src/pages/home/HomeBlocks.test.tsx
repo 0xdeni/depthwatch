@@ -28,9 +28,15 @@ function preview(name: string): HTMLElement {
 const blocks = async () => [
   ...(await findFacts()).querySelectorAll<HTMLAnchorElement>(':scope > a'),
 ]
-const factValue = (block: Element) => block.querySelector('dd')?.textContent
-const factLabel = (block: Element) => block.querySelector('dt:not(.eyebrow)')?.textContent
-const factEyebrow = (block: Element) => block.querySelector('dt.eyebrow')?.textContent
+/** The text a reader sees: without the link name's unseen pauses (`.sr-only`). */
+function seen(el: Element | null): string | undefined {
+  const copy = el?.cloneNode(true) as Element | undefined
+  for (const hidden of copy?.querySelectorAll('.sr-only') ?? []) hidden.remove()
+  return copy?.textContent ?? undefined
+}
+const factValue = (block: Element) => seen(block.querySelector('dd'))
+const factLabel = (block: Element) => seen(block.querySelector('dt:not(.eyebrow)'))
+const factEyebrow = (block: Element) => seen(block.querySelector('dt.eyebrow'))
 
 describe('Home: the fact blocks over the band', () => {
   it('shows 24 h volume, median health and the biggest gap, each a single destination', async () => {
@@ -68,7 +74,9 @@ describe('Home: the fact blocks over the band', () => {
       .join(', ')
     // Each block's link is named by its own text (WCAG 2.5.3); the grade counts are said once.
     for (const b of [volume, health, gap]) expect(b.hasAttribute('aria-label')).toBe(false)
-    expect(health.querySelector('.sr-only')?.textContent).toBe(`Rated pools by grade: ${said}`)
+    expect(health.querySelector(':scope > .sr-only')?.textContent).toBe(
+      `. Rated pools by grade: ${said}`,
+    )
     expect(gradeCounts(pools).reduce((s, g) => s + g.n, 0)).toBe(totals.rated)
 
     expect(isMeaningfulGap(top)).toBe(true)

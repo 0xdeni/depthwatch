@@ -1,7 +1,8 @@
 /**
  * Home's facts against the static client: the biggest gap is the largest turnover even when the
  * head of the feed ties on a gap score of 100, its squares never read as an empty box, and each
- * block's link is named by its own text in reading order (WCAG 2.5.3).
+ * block's link is named by its own text in reading order (WCAG 2.5.3), with unseen pauses that
+ * keep its numbers apart.
  */
 import { cleanup, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -39,6 +40,12 @@ const blocks = async () => [
   ...(await findFacts()).querySelectorAll<HTMLAnchorElement>(':scope > a'),
 ]
 const text = (el: Element | null) => el?.textContent ?? ''
+/** The text a reader sees: without the unseen pauses and sentences (`.sr-only`). */
+function seen(el: Element | null): string {
+  const copy = el?.cloneNode(true) as Element | undefined
+  for (const hidden of copy?.querySelectorAll('.sr-only') ?? []) hidden.remove()
+  return copy?.textContent ?? ''
+}
 
 describe('Home facts: the biggest gap', () => {
   it('is the largest turnover when the head of the feed ties at a gap score of 100', async () => {
@@ -51,7 +58,7 @@ describe('Home facts: the biggest gap', () => {
     const top = (await client.gaps({ limit: 1 })).items[0]
     if (!top) throw new Error('empty feed')
     expect(top.gap.turnoverRatio).toBe(195)
-    expect(text(gap.querySelector('dt:not(.eyebrow)'))).toBe(gapLabel(top))
+    expect(seen(gap.querySelector('dt:not(.eyebrow)'))).toBe(gapLabel(top))
   })
 
   it('fills the day’s volume, so a tiny depth square never leaves an empty box', async () => {
@@ -70,7 +77,7 @@ describe('Home facts: the biggest gap', () => {
 describe('Home facts: link names', () => {
   const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-  it('are each block’s own text in reading order: eyebrow, label, then value', async () => {
+  it('are each block’s own text in reading order: eyebrow, label, a pause, then value', async () => {
     renderHome(createStaticClient(tiedBundle()))
     const all = await blocks()
     expect(all).toHaveLength(3)
@@ -79,8 +86,9 @@ describe('Home facts: link names', () => {
       expect(block.hasAttribute('aria-label')).toBe(false)
       const parts = [
         text(block.querySelector('dt.eyebrow')),
-        text(block.querySelector('dt:not(.eyebrow)')),
-        text(block.querySelector('dd .num')),
+        seen(block.querySelector('dt:not(.eyebrow)')),
+        ':',
+        seen(block.querySelector('dd .num')),
       ]
       const name = new RegExp(`^${parts.map(escapeRe).join('\\s*')}`)
       expect(screen.getByRole('link', { name })).toBe(block)
@@ -93,9 +101,9 @@ describe('Home facts: link names', () => {
     if (!health) throw new Error('no health block')
     const said = countsText(gradeCounts(BASE.pools))
     expect(said).toMatch(/^Rated pools by grade: [A-F] \d+/)
-    expect(health.querySelector('.sr-only')?.textContent).toBe(said)
-    expect(
-      screen.getByRole('link', { name: new RegExp(`Grade [A-F]\\s*${escapeRe(said)}$`) }),
-    ).toBe(health)
+    expect(text(health.querySelector(':scope > .sr-only'))).toBe(`. ${said}`)
+    // "…rated pools: 76, Grade B. Rated pools by grade: …", never "pools 76 Grade B Rated pools"
+    const name = new RegExp(`pools\\s*:\\s*\\d+\\s*,\\s*Grade [A-F]\\s*\\.\\s*${escapeRe(said)}$`)
+    expect(screen.getByRole('link', { name })).toBe(health)
   })
 })

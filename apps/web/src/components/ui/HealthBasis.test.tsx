@@ -10,6 +10,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { PoolSummary } from '../../api/types.js'
 import { BASIS_MARK } from '../../lib/rating.js'
+import { SECTIONS } from '../../pages/docs/content.js'
 import { summary } from '../charts/chartFixtures.js'
 import { Fact, Facts } from './Fact.js'
 import {
@@ -220,5 +221,17 @@ describe('the pool page: the grade’s basis under its score and label', () => {
       expect(container.querySelector('dd')?.textContent).toBe('71B')
       unmount()
     }
+  })
+})
+
+describe('the Methodology', () => {
+  it('says what the lists do: one note at the Health column, a star only on the exceptions', () => {
+    const health = SECTIONS.find((s) => s.id === 'health')
+    if (!health) throw new Error('no health section')
+    const { container } = render(<MemoryRouter>{health.body}</MemoryRouter>)
+    const text = container.textContent ?? ''
+    expect(text).not.toContain('does not rest on LP owners carries a star')
+    expect(text).toContain('an info button at its Health column says what most of them rest on')
+    expect(text).toContain('a star marks each grade that rests on something else')
   })
 })

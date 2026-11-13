@@ -90,8 +90,8 @@
           {
             "name": "q",
             "in": "query",
-            "description": "Search terms split on spaces, /, - and :, every one matching the pool, case-insensitively: anywhere in either token's symbol or address, the pool address or the Uniswap v4 pool id, or at the start of a word in either token's name or the DEX. WETH/USDC and usdc weth list the same pools.",
-            "schema": { "type": "string", "maxLength": 100 }
+            "description": "A pasted pool id, <dex>:<0x hex> such as uniswap-v3:0xd0b5... (spaces around the : allowed, %3A for the : too, or the pool's whole link), lists the pools on that DEX whose address or Uniswap v4 pool id starts with that hex, in any case. Any other text is search terms split on spaces, /, -, : and commas, every one matching the pool, case-insensitively: anywhere in either token's symbol or address, the pool address or the Uniswap v4 pool id, or at the start of a word in either token's name. Terms never match the DEX (dex filters it). WETH/USDC and usdc weth list the same pools.",
+            "schema": { "type": "string", "maxLength": 200 }
           },
           { "$ref": "#/components/parameters/MinVolume" },
           {

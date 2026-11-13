@@ -3,11 +3,13 @@
  * checks pin that pointer to the routes `createApp` really registers: a document the page says
  * lists every route must list each of them, and the per-layer pointers must hold for their layer.
  * DESIGN.md's API section names each response by its `dto.ts` type, which must exist, and its
- * "May import" column lists every dependency of each workspace package's package.json.
+ * "May import" column lists every dependency of each workspace package's package.json. Every
+ * document that states the pools search (`q`) gives core's rule, the pasted pool id included.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { POOL_QUERY_MAX_LENGTH } from '@depthwatch/core'
 import { IN_MEMORY, openDatabase } from '@depthwatch/db'
 import { describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
@@ -161,5 +163,52 @@ describe('DESIGN.md: "May import" lists every dependency', () => {
       return !names.includes(workspace) && !names.includes('every workspace package')
     })
     expect(missing).toEqual([])
+  })
+})
+
+/**
+ * Every document that states the pools search (`q`) gives core's rule
+ * (packages/core/src/poolQuery.ts): a pasted pool id (`<dex>:<0x hex>`, also with `%3A` or as the
+ * pool's link) lists the pools on that DEX whose address or v4 pool id starts with the hex; any
+ * other text is terms split on separators, each matching a token or the pool, not a substring of
+ * one field, and never the DEX, which `dex` filters; and `q` takes up to
+ * `POOL_QUERY_MAX_LENGTH` characters.
+ */
+describe('the documents that state `q` give the search rule', () => {
+  const stale = /`q` \((case-insensitive )?substring|q over token symbols|name or the DEX/
+
+  it.each(['README.md', 'DESIGN.md', 'docs/design/web-v2.md', 'apps/api/src/agentDocs/AGENTS.md'])(
+    '%s',
+    (file) => {
+      const text = read(file).replace(/\s+/g, ' ')
+      expect(text.includes('`/`, `-`, `:` and `,`'), 'names the separators').toBe(true)
+      expect(stale.exec(text)?.[0] ?? null).toBeNull()
+      expect(text.includes('`<dex>:<0x hex>`'), 'states the pasted pool id').toBe(true)
+      expect(text.includes('`%3A`'), 'accepts the id as a link carries it').toBe(true)
+      expect(text.includes('starts with that hex'), 'matches the start of the key').toBe(true)
+      expect(text.includes(`at most ${POOL_QUERY_MAX_LENGTH} characters`), 'states the cap').toBe(
+        true,
+      )
+    },
+  )
+
+  it('openapi.json', () => {
+    const spec = JSON.parse(read('apps/api/src/agentDocs/openapi.json')) as {
+      paths: Record<
+        string,
+        {
+          get: {
+            parameters: { name?: string; description?: string; schema?: { maxLength?: number } }[]
+          }
+        }
+      >
+    }
+    const q = spec.paths['/api/pools']?.get.parameters.find((p) => p.name === 'q')
+    expect(q?.description).toContain('A pasted pool id, <dex>:<0x hex>')
+    expect(q?.description).toContain('%3A')
+    expect(q?.description).toContain('starts with that hex')
+    expect(q?.description).toContain('split on spaces, /, -, : and commas')
+    expect(q?.description).toContain('Terms never match the DEX')
+    expect(q?.schema?.maxLength).toBe(POOL_QUERY_MAX_LENGTH)
   })
 })

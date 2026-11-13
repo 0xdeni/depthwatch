@@ -165,10 +165,8 @@ export interface PoolsQuery {
   dir?: SortDir
   dex?: Dex | ''
   /**
-   * Search terms split on whitespace, "/", "-" and ":", every one matching the pool (core's
-   * `matchesPoolTerms`): anywhere in either token's symbol or address, the pool address or the v4
-   * pool id, or at a word start in either token's name or the DEX. "WETH/USDC" and "usdc weth"
-   * list the same pools. At most 100 chars.
+   * The pools search, at most 200 chars: a pasted pool id or terms that never read the DEX, as
+   * core's `poolSearch` and `matchesPoolSearch` (packages/core/src/poolQuery.ts) define them.
    */
   q?: string
   /** USD floor on known 24 h volume (pools with unknown volume are excluded). */

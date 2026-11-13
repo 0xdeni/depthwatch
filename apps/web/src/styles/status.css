@@ -110,13 +110,14 @@
 }
 
 /* The Health header's info button: 24 x 24 (44 x 44 on a coarse pointer, `touch-hit`), the 16 px
-   info icon in the header's muted colour; its note says what the grades stand on. */
+   info icon in the header's muted colour; its note says what the grades stand on. 12 px from
+   the sort button, as the column note (.th-note), so its touch layer stops short of the button. */
 .th-info {
   display: inline-grid;
   place-items: center;
   width: 24px;
   height: 24px;
-  margin-left: 4px;
+  margin-left: 12px;
   border-radius: 6px;
   color: var(--text-2);
   text-decoration: none;

@@ -1,13 +1,14 @@
 /**
  * The static client's pool search and gap order, as the API answers them: a pair written either
- * way round ("WETH/USDC", "usdc weth"), every term matching a token, the pool or the DEX (core's
- * rule, packages/core/src/poolQuery.ts); and a tie of gap scores (100 from 100× up) going to the
- * larger turnover. `gapFeed` and `matchesPoolQuery` are exported for other clients over the same
- * bundle.
+ * way round ("WETH/USDC", "usdc weth"), every term matching a token or the pool, never the DEX,
+ * and a pasted pool id finding the pools on its DEX whose address or v4 pool id starts with its
+ * hex (core's rule, packages/core/src/poolQuery.ts); and a tie of gap scores (100 from 100× up)
+ * going to the larger turnover. `gapFeed` and `matchesPoolQuery` are exported for other clients
+ * over the same bundle.
  */
 import { describe, expect, it } from 'vitest'
 import { poolQueryTerms } from '../lib/poolQuery.js'
-import { matchesQuery } from '../lib/sort.js'
+import { tableFilter } from '../pages/lists/PoolsField.js'
 import { bundleFromClient } from '../testing/staticBundle.js'
 import { createMockClient } from './mock.js'
 import { createStaticClient, gapFeed, matchesPoolQuery } from './static.js'
@@ -39,23 +40,31 @@ describe('static client: pair search', () => {
     const pair = BASE.pools.filter((p) => pairOf(p) === 'USDC/WETH')
     expect(pair.length).toBeGreaterThan(1)
     const expected = pair.map((p) => p.pool.id).sort()
-    for (const q of ['WETH/USDC', 'WETH USDC', 'weth-usdc', 'usdc weth', 'USDC:WETH']) {
+    for (const q of [
+      'WETH/USDC',
+      'WETH USDC',
+      'weth-usdc',
+      'usdc weth',
+      'USDC:WETH',
+      'WETH, USDC',
+    ]) {
       const items = await search(q)
       expect(items.map((p) => p.pool.id).sort(), q).toEqual(expected)
       expect((await client.pools({ q })).total, q).toBe(pair.length)
     }
   })
 
-  it('needs every term, each in either token, the pool or the DEX', async () => {
+  it('needs every term, each in either token or the pool, never the DEX', async () => {
     const weth = BASE.pools.filter((p) => pairOf(p).split('/').includes('WETH'))
     expect((await search('weth')).length).toBe(weth.length)
     expect(await search('weth/nothere')).toEqual([])
-    const v3 = await search('usdc uniswap v3')
-    expect(v3.length).toBeGreaterThan(0)
-    for (const p of v3) {
-      expect(p.pool.dex).toBe('uniswap-v3')
-      expect(pairOf(p).split('/')).toContain('USDC')
-    }
+    // "aero" finds the pools holding AERO, not every pool of the Aero and Aerodrome DEXes.
+    const aero = BASE.pools.filter((p) => pairOf(p).split('/').includes('AERO'))
+    expect(BASE.pools.some((p) => p.pool.dex.startsWith('aero') && !aero.includes(p))).toBe(true)
+    expect((await search('aero')).map((p) => p.pool.id).sort()).toEqual(
+      aero.map((p) => p.pool.id).sort(),
+    )
+    expect(await search('usdc uniswap v3')).toEqual([])
     const first = BASE.pools[0]
     if (!first) throw new Error('empty bundle')
     const byName = await search(first.pool.token0.name)
@@ -78,9 +87,94 @@ describe('static client: pair search', () => {
     expect(matchesPoolQuery(usdcUsdt, 'swap')).toBe(false)
   })
 
-  it('is the one rule of the mock client and the Pools field', () => {
-    for (const q of ['WETH/USDC', 'usdc weth', 'aero', 'slipstream usdc', 'nothere', ''])
-      for (const p of BASE.pools) expect(matchesQuery(p, q), q).toBe(matchesPoolQuery(p, q))
+  it('lists what the mock client and the Pools field list for the same query', async () => {
+    const mock = createMockClient({ now: NOW })
+    const ids = BASE.pools.map((p) => p.pool.id)
+    const pasted = ids.flatMap((id) => [
+      id,
+      id.toUpperCase(),
+      id.slice(0, 16),
+      id.replace(':', '%3A'),
+    ])
+    const sorted = (items: readonly PoolSummary[]) => items.map((p) => p.pool.id).sort()
+    let found = 0
+    for (const q of [
+      'WETH/USDC',
+      'usdc weth',
+      'aero',
+      'slipstream usdc',
+      'nothere',
+      '',
+      ...pasted,
+    ]) {
+      const expected = sorted((await client.pools({ q, limit: 200 })).items)
+      expect(sorted((await mock.pools({ q, limit: 200 })).items), q).toEqual(expected)
+      const inField = tableFilter({ dex: '', q, ratedOnly: false })
+      expect(sorted(BASE.pools.filter((p) => inField?.(p) ?? true)), q).toEqual(expected)
+      found += expected.length
+    }
+    expect(found).toBeGreaterThan(pasted.length)
+  })
+})
+
+describe('static client: a pasted pool id', () => {
+  const client = createStaticClient(BASE)
+  const search = async (q: string) =>
+    (await client.pools({ q, limit: 200 })).items.map((p) => p.pool.id).sort()
+  const V3 = 'uniswap-v3:0xd0b53d9277642d899df5c87a3966a349a798f224'
+  const ADDRESS = V3.slice('uniswap-v3:'.length)
+  const v4 = BASE.pools.find((p) => p.pool.dex === 'uniswap-v4')?.pool
+  const otherV3 = BASE.pools.find((p) => p.pool.dex === 'uniswap-v3' && p.pool.id !== V3)?.pool
+
+  it('finds the pool from its full id, with the hex in any case', async () => {
+    expect(BASE.pools.some((p) => p.pool.id === V3)).toBe(true)
+    for (const q of [V3, `uniswap-v3:${ADDRESS.toUpperCase()}`, `uniswap-v3 : ${ADDRESS}`])
+      expect(await search(q), q).toEqual([V3])
+    expect((await client.pools({ q: V3 })).total).toBe(1)
+  })
+
+  it('finds the pools on the DEX whose address starts with a hex prefix', async () => {
+    expect(await search('uniswap-v3:0xD0B5')).toEqual([V3])
+    const prefix = '0x'
+    for (const digit of '0123456789abcdef') {
+      const onDex = BASE.pools
+        .filter((p) => p.pool.dex === 'uniswap-v3' && p.pool.address?.startsWith(prefix + digit))
+        .map((p) => p.pool.id)
+        .sort()
+      expect(await search(`uniswap-v3:${prefix}${digit}`), digit).toEqual(onDex)
+    }
+  })
+
+  it('finds a Uniswap v4 pool from its pool id or a prefix of it', async () => {
+    if (!v4?.poolId) throw new Error('no v4 pool in the bundle')
+    for (const q of [v4.id, `uniswap-v4:${v4.poolId.toUpperCase()}`, v4.id.slice(0, 20)])
+      expect(await search(q), q).toEqual([v4.id])
+  })
+
+  it('reads the id as a pool link carries it: "%3A" for ":", or the whole link', async () => {
+    if (!v4) throw new Error('no v4 pool in the bundle')
+    const encoded = encodeURIComponent(V3)
+    expect(await search(encoded)).toEqual([V3])
+    expect(await search(`https://depthwatch.pages.dev/#/pools/${encoded}?window=7d`)).toEqual([V3])
+    const v4Link = `https://depthwatch.pages.dev/#/pools/${encodeURIComponent(v4.id)}`
+    expect(v4Link.length).toBeGreaterThan(100)
+    expect(await search(v4Link)).toEqual([v4.id])
+  })
+
+  it("leaves the pool out for another pool's hex on its DEX, and its hex on another DEX", async () => {
+    if (!v4?.poolId || !otherV3?.address) throw new Error('bundle too small')
+    expect(await search(`uniswap-v3:${otherV3.address}`)).toEqual([otherV3.id])
+    expect(await search(`uniswap-v3:${v4.poolId}`)).toEqual([])
+    for (const dex of ['uniswap-v4', 'aerodrome-v2', 'aerodrome-slipstream', 'aero-slipstream'])
+      expect(await search(`${dex}:${ADDRESS}`), dex).toEqual([])
+    expect((await client.pools({ q: V3, dex: 'aerodrome-v2' })).total).toBe(0)
+  })
+
+  it('keeps the term rule for an unknown DEX prefix, which never reads the DEX', async () => {
+    expect(await search(`sushiswap:${ADDRESS}`)).toEqual([])
+    expect(await search(`uniswap-v5:${ADDRESS}`)).toEqual([])
+    // "weth" is a token of the pool and the hex is its address: every term matches
+    expect(await search(`weth:${ADDRESS}`)).toEqual([V3])
   })
 })
 

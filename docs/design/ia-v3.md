@@ -339,7 +339,11 @@ Then the footer. There is no "What we measure" section: Methodology's metric ind
 - the DEX and "stable" chips.
 
 **States:**
-- **No results:** "No pools match "xyz"." followed by a "Clear search" button.
+- **No results:** "No pools match "xyz"." followed by a "Clear search" button. Search reads tokens and
+  addresses, never the DEX: a search that names a DEX adds "search reads tokens and addresses, and DEXes
+  have their own filter" and offers that DEX with the rest of the search ("Search "weth" on Uniswap v3"),
+  or "Clear search" when it names more than one; a pasted pool id of another DEX than the filter's names
+  its DEX and offers "Show all DEXes", which keeps the id.
 - **Loading:** a skeleton of 6 rows.
 - **Refetching:** keep the rows, dim them, and show the 2 px bar (`M10`).
 

@@ -48,7 +48,8 @@ export function sortSummaries(
 }
 
 /**
- * The API's `q` filter (`matchesPoolQuery`, core's rule): every term of the query matches either
- * token, the pool or the DEX, so the mock client and the Pools field agree with the API.
+ * The API's `q` filter (`matchesPoolQuery`, core's rule): a pasted pool id finds its pools on its
+ * DEX, any other query needs every term to match either token or the pool, so the mock client and
+ * the Pools field agree with the API.
  */
 export { matchesPoolQuery as matchesQuery } from './poolQuery.js'

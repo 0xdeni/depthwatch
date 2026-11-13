@@ -12,8 +12,9 @@
  * On phones the three become rows of one ink block and the micro-visuals are dropped (home.css).
  * Without a meaningful gap the third fact is the highest turnover; with no gap feed it is left out.
  * Each block is one link named by its own text, in reading order (eyebrow, label, value), so its
- * name holds what is seen (WCAG 2.5.3). The micro-visuals are hidden from that name; the health
- * block says the grade counts its bar shows in one hidden sentence.
+ * name holds what is seen (WCAG 2.5.3); unseen pauses keep its numbers apart ("median health of
+ * the 79 rated pools: 76, grade B. Rated pools by grade: …"). The micro-visuals are hidden from
+ * that name; the health block says the grade counts its bar shows in one hidden sentence.
  */
 import { computeGap, type HealthGrade, healthGrade } from '@depthwatch/core'
 import type { GapItem, PoolSummary, StatsResponse } from '../../api/types.js'
@@ -72,6 +73,11 @@ type GradeCount = ReturnType<typeof gradeCounts>[number]
 /** "Rated pools by grade: A 7, B 18, C 9, D 13, F 3": the bar's counts, for a screen reader. */
 export const countsText = (counts: readonly GradeCount[]) =>
   `Rated pools by grade: ${counts.map((g) => `${g.grade} ${count(g.n)}`).join(', ')}`
+
+/** A pause a screen reader hears in a block's link name, between its label, value and counts. */
+function Pause({ mark }: { mark: string }) {
+  return <span className="sr-only">{mark}</span>
+}
 
 /** The grade distribution of the rated pools, one segment per grade sized by its count. */
 function GradeSpread({ counts }: { counts: readonly GradeCount[] }) {
@@ -134,7 +140,16 @@ export function HomeFacts({
     <div className="grid home-facts">
       <Block variant="ink" over span={5} to="/pools?sort=volume" className="fact-blk">
         <dl className="facts">
-          <Fact eyebrow={volume.eyebrow} value={usd(totals.volume24hUsd)} label={volume.label} />
+          <Fact
+            eyebrow={volume.eyebrow}
+            value={usd(totals.volume24hUsd)}
+            label={
+              <>
+                {volume.label}
+                <Pause mark=":" />
+              </>
+            }
+          />
         </dl>
         {totals.volume24hUsd !== null ? (
           <VolumeBars volume={totals.volume24hUsd} depth={totals.depth2Usd} />
@@ -144,18 +159,41 @@ export function HomeFacts({
         <dl className="facts">
           <Fact
             eyebrow={health.eyebrow}
-            value={median === null ? DASH : score(median)}
+            value={
+              median === null ? (
+                DASH
+              ) : (
+                <>
+                  {score(median)}
+                  <Pause mark="," />
+                </>
+              )
+            }
             grade={grade}
-            label={health.label}
+            label={
+              <>
+                {health.label}
+                <Pause mark=":" />
+              </>
+            }
           />
         </dl>
         <GradeSpread counts={counts} />
-        {counts.length ? <span className="sr-only">{countsText(counts)}</span> : null}
+        {counts.length ? <span className="sr-only">{`. ${countsText(counts)}`}</span> : null}
       </Block>
       {gap && topRatio !== null ? (
         <Block over span={3} to="/gaps" className="fact-blk">
           <dl className="facts">
-            <Fact eyebrow={gap.eyebrow} value={gap.value} label={gap.label} />
+            <Fact
+              eyebrow={gap.eyebrow}
+              value={gap.value}
+              label={
+                <>
+                  {gap.label}
+                  <Pause mark=":" />
+                </>
+              }
+            />
           </dl>
           <GapSquares turnover={topRatio} />
         </Block>

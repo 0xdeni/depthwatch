@@ -9,7 +9,7 @@
  * Filter pools holds each DEX with its share of the depth and the rating, Sort pools is the
  * shared one, which is also the column picker.
  */
-import type { Dex } from '@depthwatch/core'
+import { type Dex, POOL_QUERY_MAX_LENGTH } from '@depthwatch/core'
 import { type MouseEvent, useEffect, useRef, useState } from 'react'
 import type { SortDir, StatsResponse } from '../../api/types.js'
 import { Button } from '../../components/ui/Button.js'
@@ -99,7 +99,7 @@ export function PoolsControls(props: PoolsControlsProps) {
   const { phone, search, onSearch } = props
   return (
     <div className="lists-ctl" data-in>
-      <SearchInput value={search} onChange={onSearch} />
+      <SearchInput value={search} onChange={onSearch} maxLength={POOL_QUERY_MAX_LENGTH} />
       {phone ? <PhoneControls {...props} /> : <DesktopControls {...props} />}
     </div>
   )

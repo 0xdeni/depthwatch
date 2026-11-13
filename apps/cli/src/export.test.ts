@@ -295,13 +295,14 @@ describe('exportCommand', () => {
     ).toThrow(/no --demo, --note, --updates/)
   })
 
-  it('is passed by the Refresh site workflow, which publishes every third hour', () => {
+  it('is passed by the Refresh site workflow, which publishes several times a day', () => {
     const workflow = readFileSync(
       new URL('../../../.github/workflows/refresh-site.yml', import.meta.url),
       'utf8',
     )
-    // Eight copies a day is several; the snapshot line says so only because of this flag.
-    expect(workflow).toContain('- cron: "23 */3 * * *"')
+    // An hourly check that refreshes once the last copy is 2.5 hours old makes several copies a
+    // day; the snapshot line says so only because of this flag.
+    expect(workflow).toContain('- cron: "23 * * * *"')
     expect(workflow).toMatch(
       /pnpm depthwatch export --out [^\n]*\\\n(?:\s+--note "[^"]*" \\\n)?\s+--updates several-times-a-day \\\n/,
     )

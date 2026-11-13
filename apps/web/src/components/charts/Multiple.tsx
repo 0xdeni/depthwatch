@@ -17,6 +17,11 @@ export interface MultipleSeries<T> {
   /** The head value and the bracket's ends: "$812K", "14.8 bps". */
   format: (v: number | null) => string
   /**
+   * The head value, and the latest one in the summary, when it reads longer than the bracket's
+   * ends can ("0.18 % (17.8 bps)" over ends in bps); `format` when not given.
+   */
+  head?: (v: number | null) => string
+  /**
    * A shorter label for the bracket's ends ("10.4" beside "10.3"); `format` when not given, or
    * when the two ends would print the same.
    */
@@ -148,6 +153,7 @@ export function Multiple<T extends { timestamp: number }>({
   const range = dataRange(data, s.value)
   const plotR = W - SM_RIGHT
   const head = cur ? s.value(cur) : latest ? s.value(latest) : null
+  const headText = s.head ?? s.format
   const label = range ? bracketLabel(s, range) : (v: number) => s.format(v)
   // Ends that print the same get one label and no bracket: there is no range to span.
   const level = range ? printsLevel(s, range) : false
@@ -173,12 +179,12 @@ export function Multiple<T extends { timestamp: number }>({
             {s.bandLabel}
           </span>
         ) : null}
-        <b className="num">{s.format(head)}</b>
+        <b className="num">{headText(head)}</b>
       </div>
       <svg
         className="chart-svg"
         role="img"
-        aria-label={`${s.label} over ${windowLabel}: ${said}latest ${s.format(latest ? s.value(latest) : null)}.`}
+        aria-label={`${s.label} over ${windowLabel}: ${said}latest ${headText(latest ? s.value(latest) : null)}.`}
         width={W}
         height={H}
         viewBox={`0 0 ${W} ${H}`}

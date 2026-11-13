@@ -369,7 +369,10 @@ Then the footer. There is no "What we measure" section: Methodology's metric ind
 - **H1:** "WETH / USDC". The token symbols link to their token pages.
 - **Secondary line:**
   - "Aerodrome Slipstream, 0.05 % fee", then "1 WETH = 2,460.32 USDC";
-  - a ⇄ button (`aria-label` "Show price in WETH") flips to the inverse (`N2`).
+  - a text toggle, "Show price in WETH", flips to the inverse (`N2`): words, not the ⇄ glyph,
+    so nothing beside the price reads as a swap button;
+  - where the swap panel is on for the pool, a small primary "Swap" button that brings "trade in
+    this pool" into view, opens it and moves focus into it.
 - **Answer:** "It takes $6.1M of buying to lift WETH 2 % and $5.1M of selling to push it down."
 - **Variants:**
   - **Unpriced side:** "The buy side is unknown: USDC has no USD price."

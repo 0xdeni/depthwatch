@@ -2,7 +2,9 @@
  * "trade in this pool": shown under cost to trade only when the static bundle's switch is on for
  * the pool's venue and the pool is one the panel can check (`tradeGate`); never in demo, mock or
  * connecting mode, and never for a tokenized stock's pool. Before the click it shows the
- * snapshot's figure with its time and no wallet code; the click loads the lazy panel.
+ * snapshot's figure, labelled as the snapshot's, with its time; nothing here loads wallet code
+ * before a click (jsdom has no IntersectionObserver and these tests send no pointer events), and
+ * the click loads the lazy panel.
  */
 import type { TradeFlags } from '@depthwatch/core'
 import { QueryClient } from '@tanstack/react-query'
@@ -117,10 +119,18 @@ describe('tradeTakeaway', () => {
   })
   const text = (detail: PoolDetail) => tradeTakeaway(detail).replace(/\u00a0/g, ' ')
 
-  it('gives the $10K round trip in percent, as the panel does, with its bps', () => {
-    expect(text(withSpread(14.8))).toMatch(/round trip here cost 0\.15 % \(14\.8 bps\)\.$/)
-    expect(text(withSpread(2.4))).toMatch(/cost 0\.024 % \(2\.4 bps\)\.$/)
-    expect(text(withSpread(123))).toMatch(/cost 1\.2 % \(123 bps\)\.$/)
+  it('gives the $10K round trip in percent and dollars, as the panel does, then its bps', () => {
+    expect(text(withSpread(14.8))).toMatch(
+      /round trip here cost 0\.15 %, about \$15 \(14\.8 bps\)\.$/,
+    )
+    expect(text(withSpread(2.4))).toMatch(/cost 0\.024 %, about \$2 \(2\.4 bps\)\.$/)
+    expect(text(withSpread(123))).toMatch(/cost 1\.2 %, about \$123 \(123 bps\)\.$/)
+  })
+
+  it('says the figure is the snapshot’s, with its time, and not live', () => {
+    expect(text(withSpread(14.8))).toBe(
+      `Snapshot of ${full(v3.latest?.timestamp).replace(/\u00a0/g, ' ')}, not live: a $10K round trip here cost 0.15 %, about $15 (14.8 bps).`,
+    )
   })
 
   it('says no round trip was measured rather than repeat the body’s first sentence', () => {
@@ -170,8 +180,18 @@ describe('the pool page', () => {
     const section = screen.getByRole('region', { name: 'trade in this pool' })
     const text = (section.textContent ?? '').replace(/ /g, ' ')
     expect(text).toContain(
-      `At ${full(v3.latest?.timestamp).replace(/ /g, ' ')} a $10K round trip here cost`,
+      `Snapshot of ${full(v3.latest?.timestamp).replace(/ /g, ' ')}, not live: a $10K round trip here cost`,
     )
+    // The intro is three short facts, custody first.
+    expect(
+      within(section)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual([
+      'Non-custodial: you swap from your own wallet and sign each step.',
+      'Direct: the swap goes to the DEX’s own contract; Depthwatch adds no fee.',
+      'Live prices: read through your wallet once you connect it.',
+    ])
     expect(within(section).getByRole('button', { name: 'Swap in this pool' })).toBeTruthy()
   })
 

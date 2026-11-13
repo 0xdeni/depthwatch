@@ -206,8 +206,9 @@ describe('exportCommand', () => {
     const written = JSON.parse(readFileSync(out, 'utf8')) as StaticBundle
     expect(written).toEqual(result.bundle)
     expect(written).toMatchObject({ source: 'demo', generatedAt: NOW })
-    // No --note, no `note` key: a demo export is unchanged by the field.
+    // No --note, no `note` key: a demo export is unchanged by the field; nor --updates.
     expect(Object.hasOwn(written, 'note')).toBe(false)
+    expect(Object.hasOwn(written, 'updates')).toBe(false)
     expect(written.pools).toHaveLength(8)
     expect(lines).toEqual([
       `exported demo bundle to ${result.path}: 8 pools, 2 scorecards, ${result.bytes} bytes; ` +
@@ -229,7 +230,15 @@ describe('exportCommand', () => {
       seeded.close()
     }
     const out = join(dir, 'bundle.json')
-    const { flags } = parseCliArgs(['export', '--out', out, '--note', '  Top 492 pools by TVL. '])
+    const { flags } = parseCliArgs([
+      'export',
+      '--out',
+      out,
+      '--note',
+      '  Top 492 pools by TVL. ',
+      '--updates',
+      'several-times-a-day',
+    ])
     const result = await exportCommand({
       config: loadConfig({ DEPTHWATCH_DB: file }, flags),
       log: silentLogger,
@@ -240,6 +249,7 @@ describe('exportCommand', () => {
       source: 'live',
       generatedAt: SEED_NOW,
       note: 'Top 492 pools by TVL.',
+      updates: 'several-times-a-day',
     })
     expect((JSON.parse(readFileSync(out, 'utf8')) as StaticBundle).note).toBe(
       'Top 492 pools by TVL.',
@@ -265,6 +275,36 @@ describe('exportCommand', () => {
     )
     expect(() => parseCliArgs(['export', '--out', 'b.json', '--note', '  '])).toThrow(
       new ConfigError('--note needs text'),
+    )
+  })
+
+  it('takes --updates on export only, as several-times-a-day, and not with --bundle', () => {
+    expect(
+      loadConfig({}, parseCliArgs(['export', '--updates', 'several-times-a-day']).flags)
+        .exportUpdates,
+    ).toBe('several-times-a-day')
+    expect(loadConfig({}, {}).exportUpdates).toBeUndefined()
+    expect(() => parseCliArgs(['export', '--updates', 'hourly'])).toThrow(
+      new ConfigError('--updates takes several-times-a-day'),
+    )
+    expect(() => parseCliArgs(['snapshot', '--updates', 'several-times-a-day'])).toThrow(
+      new ConfigError('--updates only applies to export'),
+    )
+    expect(() =>
+      parseCliArgs(['export', '--bundle', 'a.json', '--updates', 'several-times-a-day']),
+    ).toThrow(/no --demo, --note, --updates/)
+  })
+
+  it('is passed by the Refresh site workflow, which publishes several times a day', () => {
+    const workflow = readFileSync(
+      new URL('../../../.github/workflows/refresh-site.yml', import.meta.url),
+      'utf8',
+    )
+    // An hourly check that refreshes once the last copy is 2.5 hours old makes several copies a
+    // day; the snapshot line says so only because of this flag.
+    expect(workflow).toContain('- cron: "23 * * * *"')
+    expect(workflow).toMatch(
+      /pnpm depthwatch export --out [^\n]*\\\n(?:\s+--note "[^"]*" \\\n)?\s+--updates several-times-a-day \\\n/,
     )
   })
 

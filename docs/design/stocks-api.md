@@ -99,12 +99,15 @@ core), the static client from the bundle. The texts below live in `src/lib/stock
 - Never "Buy", "Trade" or a link to a swap. Coinbase and Base are named in text only, no marks
   (CONTRIBUTING.md brand rules).
 
-**Where the eligibility line appears.** On `/stocks` and `/stocks/:token`; on the pool page of a
-stock pool (`latest.reference !== null`); and in a site-wide footer line, `FOOTER_STOCKS`, a
-paragraph of its own after the promise, so `FOOTER_PROMISE`, its tests and the quotes of
-visual-v4.md §5.1 stay exact (visual-v4.md quotes the new line and `Footer.test.tsx` checks the
-quote). The token page gets no marker in the MVP (stocks.md §8), and the lists (Home, Pools, Gaps)
-none at all: the footer line covers them. A stock's token page does carry the valuation label:
+**Where the eligibility line appears.** On `/stocks` and `/stocks/:token`, in the page and again in
+their footer, `FOOTER_STOCKS`, a paragraph of its own after the promise, so `FOOTER_PROMISE`, its
+tests and the quotes of visual-v4.md §5.1 stay exact (visual-v4.md quotes the line and
+`Footer.test.tsx` checks the quote); on the pool page of a stock pool (`latest.reference !==
+null`); and in the footer of a stock's token page (`/tokens/:address` of a token `GET /api/stocks`
+lists, `useStockPage`), which shows the stock's valuation price and has no line of its own. The
+footer of every other page leaves it out, so the same legal words are not repeated on pages about
+other pools. The token page gets no marker in the MVP (stocks.md §8), and the lists (Home, Pools,
+Gaps) none at all. A stock's token page does carry the valuation label:
 its facts row names the price "valuation price", with the label as the row's note, once `GET
 /api/stocks` lists the token (review fix: the headline "USD price" was the one unlabelled
 appearance of Depthwatch's price of a stock; `stockPoolLists.test.tsx` pins it).
@@ -199,7 +202,8 @@ As written (phase F):
   age, the pool's mid in dollars, the deviation and band, the stock's valuation price with its
   label, and the eligibility line. About this pool's "Prices used" carries the label too.
 - **Footer.** `FOOTER_STOCKS` is `ELIGIBILITY_LINE`, a second paragraph in the footer's text column
-  (`.foot-text`), so `.foot-say` keeps the promise word for word.
+  (`.foot-text`) on the Stocks pages and a stock's token page, so `.foot-say` keeps the promise word
+  for word.
 - **Boot size.** The two pages add about 26 KB to the boot script (578,257 → 604,213 bytes in the
   server build, 584,358 → 610,568 in the static one); `src/tradeBundle.test.ts`'s budget moved to
   616,000 and 623,000, about 2 % above, which still fails on the panel's 182 KB chunk.
@@ -290,7 +294,7 @@ Not in the MVP (stocks.md §8); written here so that the stored readings carry w
   `apps/cli/src/export.test.ts` (both keys, and a bundle without them).
 - web, on the mock client and jsdom: the list and the detail render the live, held and paused
   stocks, every status chip, the deviation's sign and band in words (inside and outside), "—" with
-  the reason; the eligibility line on `/stocks`, `/stocks/:token`, a stock pool's page and in the
-  footer; no element of a stock surface names a buy, a trade or a swap; `tradeGate` refuses a
+  the reason; the eligibility line on `/stocks`, `/stocks/:token` (and in their footer), a stock
+  pool's page and a stock's token page's footer; no element of a stock surface names a buy, a trade or a swap; `tradeGate` refuses a
   stock pool with the switch on; the static client with and without the stock keys; the nav and
   dock pins of §3.

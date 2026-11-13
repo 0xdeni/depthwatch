@@ -107,6 +107,7 @@ export interface CliFlags extends ScheduleFlags {
   out?: string
   demo?: boolean
   note?: string
+  updates?: string
   bundle?: string
 }
 
@@ -161,6 +162,8 @@ export interface Config {
   exportDemo: boolean
   /** `export --note`: the bundle's `note` (trimmed), shown with a live static snapshot. */
   exportNote: string | undefined
+  /** `export --updates`: the bundle's `updates`, the publisher's schedule. */
+  exportUpdates: 'several-times-a-day' | undefined
   /** `export --bundle`: an exported bundle to write again with only its `features` replaced. */
   exportBundle: string | undefined
   /** DEPTHWATCH_TRADE as given (environment only); `export` alone parses it (tradeSwitch.ts). */
@@ -193,6 +196,7 @@ const PARSE_OPTIONS = {
   out: { type: 'string' },
   demo: { type: 'boolean' },
   note: { type: 'string' },
+  updates: { type: 'string' },
   bundle: { type: 'string' },
   'snapshot-interval': { type: 'string' },
   'volume-interval': { type: 'string' },
@@ -252,12 +256,18 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     throw new ConfigError('--note only applies to export')
   if (values.note !== undefined && values.note.trim() === '')
     throw new ConfigError('--note needs text')
+  if (values.updates !== undefined && command !== undefined && command !== 'export')
+    throw new ConfigError('--updates only applies to export')
+  if (values.updates !== undefined && values.updates !== 'several-times-a-day')
+    throw new ConfigError('--updates takes several-times-a-day')
   if (values.bundle !== undefined && command !== undefined && command !== 'export')
     throw new ConfigError('--bundle only applies to export')
   if (values.bundle?.trim() === '') throw new ConfigError('--bundle needs a file path')
-  if (values.bundle !== undefined && (values.demo === true || values.note !== undefined))
+  const bundleData =
+    values.demo === true || values.note !== undefined || values.updates !== undefined
+  if (values.bundle !== undefined && bundleData)
     throw new ConfigError(
-      '--bundle keeps the data and note of the bundle it reads: no --demo, --note',
+      '--bundle keeps the data and note of the bundle it reads: no --demo, --note, --updates',
     )
   if (values.seed === true && command !== undefined && command !== 'discover' && command !== 'run')
     throw new ConfigError('--seed only applies to discover and run')
@@ -306,6 +316,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
       out: values.out,
       demo: values.demo,
       note: values.note,
+      updates: values.updates,
       bundle: values.bundle,
       snapshotInterval: values['snapshot-interval'],
       volumeInterval: values['volume-interval'],
@@ -372,6 +383,7 @@ export function loadConfig(env: Env, flags: CliFlags = {}): Config {
     outFile: flags.out,
     exportDemo: flags.demo === true,
     exportNote: flags.note?.trim(),
+    exportUpdates: flags.updates === 'several-times-a-day' ? flags.updates : undefined,
     exportBundle: flags.bundle,
     tradeSwitch: pick(undefined, env.DEPTHWATCH_TRADE),
     schedule: loadScheduleSettings(env, flags),

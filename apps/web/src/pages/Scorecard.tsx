@@ -126,15 +126,18 @@ export function Scorecard() {
     )
   } else if (scorecard.isError && isNotFound(scorecard.error)) {
     content = (
-      <NotFoundState
-        title="scorecard not found"
-        message="No market-maker mandate is registered under this id, or the link is wrong."
-        id={id}
-        links={{
-          primary: { to: '/mm', label: 'Browse scorecards' },
-          secondary: { to: '/methodology#scorecards', label: 'How scorecards work' },
-        }}
-      />
+      <>
+        <title>Scorecard not found – Depthwatch</title>
+        <NotFoundState
+          title="scorecard not found"
+          message="No market-maker mandate is registered under this id, or the link is wrong."
+          id={id}
+          links={{
+            primary: { to: '/mm', label: 'Browse scorecards' },
+            secondary: { to: '/methodology#scorecards', label: 'How scorecards work' },
+          }}
+        />
+      </>
     )
   } else if (scorecard.isError) {
     content = (

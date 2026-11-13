@@ -92,6 +92,7 @@ interface StaticBundle {
   generatedAt: number // unix seconds
   source: 'demo' | 'live'
   note?: string // depthwatch export --note; absent without the flag (demo exports)
+  updates?: 'several-times-a-day' // depthwatch export --updates; absent: no schedule claimed
   features?: { trade: TradeFlags } // the trade switch (DEPTHWATCH_TRADE); absent = off
   health: HealthResponse
   stats: StatsResponse
@@ -125,6 +126,9 @@ demo world has no stock), and `export --bundle` keeps an older bundle without th
 - `--note <text>` (export only, not empty, trimmed) sets the bundle's `note`: what the exporter
   wants a reader to know about the data (coverage, how it was read, caveats). Blank lines split
   it into paragraphs. Without the flag the key is absent, so a demo export is unchanged.
+- `--updates several-times-a-day` (export only, the one value) sets the bundle's `updates`: the
+  publisher replaces the copy on that schedule, which a live snapshot's site then states. The
+  Refresh site workflow passes it; a copy exported once leaves it out and claims no schedule.
 - Every export writes the trade switch, `DEPTHWATCH_TRADE`, as the bundle's `features.trade` and
   as `flags.json` next to the bundle (`{ "trade": … }`); `--bundle <file>` writes an exported
   bundle again with only `features` changed (docs/DEPLOY.md, "Trade switch").
@@ -157,24 +161,34 @@ demo world has no stock), and `export --bundle` keeps an older bundle without th
   explains that embeddable URLs need a running server.
 - **Live snapshot** (static build of a `source: 'live'` bundle, `snapshotOf` in
   `apps/web/src/api/static.ts`). The page is a copy of Base mainnet at one moment that never
-  updates, so it never says "Updated … ago" (that would grow stale) and says what it is instead.
-  The snapshot time is `health.latestSnapshotAt` (`generatedAt` before any snapshot).
-  - The demo line's slot (visual-v3.md §5.1, same 28 px line) reads "Snapshot of Base mainnet,
-    25 Oct 2026, 08:14 UTC. This page does not update." Below 840 px it reads "Snapshot of
-    25 Oct 2026, 08:14 UTC, not live" and the link "About", and below 360 px it drops the year
-    (both popovers keep it). Should it still not fit, the text takes the ellipsis, not the link.
+  updates. The header says when its data was read and how old that is on the reader's own clock,
+  counted again every minute and when the tab is shown again, so the age never goes stale on
+  screen; the pages themselves keep absolute times (below). The snapshot time is
+  `health.latestSnapshotAt` (`generatedAt` before any snapshot).
+  - The demo line's slot (visual-v4.md §5.1, a 32 px line at the top of the banner) reads "Data
+    from 25 Oct 2026, 08:14 UTC, 5 h ago. Updated several times a day.", its last sentence only
+    when the bundle states its publisher's schedule (`updates`). Below 840 px the link reads
+    "About" and the sentence "Data from 08:14 UTC, 5 h ago, updated several times a day", giving
+    up the clock time below 440 px and the schedule instead below 375 px; without a schedule,
+    "Data from 25 Oct, 08:14 UTC, 5 h ago", dropping the day below 360 px (both popovers keep the
+    date). Should it still not fit, the text takes the ellipsis, not the link. While the bundle
+    loads, an empty line of the same height holds the slot.
   - Its quiet link "About this snapshot" opens a popover with the `note` in paragraphs (or, with
     no note, "Every number was read from Base mainnet by the Depthwatch pipeline and exported to
     this static copy.") and then "Read at block 53,063,332. Exported 25 Oct 2026, 08:16 UTC."
-  - Freshness reads "As of 25 Oct, 08:14 UTC" with a hollow `text-3` dot (not the `ok` dot of
-    live data). Its popover lists Snapshot, Block, Pools tracked and Exported, with the year.
+  - Freshness shows the block with a grey dot (not the Green `ok` dot of live data), Tan once the
+    data is more than 8 hours old when the bundle states a schedule (a copy exported once is
+    never late); its name is "Block 53,063,332, data from 25 Oct 2026, 08:14 UTC, 5 h ago". Its
+    popover lists Data from, Block, Pools tracked and Exported, with the year, then the schedule
+    or, without one, "This copy keeps the data it was exported with."
   - The footer's data line reads "Data: Base mainnet snapshot".
   - Every other relative time on the pages (the Updated column and caption, Scored, price
     updated, scorecard "since …") reads as its absolute UTC time: the data clock is
     `SNAPSHOT_CLOCK` (`apps/web/src/lib/format.ts`).
   - A demo bundle keeps its frozen clock at `generatedAt` and the demo line, as before.
   - Publishing one: `depthwatch export --out apps/web/static-data/bundle.json --note "<text>"`
-    over the live database, then `pnpm --filter @depthwatch/web build:static`.
+    over the live database (with `--updates several-times-a-day` when it is replaced on that
+    schedule), then `pnpm --filter @depthwatch/web build:static`.
 - Root script `build:static` = export the demo bundle to `apps/web/public-static/data/bundle.json`
   (or the path the web build reads) and run the web static build. `dist-static` and the
   generated bundle are git-ignored.

@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AppRoutes, Providers } from '../App.js'
 import { ApiError } from '../api/errors.js'
 import {
@@ -26,6 +26,7 @@ function LocationProbe() {
 
 afterEach(() => {
   cleanup()
+  vi.unstubAllEnvs()
   Reflect.deleteProperty(window, 'matchMedia')
 })
 
@@ -199,14 +200,14 @@ describe('/mm states', () => {
     expect(screen.queryByRole('radiogroup')).toBeNull()
   })
 
-  it('speaks of a published snapshot as one', async () => {
+  it('speaks of a published snapshot as one, and never tells it to register a mandate', async () => {
     const client = { ...createMockClient({ now: NOW }), scorecards: async () => ({ items: [] }) }
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <Providers
         client={client}
         mock={false}
-        snapshot={{ at: NOW - 800, exportedAt: NOW, block: '53063332', note: null }}
+        snapshot={{ at: NOW - 800, exportedAt: NOW, block: '53063332', note: null, updates: null }}
         staticBuild
         queryClient={queryClient}
       >
@@ -219,6 +220,33 @@ describe('/mm states', () => {
       await screen.findByText('No market-maker mandates are registered in this snapshot.'),
     ).toBeTruthy()
     expect(screen.getByRole('link', { name: /what a scorecard checks/ })).toBeTruthy()
+    // A static copy has neither the CLI nor the API: the lead is the sentence alone.
+    const band = screen.getByRole('region', { name: 'How scorecards work' })
+    expect(band.querySelector('.lead')?.textContent).toBe(SCORECARD_LEAD)
+    expect(band.textContent).not.toMatch(/mm register|POST \/api\/mm/)
+  })
+
+  it('draws the no-mandate page while a static bundle built without one loads', async () => {
+    vi.stubEnv('DW_SHIPPED_MANDATES', '0')
+    vi.stubEnv('DW_SHIPPED_SOURCE', 'live')
+    const client = {
+      ...createMockClient({ now: NOW }),
+      scorecards: () => new Promise<never>(() => {}),
+    }
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <Providers client={client} mock={false} staticBuild connecting queryClient={queryClient}>
+        <MemoryRouter initialEntries={['/mm']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </Providers>,
+    )
+    // The words and the block the bundle will bring, before it is in: nothing moves when it is.
+    expect(
+      await screen.findByText('No market-maker mandates are registered in this snapshot.'),
+    ).toBeTruthy()
+    expect(screen.getByRole('link', { name: /what a scorecard checks/ })).toBeTruthy()
+    expect(document.querySelector('.mml [aria-busy="true"], .mml-skel-answer')).toBeNull()
   })
 
   it('keeps the page usable when the list fails, with a Retry', async () => {

@@ -509,7 +509,7 @@ it, and `apps/api/src/routes/webhookSecret.test.ts` fails when any part of it sh
 - `start [--snapshot-interval 30m] [--volume-interval 1h] [--positions-interval 6h] [--positions-budget 10m] [--discover-budget 15m]` — the server: `serve`'s API and dashboard, listening at once (after a write probe: an unwritable database is exit code 1), plus a scheduler over the same database. A pass every snapshot interval runs [seed until one succeeds] → snapshot → [volume when due] → score → [positions when due or while an active mandate's concentrated pool has no published positions, budgeted] → [log discovery, budgeted] → [prune once a day], both budgets cut to the time left before the next pass; steps never overlap, a failing step is logged and retried at its next slot, a volume or positions run that found no tracked pool is due again at the next pass, every step logs its requests and estimated Alchemy compute units and each UTC day a total. SIGTERM aborts the chain reader and the pipeline (`PipelineContext.signal`: no further pool read, nothing stored by the step in flight), waits `DEPTHWATCH_SHUTDOWN_GRACE` (8 s) at most, closes server and database, exit 0.
 - `serve` — API + dashboard (`apps/web/dist` if built).
 - `demo` — seed an in-memory DB (or an empty / demo-seeded `--db` file; `DEPTHWATCH_DB` is ignored so the live DB is never touched) from the synthetic fixture set and `serve`. Must work with no network.
-- `export --out <file> [--demo] [--note <text>] [--bundle <file>]` — the static dashboard bundle (`StaticBundle`, JSON) of the database, read route by route through `createApp(db).request()` so it holds what the server would answer; `--demo` bundles the offline demo world instead (in memory), `--note` sets the bundle's `note`. Every export writes the trade switch from `DEPTHWATCH_TRADE` (environment only, `apps/cli/src/tradeSwitch.ts`) twice: the bundle's `features.trade` and `flags.json` next to the bundle, exactly `{ "trade": … }`. Unset, empty or `off` is off; otherwise a comma-separated list of trade venues with a route in `TRADE_ROUTES` that is not on hold, with the launch limits of core (`TRADE_LAUNCH_MAX_USD`, `TRADE_MAX_SLIPPAGE_BPS`); an unknown or held venue fails closed: everything is written with the switch off, then the export fails with exit code 3, so a workflow publishes off and still fails. `--bundle <file>` writes an exported bundle again with only `features` replaced and reads no database (docs/DEPLOY.md, "Trade switch").
+- `export --out <file> [--demo] [--note <text>] [--bundle <file>]` — the static dashboard bundle (`StaticBundle`, JSON) of the database, read route by route through `createApp(db).request()` so it holds what the server would answer; `--demo` bundles the offline demo world instead (in memory), `--note` sets the bundle's `note`, `--updates several-times-a-day` its `updates` (the publisher's schedule). Every export writes the trade switch from `DEPTHWATCH_TRADE` (environment only, `apps/cli/src/tradeSwitch.ts`) twice: the bundle's `features.trade` and `flags.json` next to the bundle, exactly `{ "trade": … }`. Unset, empty or `off` is off; otherwise a comma-separated list of trade venues with a route in `TRADE_ROUTES` that is not on hold, with the launch limits of core (`TRADE_LAUNCH_MAX_USD`, `TRADE_MAX_SLIPPAGE_BPS`); an unknown or held venue fails closed: everything is written with the switch off, then the export fails with exit code 3, so a workflow publishes off and still fails. `--bundle <file>` writes an exported bundle again with only `features` replaced and reads no database (docs/DEPLOY.md, "Trade switch").
 - `mm register --file <json>` — validate a registration (docs/SCORECARDS.md), store the mandate (an existing id is replaced, keeping its registration time, samples and alerts) and print its scorecard URL; `mm list` — every mandate with its status; `mm show <id>` — the scorecard summary as JSON (the webhook URL masked to scheme and host); `mm deactivate <id>` — stop sampling, the scorecard stays served as `inactive`; `mm sample` — sample every active mandate now against the latest block (the one live `mm` command). The other `mm` commands only touch the database.
 
 ## Dashboard (apps/web)
@@ -528,12 +528,14 @@ via TanStack Query against `/api`; the static build (`pnpm build:static`) reads 
 in-repo mock JSON so the UI runs without a backend (the dev server also falls back to it when the API is down); a production
 build contains no mock data and, when `/api/health` does not answer, shows "The data service is not answering." with a
 "Try again" button instead of made-up pools (docs/design/web-v2.md §4). The bundle (`StaticBundle` in `apps/api/src/dto.ts`, mirrored in
-`apps/web/src/api/types.ts`) carries an optional `note` from `depthwatch export --note <text>` and an optional
+`apps/web/src/api/types.ts`) carries an optional `note` from `depthwatch export --note <text>`, an optional `updates`
+from `--updates several-times-a-day` (absent from a copy exported once, which then states no schedule) and an optional
 `features.trade`, the trade switch; the static build ships it again as `data/flags.json` and fails when the two differ
 (`plugins/staticFlags.ts`). Core's `parseTradeFlags`, `parseFlagsFile` and `combineTradeFlags` read them failing
 closed: a missing or malformed block is off, and a swap needs both on for its venue. The static build also ships
 `public/_headers` for Cloudflare Pages (no framing, `nosniff`, a Content-Security-Policy with `connect-src 'self'` and
-the inline script of `index.html` by hash, `data/flags.json` uncached); every build fails when that hash and the inline
+the inline script of `index.html` by hash, `data/flags.json` uncached, the hashed `assets/` cached a year and the
+fonts a month); every build fails when that hash and the inline
 script differ or the file opens a URL pattern in two blocks (Pages was seen to serve only the last), and the server
 build leaves the file out (`plugins/securityHeaders.ts`). It ships `public/404.html` and `public/404.css` as well, the
 page Pages serves with HTTP 404 for every path the copy lacks, `/api/…` included; the static build fails unless the
@@ -607,9 +609,14 @@ added to swaps, otherwise that the site is read-only (visual-v4.md §5.1); a pag
 its footer until it reloads.
 
 A static build of a
-`live` bundle is a dated snapshot that does not update: the top line names Base mainnet and the snapshot's UTC time,
-"About this snapshot" shows the note, and freshness and every other time are absolute, never "… ago"
-(docs/design/web-v2.md §4).
+`live` bundle is a dated snapshot that does not update: the top line, at the head of the banner, gives the data's UTC
+time and its age on the reader's clock, kept current while the page is open, and, when the bundle states its publisher's
+schedule (`updates`), says the site is updated several times a day; "About this snapshot" shows the note; the freshness
+dot is grey, Tan past 8 hours on a copy with a schedule; every other time is absolute, never "… ago"
+(docs/design/web-v2.md §4). Only the static build carries link-preview tags (Open Graph and Twitter), with absolute URLs
+from `VITE_SITE_URL` (default `https://depthwatch.pages.dev/`, `plugins/siteMeta.ts`), and `index.html` paints a
+markup copy of the header before any script runs; the build also hands the app what its bundle holds (whether it lists
+a mandate, whether it is live) so pages drawn while the bundle loads already have their final shape.
 
 ## Testing
 

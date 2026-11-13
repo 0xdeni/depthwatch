@@ -6,11 +6,15 @@
  * `?active=`) and the List / Table view (`?view=`), both written to the URL with replace. Over the
  * band's lower edge sits one block: the mandate rows (status word, name, market maker and pool,
  * 7 d uptime with its bullet, and the 7 d strip on desktop), the table with every v2 column, or,
- * with no mandate, one destination block that explains how a scorecard is checked.
+ * with no mandate, one destination block that explains how a scorecard is checked. With no mandate
+ * a server's lead adds how one is registered; a static copy, which has neither the API nor the
+ * CLI, does not, and while it loads a bundle built with no mandate it already shows that page
+ * (`lib/shipped.ts`). The nav lists this page only once a mandate exists (`useNavItems`);
+ * Methodology links to it.
  */
 import type { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useDataNow, useSnapshot } from '../api/context.js'
+import { useDataNow, useIsStatic, useSnapshot } from '../api/context.js'
 import { usePoolMetas, useScorecards } from '../api/hooks.js'
 import type { ScorecardsQuery } from '../api/types.js'
 import { Band } from '../components/ui/Band.js'
@@ -26,10 +30,11 @@ import {
   useDelayedPending,
 } from '../components/ui/States.js'
 import { count } from '../lib/format.js'
+import { shippedMandates, shippedSnapshot } from '../lib/shipped.js'
 import { useIsPhone } from '../lib/useMediaQuery.js'
 import { HowItWorks, MandateRows, STRIP_LIMIT } from './mm/MandateRows.js'
 import { MandatesTable } from './mm/MandatesTable.js'
-import { listAnswer } from './mm/mmText.js'
+import { listAnswer, noMandates } from './mm/mmText.js'
 import './mm/mm.css'
 
 type ActiveFilter = 'all' | 'active' | 'inactive'
@@ -71,8 +76,18 @@ export function Scorecards() {
   const phone = useIsPhone()
   const now = useDataNow()
   const snapshot = useSnapshot() !== undefined
+  // A static copy has no API and no CLI, so it never says how to register a mandate.
+  const howToAdd = !useIsStatic()
   const waiting = useDelayedPending(all.isPending || shown.isPending)
   const total = all.data?.items.length
+  // No mandate: known, or, while a static build loads, what the bundle it was built with says
+  // (`lib/shipped.ts`), so that page is drawn from the first frame and nothing moves.
+  const none = total === 0 || (all.isPending && shippedMandates() === false)
+  const answer = all.data
+    ? listAnswer(all.data.items, snapshot)
+    : none
+      ? noMandates(shippedSnapshot() === true)
+      : null
 
   const write = (key: string, value: string | null) =>
     setParams(
@@ -107,6 +122,8 @@ export function Scorecards() {
         />
       </div>
     )
+  } else if (none) {
+    body = <HowItWorks />
   } else if (!items || total === undefined) {
     body = (
       <div className="blk blk--over" data-over="" aria-busy="true">
@@ -117,8 +134,6 @@ export function Scorecards() {
         </SkeletonGroup>
       </div>
     )
-  } else if (total === 0) {
-    body = <HowItWorks />
   } else if (!items.length) {
     body = (
       <div className="blk blk--over" data-over="">
@@ -165,9 +180,9 @@ export function Scorecards() {
           <h1 className="title" id="mml-title" data-rise="">
             scorecards
           </h1>
-          {all.data ? (
+          {answer !== null ? (
             <p className="answer" data-rise="">
-              {listAnswer(all.data.items, snapshot)}
+              {answer}
             </p>
           ) : all.isError ? null : (
             <SkeletonGroup label="Loading the answer" hidden={!waiting} className="mml-skel-answer">
@@ -181,7 +196,7 @@ export function Scorecards() {
         <div className="mml-lead-row">
           <p className="lead" data-in="">
             {SCORECARD_LEAD}
-            {total === 0 ? (
+            {total === 0 && howToAdd ? (
               <>
                 {' '}
                 Mandates are added with <code>depthwatch mm register</code> or{' '}

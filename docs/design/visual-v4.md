@@ -244,8 +244,8 @@ hex value is not.
 | Blue     | `#0000FF` | The band; primary button; nav indicator (light); focus (light)              |
 | Cerulean | `#3C8AFF` | The sell side off the band; nav indicator and focus in dark                 |
 | Yellow   | `#FFD12F` | The buy side everywhere; the focus ring on the band                         |
-| Green    | `#66C800` | Status ok: grades A and B, within KPI, the freshness dot                    |
-| Tan      | `#B8A581` | Status warn: grade C                                                        |
+| Green    | `#66C800` | Status ok: grades A and B, within KPI, the live freshness dot               |
+| Tan      | `#B8A581` | Status warn: grade C; a late snapshot's freshness dot                       |
 | Red      | `#FC401F` | Status bad: grades D and F, breaches, KPI shortfalls                        |
 | Lime     | `#B6F569` | Not used                                                                    |
 | Pink     | `#FEA8CD` | Not used                                                                    |
@@ -826,14 +826,28 @@ there is never a blank frame and never two views near full opacity (prototype
 **Skip link.** First focusable element; 44 px high, `--text-1` fill, `--canvas` label, 700, radius
 12; visible at top 8, left 8 only on `:focus-visible` (A4).
 
-**Demo line, snapshot line** (the v3 slot above the app bar, now 32 px):
+**Banner.** One `<header>` landmark holds the data line, when there is one, and the app bar. With
+the line it sticks at −32 px, so the line scrolls away and the bar stays. `index.html` carries a
+markup copy of the banner inside `#root` (no script, no style attribute, hidden from assistive
+technology): the static build's empty data line, the wordmark, the tabs (Scorecards among them
+unless a static build's bundle has no mandate, as the app lists them before its list of mandates
+answers) and the freshness slot's "Connecting…", so the first paint shows the header and nothing
+moves when the app replaces it.
+
+**Demo line, snapshot line** (the v3 slot above the app bar, now 32 px, at the top of the banner):
 - `--surface-2` in light; in dark the canvas with a 1 px Gray 80 rule under it.
 - 13 px `--text-2`, one line, `nowrap`, ellipsis as a last resort.
-- **Live snapshot** (a static build of a `live` bundle): "Snapshot of Base mainnet, 25 Oct 2026,
-  11:30 UTC. This page does not update." with the trigger "About this snapshot" (13 px, 650,
-  `--text-1`, underlined). Below 840 px: "Snapshot of 25 Oct 2026, 11:30 UTC, not live" and
-  "About", so it never truncates mid-sentence. The popover holds the exporter's note and the
-  block.
+- **Live snapshot** (a static build of a `live` bundle): "Data from 12 Nov 2026, 20:05 UTC, 5 h ago.
+  Updated several times a day." with the trigger "About this snapshot" (13 px, 650, `--text-1`,
+  underlined). The last sentence is the publisher's schedule, said only when the bundle states it
+  (`updates`, from `depthwatch export --updates several-times-a-day`, which the Refresh site
+  workflow passes); a copy exported once states none. The age is counted on the reader's clock,
+  read again every minute and when the tab is shown again, so it never goes stale on screen. Below
+  840 px, "About" and a shorter sentence, so it never truncates mid-sentence: "Data from 20:05 UTC,
+  5 h ago, updated several times a day"; below 440 px "Data from 5 h ago, updated several times a
+  day"; below 375 px "Data from 20:05 UTC, 5 h ago". Without a schedule: "Data from 12 Nov, 20:05
+  UTC, 5 h ago", without the day below 360 px. The popover holds the exporter's note and the block.
+  While a static build loads its bundle, an empty line of the same height holds the slot.
 - **Demo or mock data:** "Demo data: a synthetic week of Base" and "About the demo", unchanged.
 
 **App bar, from 840 px:** 64 px, sticky at 0, `--canvas`; its `::after` hairline (`--line`) fades
@@ -843,24 +857,33 @@ in past 8 px of scroll.
 - **Nav:** Pools, Stocks, Gaps, Scorecards, Methodology; 15 px, 650, 28 px apart, `--text-2`, the
   current item `--text-1` with `aria-current="page"` (Stocks on `/stocks` and `/stocks/:token`,
   docs/design/stocks-api.md §3); the five fit beside the wordmark and the freshness button at
-  840 px. The indicator is a 4 px bar (radius 2 2 0 0) in
+  840 px. Scorecards is listed only once a mandate is registered (its page stays at `/mm`, and
+  Methodology's scorecards section links to it). The indicator is a 4 px bar (radius 2 2 0 0) in
   `--nav-ind` under the current item, placed with `left` and `width` and moved by transform only.
-- **Freshness** (pushed right): an 8 px Green **circle** and the eyebrow "Block 53,069,244"; a
-  40 px button, radius 12, `--surface-2` on hover; its popover gives the snapshot time, block and
-  "492 of 580" pools tracked. Offline: a Red triangle and "Offline". Never a square.
+- **Freshness** (pushed right): an 8 px **circle** and the eyebrow "Block 53,069,244"; a 40 px
+  button, radius 12, `--surface-2` on hover, whose accessible name starts with those words ("Block
+  53,069,244, updated 2 min ago"); its popover gives the snapshot time, block and "492 of 580"
+  pools tracked. The circle is Green for live data from a server. A published snapshot is not
+  live: its circle is `--text-2` grey and, when its publisher states a schedule, Tan once the data
+  is more than 8 hours old on the reader's clock; its name and popover give the data's time and age
+  ("Block 56,617,832, data from 12 Nov 2026, 20:05 UTC, 5 h ago"), and the popover the schedule.
+  Offline: a Red triangle and "Offline". Never a square.
 
 **Phone chrome, below 840 px** (100 px):
 - **Bar, 56 px:** the wordmark and the freshness dot as a 44 × 44 button at the right gutter.
-- **Tab strip, 44 px,** under the bar, same landmark name: Pools, Stocks, Gaps, Scorecards,
-  Methodology at 15 px, 700; the current tab `--text-1` with a 4 px `--nav-ind` bar inset 10 px;
-  scrolls sideways below about 425 px (`26.56em`: the five tabs need 392.6 px plus two 16 px
-  gutters), its trailing edge fading, and keeps the current tab in view. The bar and strip never
-  hide. No theme toggle (PH2).
+- **Tab strip, 44 px,** under the bar, same landmark name: Pools, Stocks, Gaps, Scorecards (once a
+  mandate exists), Methodology at 15 px, 700; the current tab `--text-1` with a 4 px `--nav-ind`
+  bar inset 10 px. Below about 425 px (`26.56em`: the five full labels need 392.6 px plus two
+  16 px gutters) Scorecards and Methodology read "Scores" and "Method", each link's `aria-label`
+  holding both its full and its short words ("Scorecards (Scores)", "Methodology"), so no tab is
+  cut and each can be called by the words it shows. Where the tabs still do not fit, the strip scrolls
+  sideways, fades whichever edge has tabs past it, and keeps the current tab in view. The bar and
+  strip never hide. No theme toggle (PH2).
 - **No fixed bottom bar in a browser tab** (PH3). In an installed app only
   (`@media (display-mode: standalone)`), the strip is replaced by a bottom dock: Gray 100, radius
-  20 20 0 0, five 48 px tabs, the current one Base Blue with white text, padded by the bottom safe
+  20 20 0 0, one 48 px tab per nav item, the current one Base Blue with white text, padded by the bottom safe
   area, sticky at the bottom of the app column. At 320 px a tab is 57.6 px wide, so Scorecards and
-  Methodology read "Scores" and "Method", their links keeping the full name as `aria-label`.
+  Methodology read "Scores" and "Method", with the same accessible names as on the strip.
 
 **Main:** `id="main"`, `tabindex="-1"`, the view-transition boundary; focus moves here after
 keyboard navigation. The app column is a flex column of at least `100dvh`, so a short page rests
@@ -869,8 +892,11 @@ its footer on the viewport bottom.
 **Footer:** the ink block in both themes (Gray 100, a Gray 80 top rule in dark); 64 px above it
 (48 on phones), 48 px padding (32 on phones) plus the bottom safe area.
 - Desktop (from 1024): one row of three columns: the wordmark at 28 px; the promise plus the data
-  source ("Data: a Base mainnet snapshot.") in `--on-ink-2`, then the stock line as a paragraph of
-  its own; the links Methodology, API and GitHub (15 px, 650, 44 px targets, underline on hover).
+  source ("Data: a Base mainnet snapshot.") in `--on-ink-2`, then, on the pages about a stock, the
+  stock line as a paragraph of its own; the links Methodology, API and GitHub (15 px, 650, 44 px targets,
+  underline on hover). API goes to the README's API section on GitHub from a static copy, which
+  runs no API, and to the server's `/AGENTS.md` otherwise. A keyboard focus ring on the ink is
+  Yellow (`--focus-band`, 13.5:1) in both themes, as on the band.
 - The promise follows the trade switch the page loaded with (`tradeSwitchOn`), and a page already
   open keeps it until it reloads. While the switch is off: "Open source and read-only. No token, no
   custody. It indexes Uniswap, Aerodrome and Aero pools on Base mainnet. Independent: not
@@ -878,10 +904,11 @@ its footer on the viewport bottom.
   "Open source. No token, no custody, no fee added to swaps. It indexes Uniswap, Aerodrome and Aero
   pools on Base mainnet. The swap panel is on and non-custodial: a swap goes from your own wallet
   straight to the pool’s router. Independent: not affiliated with or endorsed by Base."
-- The stock line (`FOOTER_STOCKS`, docs/design/stocks-api.md §3) follows the promise on every page,
-  whatever the switch: "Coinbase tokenized stocks are only available to persons in eligible
-  jurisdictions outside of the U.S. Depthwatch measures their markets; it does not offer, route or
-  recommend trades in them."
+- The stock line (`FOOTER_STOCKS`, docs/design/stocks-api.md §3) follows the promise on the Stocks
+  pages (`/stocks`, `/stocks/:token`) and on a stock's token page, whatever the switch: "Coinbase tokenized stocks are only
+  available to persons in eligible jurisdictions outside of the U.S. Depthwatch measures their
+  markets; it does not offer, route or recommend trades in them." A stock pool's page carries the
+  same line in its own section.
 - Phones: one column in that order, links left-aligned 20 px apart.
 
 ### 5.2 The band and blocks
@@ -1250,9 +1277,9 @@ code" opens two code blocks (`--surface-2`, radius 10, 13 px mono).
   never change and skip it.
 - **Empty** (ST2): one sentence and at most one action. The Scorecards list with no mandates: "No
   market-maker mandates are registered in this snapshot." on the title, the band's lead "A
-  scorecard checks the depth a market maker promised against what is on chain at every snapshot.
-  Mandates are added with `depthwatch mm add` or `POST /api/mm`.", and the example scorecard as one
-  destination block over the band.
+  scorecard checks the depth a market maker promised against what is onchain at every snapshot.",
+  followed on a server by "Mandates are added with `depthwatch mm register` or `POST /api/mm`." (a
+  static copy has neither), and one destination block over the band.
 - **Error in a section** (ST3) and **Offline** (ST7): as v3; the freshness slot shows the Red
   triangle and "Offline", never a full-page takeover when data exists. A page that fails to draw
   is replaced inside <main> only, by "This page could not be drawn." and "Reload, or go to Pools.";
@@ -1343,9 +1370,9 @@ on Base). The butterfly's totals leave those pools out the same way and still dr
   half is inside the first viewport (501 + 657 / 2 = 830 < 844, PH6).
 - **Facts:** §5.6. **Previews** (P7, at most 3 rows each): "where liquidity is thin" (7 columns:
   "48 pools trade 3× their depth or more every day.", three gap rows, "See all gaps" and the caption
-  "Gap score 0–100; the tick marks 3× turnover") and "market makers on the record" (5 columns, a
-  panel that is one destination: "No market-maker mandates are registered in this snapshot.", the
-  example's sell and buy bars against its $400K KPI, "See an example scorecard").
+  "Gap score 0–100; the tick marks 3× turnover") and, once a mandate is registered, "market makers
+  on the record" (5 columns: the mandates' rows and "See all scorecards"). With no mandate the gaps
+  preview takes the whole row.
 - **States:** as ia-v3 §4.1; with no scored pools the butterfly shows its spine only.
 
 ### 6.3 Pools (`/pools`)
@@ -1415,9 +1442,9 @@ The table view of ia-v3 §4.4 keeps the dense table style.
 ### 6.6 Scorecards list (`/mm`)
 
 **Answer:** "No market-maker mandates are registered in this snapshot." (the count sentence of
-ia-v3 §4.5 when there are mandates). The band holds the lead with `depthwatch mm add` and `POST
-/api/mm`; the example scorecard is one destination block over the band ("Example", "WETH / USDC
-depth mandate", one sentence, "See the example scorecard"). With mandates, the list is a row-list
+ia-v3 §4.5 when there are mandates). The band holds the lead, on a server with `depthwatch mm
+register` and `POST /api/mm`; one destination block over the band explains what a scorecard
+checks. With no mandate the nav and Home leave Scorecards out, and Methodology links here. With mandates, the list is a row-list
 block over the band, with the status word, the mandate name, the market maker and pool, and the
 7 d uptime with its bullet; the Filter and List / Table controls sit on the band.
 
@@ -1494,19 +1521,20 @@ disclosures and figures built from the components above. Exempt from length budg
 
 ### 7.2 Styles (`src/styles/`)
 
-| File           | Change                                                                       |
-| -------------- | ---------------------------------------------------------------------------- |
-| `tokens.css`   | Rewritten to §3.1 and §3.4–§3.8; field-of-light and tint tokens removed      |
-| `fonts.css`    | Unchanged but for its comment                                                |
-| `base.css`     | Body 450; type classes; `.eyebrow`, `.meta`, `.cap`; band and ink focus      |
-| `shell.css`    | Snapshot line, app bar, circle dot, phone tab strip, standalone dock, footer |
-| `controls.css` | Button variants, segmented on the band, search, DEX filter, back link        |
-| `content.css`  | Band, blocks (over, ink, panel, destination), grid, facts, sections sheet    |
-| `tables.css`   | Table sheet, 64 px rows, row glyph colours, phone rows and their paging      |
-| `layers.css`   | Popover radius 16, tooltip, sheet radius 24 with "Done", scrim               |
-| `states.css`   | Skeletons on the band (white 14 %), refetch bar, not found                   |
-| `embed.css`    | Badge preview and code blocks                                                |
-| `motion.css`   | Press scales, chevron, the 100 / 180 view transition, reduced motion         |
+| File           | Change                                                                    |
+| -------------- | ------------------------------------------------------------------------- |
+| `tokens.css`   | Rewritten to §3.1 and §3.4–§3.8; field-of-light and tint tokens removed   |
+| `fonts.css`    | Unchanged but for its comment                                             |
+| `base.css`     | Body 450; type classes; `.eyebrow`, `.meta`, `.cap`; band and ink focus   |
+| `shell.css`    | Snapshot line, app bar, circle dot, phone tab strip, standalone dock      |
+| `footer.css`   | The ink footer                                                            |
+| `controls.css` | Button variants, segmented on the band, search, DEX filter, back link     |
+| `content.css`  | Band, blocks (over, ink, panel, destination), grid, facts, sections sheet |
+| `tables.css`   | Table sheet, 64 px rows, row glyph colours, phone rows and their paging   |
+| `layers.css`   | Popover radius 16, tooltip, sheet radius 24 with "Done", scrim            |
+| `states.css`   | Skeletons on the band (white 14 %), refetch bar, not found                |
+| `embed.css`    | Badge preview and code blocks                                             |
+| `motion.css`   | Press scales, chevron, the 100 / 180 view transition, reduced motion      |
 
 ### 7.3 Shell (`src/components/Layout.tsx`, `src/components/shell/`)
 
@@ -1515,7 +1543,8 @@ disclosures and figures built from the components above. Exempt from length budg
   session for the landing route; renders `Dock` in standalone mode.
 - `AppBar.tsx`: 64 / 56 px; the hairline appears past 8 px of scroll (was 36).
 - `Nav.tsx`: the one `<nav>`, a 4 px indicator in `--nav-ind`; below 840 px the 44 px tab strip.
-- `Freshness.tsx`: the Green circle and the eyebrow "Block 53,069,244"; never a square.
+- `Freshness.tsx`: the circle (Green live, grey or Tan for a snapshot) and the eyebrow "Block
+  53,069,244"; never a square.
 - `Footer.tsx`: the ink block layout and copy of §5.1.
 - `Logo.tsx`: the mark's v4 colours (§2.3).
 - `SnapshotLine.tsx`, `DemoLine.tsx`, `SkipLink.tsx`: styles only; the narrow snapshot sentence

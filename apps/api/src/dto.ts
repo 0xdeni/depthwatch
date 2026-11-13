@@ -351,6 +351,12 @@ export interface StaticBundle {
    */
   note?: string
   /**
+   * How often the publisher replaces this copy (`depthwatch export --updates`): the static
+   * dashboard of a `live` bundle states it beside the data's age and marks the copy late past 8
+   * hours. Absent from a copy exported once, which claims no schedule.
+   */
+  updates?: 'several-times-a-day'
+  /**
    * The trade switch (`depthwatch export` from DEPTHWATCH_TRADE, docs/DEPLOY.md "Trade switch"),
    * also written next to the bundle as `flags.json`. Absent from bundles exported before it, which
    * read as off; `parseTradeFlags` reads it, failing closed.

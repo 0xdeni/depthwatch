@@ -5,8 +5,8 @@ name: Trade switch
 # writes it again with `depthwatch export --bundle`, taking features.trade and data/flags.json from
 # the repository variable DEPTHWATCH_TRADE, builds the static site from this branch and uploads
 # it. Nothing reads the chain and no database is restored. Refresh site reads the same variable, so
-# its next run publishes the same switch. It needs the repository secrets CLOUDFLARE_API_TOKEN and
-# CLOUDFLARE_ACCOUNT_ID, and runs only by hand.
+# its next refresh publishes the same switch. It needs the repository secrets CLOUDFLARE_API_TOKEN
+# and CLOUDFLARE_ACCOUNT_ID, and runs only by hand.
 
 on:
   workflow_dispatch:
@@ -14,8 +14,10 @@ on:
 permissions:
   contents: read
 
-# The same group as Refresh site: the two never publish at once, and a switch started during a
-# refresh waits for it, so it downloads the copy that refresh published.
+# The same group as the refresh job of Refresh site: the two never publish at once, and a switch
+# started during a refresh waits for it, so it downloads the copy that refresh published. GitHub
+# keeps one run waiting per group: a newer switch, or a refresh, which publishes the same variable,
+# replaces a waiting switch, whose run then shows as cancelled and changed nothing.
 concurrency:
   group: refresh-site
   cancel-in-progress: false
@@ -45,14 +47,14 @@ jobs:
             exit 1
           fi
       # Actions are pinned to commit SHAs, the same as in Refresh site.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
       - name: Install pnpm
         run: npm install --global pnpm@10.28.0
       - name: Cache pnpm store
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/pnpm/store
           key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -84,11 +86,9 @@ jobs:
       - name: Check the bundle
         run: |
           node -e 'const b = JSON.parse(require("node:fs").readFileSync("apps/web/static-data/bundle.json", "utf8")); if (b.pools.length === 0) { console.log("::error::The bundle holds no pools; the published copy is kept."); process.exit(1) }'
+      # As in Refresh site, the build writes the 404.html that makes unknown paths answer 404.
       - name: Build the static site
-        run: |
-          pnpm --filter @depthwatch/web build:static
-          # As in Refresh site: unknown paths answer 404, not index.html.
-          printf '%s\n' '<!doctype html><meta charset="utf-8"><title>Not found</title><p>Not found. This static copy of Depthwatch has no API; the dashboard is at <a href="/">/</a>.</p>' > apps/web/dist-static/404.html
+        run: pnpm --filter @depthwatch/web build:static
       - name: Install wrangler
         run: npm install --global --ignore-scripts --no-audit wrangler@4.150.0
       - name: Publish to Cloudflare Pages

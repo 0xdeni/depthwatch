@@ -82,7 +82,8 @@ describe('the noindex header of the preview', () => {
     const insert = PREVIEW.indexOf('lines.splice(lines.indexOf("/*") + 1')
     expect(insert).toBeGreaterThan(PREVIEW.indexOf('pnpm --filter @depthwatch/web build:static'))
     expect(insert).toBeLessThan(PREVIEW.indexOf('wrangler pages deploy'))
-    expect(PREVIEW).toContain('Not found. This static copy of Depthwatch has no API')
+    // The 404 page comes from the build (apps/web/public/404.html), not from the workflow.
+    expect(PREVIEW).not.toMatch(/> ?apps\/web\/dist-static\/404\.html/)
     for (const file of PRODUCTION_PUBLISHERS)
       expect(workflow(file), file).not.toContain('X-Robots-Tag')
     expect(SOURCE).not.toContain('X-Robots-Tag')

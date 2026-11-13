@@ -88,8 +88,9 @@ describe('SpreadLollipop (visual-v4 §5.9.8)', () => {
     expect(Number(style(tracks[2], '--x'))).toBeCloseTo(13.83 / 15, 9)
     expect(container.querySelectorAll('.dot-s')).toHaveLength(3)
     expect(tracks[1]?.querySelector('b')?.textContent).toBe(`10.4${NB}bps`)
+    // The chart's name says the costs as its labels do: percent and dollars first, bps second.
     expect(screen.getByRole('img').getAttribute('aria-label')).toBe(
-      `Effective spread: $1K costs 10.0${NB}bps, $10K costs 10.4${NB}bps, $100K costs 13.8${NB}bps.`,
+      `Effective spread: $1K costs 0.10${NB}%, about $1 (10.0${NB}bps); $10K costs 0.10${NB}%, about $10 (10.4${NB}bps); $100K costs 0.14${NB}%, about $138 (13.8${NB}bps).`,
     )
   })
 
@@ -148,7 +149,7 @@ describe('SpreadLollipop (visual-v4 §5.9.8)', () => {
     expect(rows[3]?.querySelector('.dot-d.ring')).toBeTruthy()
     expect(screen.getByText('Can’t absorb $1M')).toBeTruthy()
     expect(lollipopLabel(spreads)).toBe(
-      `Effective spread: $1K costs 10.0${NB}bps, $10K costs 10.4${NB}bps, $100K costs 13.8${NB}bps, $1M can’t be absorbed.`,
+      `Effective spread: $1K costs 0.10${NB}%, about $1 (10.0${NB}bps); $10K costs 0.10${NB}%, about $10 (10.4${NB}bps); $100K costs 0.14${NB}%, about $138 (13.8${NB}bps); $1M can’t be absorbed.`,
     )
     expect(lollipopAxis(spreads).max).toBe(15)
   })

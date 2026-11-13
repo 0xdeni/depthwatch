@@ -102,7 +102,7 @@ The idea has three consequences, each of which can be checked:
   - **v4 amended** ([visual-v4.md §1.8](visual-v4.md#18-rules-this-spec-amends)): IBM Plex Mono also sets eyebrows: the one line of metadata above a title, a band or a fact, uppercase, 12 px, 500, +0.09em. Nowhere else.
 - **T2. Self-host the fonts.**
   - Build one woff2 subset per face from the `google/fonts` TTFs with the `pyftsubset` command in type-a11y §1.6. The subset keeps `tnum case frac ss01–ss04` and the glyphs `± × − ≥ ≈`.
-  - Hanken has no `↑` and no thin, figure or narrow no-break spaces ([type-a11y §1.2](research/type-a11y.md), measured with fontTools). Every arrow (delta, sort, the ⇄ price swap, chevrons) is therefore an SVG icon, never a text glyph.
+  - Hanken has no `↑` and no thin, figure or narrow no-break spaces ([type-a11y §1.2](research/type-a11y.md), measured with fontTools). Every arrow (delta, sort, chevrons) is therefore an SVG icon, never a text glyph.
   - Never use `fonts.googleapis.com`, because the Google Fonts latin subset strips features and omits `→` and `≥`.
   - Preload the sans file only.
   - Use `font-display: swap` with a metric-matched fallback `@font-face` (`size-adjust`) ([Chrome font fallback](https://developer.chrome.com/blog/framework-tools-font-fallback/)).
@@ -464,8 +464,9 @@ Sources for this section: [data-ui §3](research/data-ui.md), [Uniswap formatter
 - **N2. Prices.**
   - At least 1: 2 decimals with grouping (`2,460.32`).
   - Below 1: 4 significant digits (`0.0004065`), shown only behind the inverse toggle. Always written out, never in exponent notation: `0.00000387`, not `3.87e-6`.
-  - A price shows one direction ("1 WETH = 2,460.32 USDC") with a ⇄ button that flips it.
-- **N3. Basis points.** Below 100, 1 decimal. At 100 or more, an integer, with at most 4 significant digits. Write `10.4 bps` and `187 bps`. From 10,000 bps (a feasible spread never reaches it, docs/METRICS.md) a spread is not a number: the pool says `Can’t absorb $10K` where the spread would be.
+  - A price shows one direction ("1 WETH = 2,460.32 USDC") with a text toggle that flips it
+    ("Show price in WETH").
+- **N3. Basis points.** Below 100, 1 decimal. At 100 or more, an integer, with at most 4 significant digits. Write `10.4 bps` and `187 bps`. From 10,000 bps (a feasible spread never reaches it, docs/METRICS.md) a spread is not a number: the pool says `Can’t absorb $10K` where the spread would be. Where a round trip's cost is read by people who do not think in bps (the pool page), it leads with the percent and the dollars it comes to and puts the bps second: `0.18 %, about $18 (17.8 bps)` for a $10K round trip (`roundTripCost`); the percent keeps 2 significant figures below 10 % and is whole from there, except from 99.5 %, where it keeps one decimal, cut down, so a spread under 10,000 bps never reads `100 %` (`99.6 %` at 9,960 bps).
 - **N4. Shares and uptime.**
   - LP shares and band shares are integers (`53 %`).
   - A share above 0 and below 1 % reads "under 1 %", never "0 %" (amended).

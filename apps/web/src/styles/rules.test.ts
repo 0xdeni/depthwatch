@@ -214,6 +214,20 @@ describe('reads and labels that hold still (§5.6, §5.8, §5.9)', () => {
     expect(block(css, '.fact dt:not(.fact-eb)')).toMatch(/text-wrap:\s*pretty/)
   })
 
+  it('sizes the pool price and its toggle by hidden copies, so a flip moves nothing', () => {
+    expect(block(css, '.pool-hold')).toMatch(/display:\s*inline-grid/)
+    expect(block(css, '.pool-hold > *')).toMatch(/grid-area:\s*1 \/ 1/)
+    expect(block(css, '.pool-hold > .is-ghost')).toMatch(/visibility:\s*hidden/)
+    // The shown price, settling in character by character, sizes nothing.
+    expect(block(css, '.pool-hold > .pool-price')).toMatch(/position:\s*absolute/)
+  })
+
+  it('wraps a small multiple’s head at any width, so a long value never runs out of its row', () => {
+    // "Spread at $10K 12 Nov, 11:28" beside "0.17 % (17.3 bps)" is wider than a 360 px phone.
+    expect(block(css, '.sm-h')).toMatch(/flex-wrap:\s*wrap/)
+    expect(block(css, '.sm-h b')).toMatch(/margin-left:\s*auto/)
+  })
+
   it('keeps a grade chip beside a fact value out of the value’s tight tracking', () => {
     expect(block(css, '.fact dd')).toMatch(/letter-spacing:\s*-0\.05em/)
     expect(block(css, '.grade')).toMatch(/letter-spacing:\s*0;/)

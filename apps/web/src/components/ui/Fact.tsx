@@ -3,8 +3,9 @@
  * comparison (P4: "sell side now, below the $400K KPI"). The value is `--t-kpi` at 820, with a
  * grade glyph or the 14 px breach triangle 14 px after it; the label is 15 px `--text-2` (on the
  * ink block `--on-ink-2`), at most 30ch, 8 px under it. An optional eyebrow ("24 H VOLUME") sits
- * above the value. The DOM keeps the label first, as a definition list's term; CSS puts the value
- * on top.
+ * above the value; a grade not resting on LP owners says what it rests on in a short text link
+ * under the label, so the label still names the value. The DOM keeps the label first, as a
+ * definition list's term; CSS puts the value on top.
  *
  * `FactsRow` is the facts row of Pool and Scorecard: one ink block over the band, 4 or 3 equal
  * columns with 1 px dividers from 1024 px, 2 columns from 600 px, then 2 × 2 at 28 px (Pool) or
@@ -13,7 +14,8 @@
 
 import type { ConcentrationBasis, HealthGrade } from '@depthwatch/core'
 import type { ReactNode } from 'react'
-import { GradeWithBasis } from './GradeGlyph.js'
+import { GradeGlyph } from './GradeGlyph.js'
+import { GradeBasisLink } from './HealthBasis.js'
 import { BreachMark } from './StatusWord.js'
 
 /** `home`: rows of one ink block on phones; `pool`: 4 columns, 2 × 2 on phones; `scorecard`: 3. */
@@ -62,7 +64,10 @@ export function Fact({
   /** The mono caps line above the value ("24 h volume"); written in sentence case. */
   eyebrow?: string
   grade?: HealthGrade | null
-  /** The grade's concentration basis: a grade not resting on LP owners carries the mark. */
+  /**
+   * The grade's concentration basis: a grade not resting on LP owners says what it rests on in a
+   * short text link under the label ("Concentration from price ranges").
+   */
   gradeBasis?: ConcentrationBasis | null
   /** Adds the 14 px triangle after the value. */
   breached?: boolean
@@ -73,7 +78,7 @@ export function Fact({
 }) {
   const mark = (
     <>
-      {grade ? <GradeWithBasis grade={grade} basis={gradeBasis} size="fact" /> : null}
+      {grade ? <GradeGlyph grade={grade} size="fact" /> : null}
       {breached ? <BreachMark label={breachedLabel} /> : null}
     </>
   )
@@ -95,6 +100,7 @@ export function Fact({
           {mark}
         </dd>
       )}
+      {grade ? <GradeBasisLink basis={gradeBasis} /> : null}
     </div>
   )
 }

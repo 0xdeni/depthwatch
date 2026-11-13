@@ -1,4 +1,4 @@
-import { DEXES } from '@depthwatch/core'
+import { DEXES, POOL_QUERY_MAX_LENGTH } from '@depthwatch/core'
 import { describe, expect, it } from 'vitest'
 import {
   gapsQuerySchema,
@@ -73,6 +73,34 @@ describe('poolsQuerySchema', () => {
     })
   })
 
+  it('keeps a pair search as written and drops a query of separators alone', () => {
+    const q = (value: string) => {
+      const parsed = parseQuery(poolsQuerySchema, { q: value })
+      if (!parsed.ok) throw new Error(parsed.error.error)
+      return parsed.data.q
+    }
+    expect(q(' WETH/USDC ')).toBe('WETH/USDC')
+    expect(q('usdc weth')).toBe('usdc weth')
+    for (const blank of ['/', ' - ', ': /', '\t', ' , ']) expect(q(blank), blank).toBeUndefined()
+  })
+
+  it("keeps a pasted pool id, and room for a v4 pool's whole link", () => {
+    const q = (value: string) => {
+      const parsed = parseQuery(poolsQuerySchema, { q: value })
+      if (!parsed.ok) throw new Error(parsed.error.error)
+      return parsed.data.q
+    }
+    expect(q(' uniswap-v3:0xD0B5 ')).toBe('uniswap-v3:0xD0B5')
+    const v4 = `uniswap-v4%3A0x${'7a'.repeat(32)}`
+    const link = `https://depthwatch.pages.dev/#/pools/${v4}?window=7d`
+    expect(link.length).toBeGreaterThan(100)
+    expect(q(link)).toBe(link)
+    expect(q('x'.repeat(POOL_QUERY_MAX_LENGTH))).toBe('x'.repeat(POOL_QUERY_MAX_LENGTH))
+    expect(parseQuery(poolsQuerySchema, { q: 'x'.repeat(POOL_QUERY_MAX_LENGTH + 1) }).ok).toBe(
+      false,
+    )
+  })
+
   it('accepts every DEXES id, the Aero ones included, and only those', () => {
     for (const dex of DEXES) {
       const parsed = parseQuery(poolsQuerySchema, { dex })
@@ -93,7 +121,7 @@ describe('poolsQuerySchema', () => {
     [{ offset: '-1' }, 'offset'],
     [{ minVolume: '-5' }, 'minVolume'],
     [{ minVolume: 'Infinity' }, 'minVolume'],
-    [{ q: 'x'.repeat(101) }, 'q'],
+    [{ q: 'x'.repeat(201) }, 'q'],
   ])('rejects %j', (raw, path) => {
     const parsed = parseQuery(poolsQuerySchema, raw)
     expect(parsed.ok).toBe(false)

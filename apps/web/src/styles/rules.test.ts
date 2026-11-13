@@ -160,6 +160,10 @@ describe('layout guards (§5.1, §8.11)', () => {
     expect(block(standalone, '.dock')).toMatch(/position:\s*sticky;[\s\S]*bottom:\s*0/)
   })
 
+  it('wraps a pasted pool id or link quoted in an empty state inside its sheet', () => {
+    expect(block(allCss, '.empty p')).toMatch(/overflow-wrap:\s*anywhere/)
+  })
+
   it('keeps one- and two-word disclosure labels on one line', () => {
     expect(block(allCss, '.disc-label')).toMatch(/text-wrap:\s*pretty/)
     expect(block(allCss, '.disc-label.is-short')).toMatch(/text-wrap:\s*balance/)

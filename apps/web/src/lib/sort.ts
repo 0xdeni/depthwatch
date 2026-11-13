@@ -48,26 +48,8 @@ export function sortSummaries(
 }
 
 /**
- * Case-insensitive substring match on the same fields as the API's `q` filter: token symbols,
- * token addresses, pool address or v4 pool id (plus the pair label). Token names are not
- * matched, so a query behaves the same against the mock and the live API.
+ * The API's `q` filter (`matchesPoolQuery`, core's rule): a pasted pool id finds its pools on its
+ * DEX, any other query needs every term to match either token or the pool, so the mock client and
+ * the Pools field agree with the API.
  */
-export function matchesQuery(item: PoolSummary, q: string): boolean {
-  const needle = q.trim().toLowerCase()
-  if (!needle) return true
-  const { pool } = item
-  const haystack = [
-    pool.id,
-    pool.address ?? '',
-    pool.poolId ?? '',
-    pool.token0.symbol,
-    pool.token0.address,
-    pool.token1.symbol,
-    pool.token1.address,
-    `${pool.token0.symbol}/${pool.token1.symbol}`,
-    `${pool.token0.symbol} / ${pool.token1.symbol}`,
-  ]
-    .join('\n')
-    .toLowerCase()
-  return haystack.includes(needle)
-}
+export { matchesPoolQuery as matchesQuery } from './poolQuery.js'

@@ -214,7 +214,7 @@ describe('GET /api/pools', () => {
     '?limit=ten',
     '?offset=-1',
     '?minVolume=-1',
-    `?q=${'a'.repeat(101)}`,
+    `?q=${'a'.repeat(201)}`,
   ])('rejects %s with a 400 message', async (query) => {
     const res = await app.request(`/api/pools${query}`)
     expect(res.status).toBe(400)

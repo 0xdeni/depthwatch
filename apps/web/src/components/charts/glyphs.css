@@ -249,6 +249,8 @@
   width: 72px;
   height: 10px;
   background: var(--surface-2);
+  /* The track's own edge, so a short bar reads against the full 72 px scale. */
+  box-shadow: inset 0 0 0 1px var(--line-2);
 }
 .tmeter .m-fill {
   position: absolute;
@@ -270,8 +272,9 @@
 .gbar.quiet .m-fill {
   background: var(--text-2);
 }
+/* Wide enough for "100", so a score of 100 and one of 99 end their bars at the same x. */
 .gbar .num {
-  min-width: 2.2ch;
+  min-width: 3ch;
   text-align: right;
   font-size: var(--t-data);
   font-weight: 800;
@@ -365,4 +368,19 @@
   .glyph .b {
     forced-color-adjust: none;
   }
+}
+
+/* ---------- Home's biggest gap: the day's volume hatched inside its outline (home.css) ---------- */
+.hf-box .nest-vol {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  width: calc(var(--out) - 4px);
+  height: calc(var(--out) - 4px);
+  border-radius: 8px;
+  background: repeating-linear-gradient(135deg, var(--line-2) 0 1.5px, transparent 1.5px 5px);
+}
+/* A 2 px ring in the block colour sets the depth square off the outline corner, in both themes. */
+.hf-box .nest-depth {
+  box-shadow: 0 0 0 2px var(--surface);
 }

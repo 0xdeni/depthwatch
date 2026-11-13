@@ -6,6 +6,7 @@
  * 25 (`rows=all`), and once every rated row is on screen the one toggle that adds the unrated pools
  * under an "Unrated pools" row (`unrated`, pages of 50), with "Show 50 more unrated pools" beside it.
  */
+import { type Dex, poolSearch } from '@depthwatch/core'
 import type { PoolSummary } from '../../api/types.js'
 import { Button } from '../../components/ui/Button.js'
 import { PoolsTable } from '../../components/ui/PoolsTable.js'
@@ -14,6 +15,7 @@ import { dexLabel } from '../../lib/format.js'
 import { updatedCaption } from '../../lib/poolsTable.js'
 import { PAGE_SIZE, type PoolsState, showAllRowsLabel, visibleRows } from './poolsState.js'
 import { poolsCount, showUnratedLabel } from './poolsText.js'
+import { dexesNamedBy } from './searchDexes.js'
 import type { PoolRows } from './usePoolRows.js'
 
 export interface PoolsSheetProps {
@@ -81,6 +83,7 @@ export function PoolsSheet(props: PoolsSheetProps) {
             hasUnrated={!state.ratedOnly && unratedTotal > 0}
             onClear={props.onClearSearch}
             onAllDexes={() => update({ dex: '' })}
+            onSearchDex={(dex, q) => update({ dex, q })}
           />
         </div>
       )}
@@ -137,7 +140,12 @@ function SheetFoot({
   )
 }
 
-/** Empty (ST2): what is empty, and the one next step. Never shown before data has loaded. */
+/**
+ * Empty (ST2): what is empty, and the one next step. Never shown before data has loaded. Search
+ * reads tokens and addresses, never the DEX: a search that names a DEX ("uniswap v3 weth") is
+ * told so and, when it names one, offered that DEX with the rest of the search; a pasted pool id
+ * of another DEX than the filter's is offered every DEX, keeping the id.
+ */
 function PoolsEmpty({
   state,
   scored,
@@ -145,6 +153,7 @@ function PoolsEmpty({
   hasUnrated,
   onClear,
   onAllDexes,
+  onSearchDex,
 }: {
   state: PoolsState
   scored: number | undefined
@@ -153,15 +162,40 @@ function PoolsEmpty({
   hasUnrated: boolean
   onClear: () => void
   onAllDexes: () => void
+  onSearchDex: (dex: Dex, q: string) => void
 }) {
   const q = state.q.trim()
   const noun = hasUnrated || state.ratedOnly ? 'rated pools' : 'pools'
   if (q) {
-    return (
-      <EmptyState action={<Button onClick={onClear}>Clear search</Button>}>
-        No {noun} match “{q}”{state.dex ? ` on ${dexLabel(state.dex)}` : ''}.
-      </EmptyState>
-    )
+    const none = `No ${noun} match “${q}”${state.dex ? ` on ${dexLabel(state.dex)}` : ''}`
+    const search = poolSearch(q)
+    if (search.kind === 'pool-id' && state.dex && search.dex !== state.dex) {
+      return (
+        <EmptyState action={<Button onClick={onAllDexes}>Show all DEXes</Button>}>
+          {none}: the id names {dexLabel(search.dex)}.
+        </EmptyState>
+      )
+    }
+    const named = dexesNamedBy(q)
+    const [only] = named
+    if (only) {
+      const action =
+        named.length === 1 ? (
+          <Button onClick={() => onSearchDex(only.dex, only.rest)}>
+            {only.rest
+              ? `Search “${only.rest}” on ${dexLabel(only.dex)}`
+              : `Show ${dexLabel(only.dex)} pools`}
+          </Button>
+        ) : (
+          <Button onClick={onClear}>Clear search</Button>
+        )
+      return (
+        <EmptyState action={action}>
+          {none}: search reads tokens and addresses, and DEXes have their own filter.
+        </EmptyState>
+      )
+    }
+    return <EmptyState action={<Button onClick={onClear}>Clear search</Button>}>{none}.</EmptyState>
   }
   if (state.dex && scored !== 0) {
     return (

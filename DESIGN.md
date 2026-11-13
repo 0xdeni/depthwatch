@@ -400,8 +400,12 @@ the token, stale quotes and paused stocks' pools left out)…). The depth sums (
 stale quote (`STALE_SQL`, the newest snapshot's `price_deviation_bps`) and a pool unrated `transfers-paused` (`PAUSED_SQL`,
 `health_json.unratedReason`; docs/METRICS.md, "Stock tradability"), both through `LEFT_OUT_SQL` in `repos/scoreStats.ts`; a depth
 sort puts only the stale quotes last.
-Pool filters (`PoolFilter`, shared by `pools.list/count` and `scores.topBy`): `dex`, `tracked`, `q` (case-insensitive substring of a token
-symbol, token address, pool address or v4 pool id) and `token` (exactly token0 or token1, never a symbol; what `/api/tokens/:address` uses).
+Pool filters (`PoolFilter`, shared by `pools.list/count` and `scores.topBy`): `dex`, `tracked`, `q` (core's `poolSearch`: a pasted pool
+id, `<dex>:<0x hex>` such as `uniswap-v3:0xd0b5…`, also with `%3A` for the `:` or as the pool's whole link, lists the pools on that DEX
+(`p.dex = ?`) whose address or v4 pool id starts with that hex, in any case, reading `pools` alone; any other text is `poolQueryTerms`:
+terms split on spaces, `/`, `-`, `:` and `,`, every one matching case-insensitively anywhere in a token symbol or address, the pool
+address or v4 pool id, or at a word start in a token name, never the DEX; at most 200 characters) and `token` (exactly token0 or
+token1, never a symbol; what `/api/tokens/:address` uses).
 Query plans: the score feeds join `scores s CROSS JOIN pools p` so the scored set drives every count and filtered page whatever the number of
 discovered pools; `pools.count` without `q` reads `pools` alone (no token joins); `db.analyze()` (`ANALYZE`, `PRAGMA analysis_limit` 1000) runs
 at the end of `discover` and `discover --seed`, and `close()` runs `PRAGMA optimize`.

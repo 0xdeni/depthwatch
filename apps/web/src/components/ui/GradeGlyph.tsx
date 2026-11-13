@@ -6,14 +6,9 @@
  */
 import type { ConcentrationBasis, HealthGrade, UnratedReason } from '@depthwatch/core'
 import { gradeTone } from '../../lib/format.js'
-import {
-  BASIS_MARK,
-  BASIS_MARK_LABEL,
-  concentrationBasisDetail,
-  NOT_RATED,
-  unratedDetail,
-} from '../../lib/rating.js'
+import { BASIS_MARK, NOT_RATED, unratedDetail } from '../../lib/rating.js'
 import { Glossary } from './Glossary.js'
+import { BASIS_SHORT } from './HealthBasis.js'
 import { Shape, type ShapeName } from './Icon.js'
 
 const SHAPE_OF = { ok: 'circle', warn: 'square', bad: 'triangle' } as const satisfies Record<
@@ -67,36 +62,38 @@ export function NotRatedChip({
 }
 
 /**
- * The grade glyph, followed by the concentration mark when the grade's concentration points do not
- * rest on LP owners (`concentrationBasis` ranges or neutral): a small star whose reason shows on
- * hover, focus or tap, a button above any row link like the "Not rated" chip's.
+ * A grade whose concentration basis differs from the one its list states (`HealthBasis`): the
+ * glyph with a small "*" on its top right corner, so the column keeps its alignment. The mark is
+ * not a control: the list's header note explains it, and a tap on it opens the row's pool.
  */
-export function GradeWithBasis({
+function MarkedGrade({
   grade,
   basis,
-  size = 'row',
+  size,
 }: {
   grade: HealthGrade
-  basis: ConcentrationBasis | null | undefined
-  size?: 'row' | 'fact'
+  basis: ConcentrationBasis
+  size: 'row' | 'fact'
 }) {
-  const detail = concentrationBasisDetail(basis ?? null)
-  if (detail === null) return <GradeGlyph grade={grade} size={size} />
   return (
-    <span className={`grade-basis${size === 'fact' ? ' is-fact' : ''}`}>
+    <span className="grade-marked">
       <GradeGlyph grade={grade} size={size} />
-      <Glossary definition={detail} anchor="health" className="basis-mark">
-        <span aria-hidden="true">{BASIS_MARK}</span>
-        <span className="sr-only">{BASIS_MARK_LABEL}</span>
-      </Glossary>
+      <span className="grade-mark" aria-hidden="true">
+        {BASIS_MARK}
+      </span>
+      <span className="sr-only">{`, ${BASIS_SHORT[basis]}`}</span>
     </span>
   )
 }
 
-/** The grade glyph of a rated pool, or the "Not rated" chip with its reason (one chip per row, TB5). */
+/**
+ * The grade glyph of a rated pool, or the "Not rated" chip with its reason (one chip per row, TB5).
+ * `marked`: the grade's concentration basis is not the one its list states, so it carries the "*".
+ */
 export function RatingGlyph({
   health,
   size = 'row',
+  marked = false,
 }: {
   health: {
     grade: HealthGrade | null
@@ -105,8 +102,12 @@ export function RatingGlyph({
     concentrationBasis?: ConcentrationBasis | null
   }
   size?: 'row' | 'fact'
+  marked?: boolean
 }) {
-  if (health.rated && health.grade)
-    return <GradeWithBasis grade={health.grade} basis={health.concentrationBasis} size={size} />
-  return <NotRatedChip reason={health.unratedReason} size={size} />
+  if (!health.rated || !health.grade)
+    return <NotRatedChip reason={health.unratedReason} size={size} />
+  const basis = health.concentrationBasis ?? null
+  if (marked && basis !== null)
+    return <MarkedGrade grade={health.grade} basis={basis} size={size} />
+  return <GradeGlyph grade={health.grade} size={size} />
 }

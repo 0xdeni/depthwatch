@@ -225,12 +225,16 @@ describe('TurnoverGlyph', () => {
   it('ticks the 3× threshold at core’s own gap score', () => {
     expect(MEANINGFUL_GAP_TURNOVER).toBe(3)
     expect(MEANINGFUL_GAP_SCORE).toBeCloseTo(23.86, 2)
-    expect(turnoverLabel(85.29)).toBe('Gap score 85 of 100; 3× turnover is 24')
+    expect(turnoverLabel(85.29)).toBe('Gap score 85 of 100: trades 3 times its depth a day or more')
+    expect(turnoverLabel(MEANINGFUL_GAP_SCORE)).toMatch(/: trades 3 times its depth a day or more$/)
+    expect(turnoverLabel(12)).toBe('Gap score 12 of 100: trades under 3 times its depth a day')
+    expect(turnoverLabel(null)).toBe('Gap score unknown')
     const { container } = render(<TurnoverGlyph gapScore={85.29} />)
     const meter = container.querySelector('.tmeter')
     expect(Number(style(meter, '--v'))).toBeCloseTo(0.8529, 9)
     expect(Number(style(meter, '--t'))).toBeCloseTo(0.2386, 3)
     expect(container.querySelector('.gbar .num')?.textContent).toBe('85')
+    expect(meter?.getAttribute('aria-label')).toBe(turnoverLabel(85.29))
   })
 
   it('draws rows under 3× quiet and an unknown score as a dash', () => {

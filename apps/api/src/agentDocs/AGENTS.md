@@ -260,16 +260,16 @@ rated pools.
 A ranked page of scored pools. Response: `{ items: PoolSummary[], total }`, where `total` is the
 number of matching pools ignoring `limit` / `offset`.
 
-| Parameter   | Values                                                     | Default  | Meaning                                                                                                                                |
-| ----------- | ---------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `sort`      | `health`, `depth`, `volume`, `gap`, `tvl`, `spread`, `top` | `health` | Health total, ±2 % depth, 24 h volume, gap score, TVL, `spread10kBps` or `ownerTop1Share`. `null` values sort last in both directions. |
-| `dir`       | `asc`, `desc`                                              | `desc`   | Ties are broken by pool id, ascending.                                                                                                 |
-| `dex`       | one of the six `dex` values                                | all      | Keep one DEX.                                                                                                                          |
-| `q`         | text, at most 100 characters                               | none     | Case-insensitive substring of either token's symbol or address, the pool address or the v4 pool id.                                    |
-| `minVolume` | number ≥ 0 (USD)                                           | none     | Keep pools whose known 24 h volume is at least this; pools with unknown volume are dropped.                                            |
-| `rated`     | `true`, `false`                                            | both     | `true` keeps only rated pools, `false` only unrated ones.                                                                              |
-| `limit`     | integer 1–200                                              | 50       | Page size.                                                                                                                             |
-| `offset`    | integer ≥ 0                                                | 0        | Rows to skip.                                                                                                                          |
+| Parameter   | Values                                                     | Default  | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------- | ---------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sort`      | `health`, `depth`, `volume`, `gap`, `tvl`, `spread`, `top` | `health` | Health total, ±2 % depth, 24 h volume, gap score, TVL, `spread10kBps` or `ownerTop1Share`. `null` values sort last in both directions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `dir`       | `asc`, `desc`                                              | `desc`   | Ties are broken by pool id, ascending.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `dex`       | one of the six `dex` values                                | all      | Keep one DEX.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `q`         | text, at most 200 characters                               | none     | A pasted pool id, `<dex>:<0x hex>` such as `uniswap-v3:0xd0b5…` (spaces around the `:` allowed, `%3A` for the `:` too, or the pool's whole link), lists the pools on that DEX whose address or v4 pool id starts with that hex, in any case. Any other text is search terms split on spaces, `/`, `-`, `:` and `,`, every one matching the pool, case-insensitively: anywhere in either token's symbol or address, the pool address or the v4 pool id, or at the start of a word in either token's name. Terms never match the DEX (`dex` filters it). `WETH/USDC` and `usdc weth` list the same pools. |
+| `minVolume` | number ≥ 0 (USD)                                           | none     | Keep pools whose known 24 h volume is at least this; pools with unknown volume are dropped.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `rated`     | `true`, `false`                                            | both     | `true` keeps only rated pools, `false` only unrated ones.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `limit`     | integer 1–200                                              | 50       | Page size.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `offset`    | integer ≥ 0                                                | 0        | Rows to skip.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 `PoolSummary` fields: `pool` (pool metadata: `id`, `dex`, `kind` (`concentrated`,
 `constant-product`, `stable-swap`), `address`, `poolId`, `token0` and `token1` (`address`, `symbol`,
@@ -327,7 +327,8 @@ that moved with the fee). 404 `pool not found` for an unknown id. The response c
 ### `GET /api/gaps`
 
 The liquidity gaps feed: scored pools with a gap score and 24 h volume ≥ `minVolume`, highest gap
-score first (ties by pool id). Response:
+score first; equal scores (every pool at 100× turnover or more scores 100) by `turnoverRatio`,
+highest first, then by pool id. Response:
 `{ items: [{ pool: PoolSummary, gap }], total, meaningful, minVolumeUsd }` with `gap` =
 `volume24hUsd`, `depth2Usd`, `turnoverRatio`, `gapScore`; `total` the feed's pools and
 `meaningful` those trading 3× their ±2 % depth or more (`turnoverRatio ≥ 3`), both over the whole
@@ -466,10 +467,11 @@ not part of this guide or of `/openapi.json`.
 
 Outputs below come from `depthwatch demo` (synthetic data), piped through `jq` and reformatted.
 
-Find the WETH/USDC pools, deepest first: list the pools containing WETH and keep those whose other
-token is USDC (`q` and `/api/tokens/:address` match one token, so the second one is filtered
-client-side). Uniswap v4 pools hold native ETH as `0x0000000000000000000000000000000000000000`;
-query that address too for ETH pairs.
+Find the WETH/USDC pools, deepest first. `/api/pools?q=WETH/USDC&sort=depth` lists them by
+symbol, but a symbol is not an identity (any token may call itself USDC), so this example goes by
+address: list the pools containing WETH and keep those whose other token is USDC. Uniswap v4 pools
+hold native ETH as `0x0000000000000000000000000000000000000000`; query that address too for ETH
+pairs.
 
 ```sh
 WETH=0x4200000000000000000000000000000000000006
@@ -577,7 +579,7 @@ Other calls:
 
 ```sh
 curl -s "$DW/api/pools?sort=depth&dex=aerodrome-slipstream&limit=10"    # deepest Aerodrome Slipstream pools
-curl -s "$DW/api/pools?q=aero&minVolume=100000"                         # pools with AERO, >= $100k volume
+curl -s "$DW/api/pools?q=WETH/USDC&minVolume=100000"                    # WETH/USDC pools, >= $100k volume
 curl -s "$DW/api/pools/uniswap-v3:0x77ebf3fa47dacd6c5ab06f521057260dea765327/history?window=7d"
 curl -s "$DW/api/gaps?minVolume=50000&limit=20"                         # volume outrunning depth
 curl -s "$DW/api/stats"

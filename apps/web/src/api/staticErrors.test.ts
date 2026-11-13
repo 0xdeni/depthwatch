@@ -58,7 +58,7 @@ describe('static client: 400 bodies', () => {
           'Invalid option: expected one of "uniswap-v3"|"uniswap-v4"|"aerodrome-v2"|"aerodrome-slipstream"|"aero-v2"|"aero-slipstream"',
         ]),
       ],
-      [{ q: 'x'.repeat(101) }, invalid(['q', 'Too big: expected string to have <=100 characters'])],
+      [{ q: 'x'.repeat(201) }, invalid(['q', 'Too big: expected string to have <=200 characters'])],
       [{ minVolume: -1 }, invalid(['minVolume', 'Too small: expected number to be >=0'])],
       [
         { minVolume: Number.NaN },

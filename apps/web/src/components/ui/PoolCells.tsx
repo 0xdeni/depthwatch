@@ -1,6 +1,6 @@
 /**
  * The pools table's cells (docs/design/visual-v4.md §5.8), shared by Pools, Token and the Gaps
- * table: health is the grade glyph plus the truncated score in a 2ch column (N6), depth the 84 × 20
+ * table: health is the truncated score in a 2ch column (N6) plus the grade glyph, depth the 84 × 20
  * row glyph plus the value 16 px apart (and the "Stale price" chip for a stale quote), and an
  * unknown value is "—" with its reason (D6). Formatting only: every value comes from the API.
  */
@@ -44,10 +44,18 @@ function missingReason(p: PoolSummary, fallback: string): string {
 }
 
 /**
- * Health: the grade glyph and the truncated score, or for a pool with no grade the "Not rated" chip
- * alone: its total is not a grade, so the row does not show it as one.
+ * Health: the truncated score, then the grade glyph, the order of the pool page's fact; or for a
+ * pool with no grade the "Not rated" chip alone: its total is not a grade, so the row does not
+ * show it as one. `marked`: the grade's concentration basis differs from the one the table's
+ * Health header states (`HealthBasis`), so the glyph carries the "*".
  */
-export function HealthCell({ health }: { health: PoolSummary['health'] }) {
+export function HealthCell({
+  health,
+  marked = false,
+}: {
+  health: PoolSummary['health']
+  marked?: boolean
+}) {
   if (!health.rated || health.grade === null) {
     return (
       <span className="td-health">
@@ -57,8 +65,8 @@ export function HealthCell({ health }: { health: PoolSummary['health'] }) {
   }
   return (
     <span className="td-health">
-      <RatingGlyph health={health} />
       <span className="n">{score(health.total)}</span>
+      <RatingGlyph health={health} marked={marked} />
     </span>
   )
 }

@@ -144,9 +144,14 @@ demo world has no stock), and `export --bundle` keeps an older bundle without th
   at startup. The build ships the trade switch as `./data/flags.json` next to the bundle (it
   fails when the file is missing or differs from `features.trade`) and `public/_headers` for
   Cloudflare Pages (`plugins/securityHeaders.ts`). The static client implements the whole `ApiClient` with the API's semantics
-  (pools: sort health|depth|volume|gap|tvl, dir, dex, q over token symbols/addresses, pool
-  address and v4 pool id, minVolume, limit default 50 max 200, offset; gaps: limit/offset/
-  minVolume; token: sort/dir/limit/offset; scorecards: pool/active; samples: window/limit;
+  (pools: sort health|depth|volume|gap|tvl, dir, dex, q as core's search (a pasted pool id,
+  `<dex>:<0x hex>` such as `uniswap-v3:0xd0b5…`, also with `%3A` for the `:` or as the pool's
+  whole link, lists the pools on that DEX whose address or v4 pool id starts with that hex; any
+  other text is search terms split on spaces, `/`, `-`, `:` and `,`, every one matching a token's
+  symbol or address, the pool address or v4 pool id, or a word start in a token's name, never the
+  DEX; at most 200 characters), minVolume, limit default 50 max 200, offset;
+  gaps: limit/offset/minVolume; token: sort/dir/limit/offset; scorecards: pool/active; samples:
+  window/limit;
   unknown ids → `ApiError` with the API's status and message). A small "Demo data — synthetic
   Base world" banner shows when `source === 'demo'`. The Embed block shows the badge preview and
   explains that embeddable URLs need a running server.

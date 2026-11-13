@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -31,6 +34,19 @@ describe('icons and buttons (§5.3, §5.13)', () => {
       expect(svg?.getAttribute('aria-hidden')).toBe('true')
       unmount()
     }
+  })
+
+  it('are the ones the design rules list: every icon in §5.13, outlines in --ctl-edge (§5.3)', () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', '..')
+    const doc = readFileSync(join(root, 'docs', 'design', 'visual-v4.md'), 'utf8')
+    const icons = doc.match(/\*\*Icons\*\* \(K9\):[\s\S]*?No icon in a tinted square/)?.[0] ?? ''
+    for (const name of ICON_NAMES) {
+      const listed = name.replace(/^chev.*/, 'chevrons').replace(/^arrow.*/, 'arrows')
+      expect(icons, name).toContain(` ${listed}`)
+    }
+    for (const variant of ['Ghost', 'Icon'])
+      expect(doc).toMatch(new RegExp(`\\| ${variant} +\\|[^\\n]*\\| 1\\.5 px \`--ctl-edge\` inset`))
+    expect(doc).toMatch(/\| Gray 50 +\| `#717886` \| Light control outlines/)
   })
 
   it("has the variants of §5.3, none of them sharing the band's class", () => {

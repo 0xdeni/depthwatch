@@ -93,7 +93,17 @@ export function jsonList(values: readonly string[]): string {
 
 /** `%needle%` pattern for `LIKE ? ESCAPE '\'`, with LIKE metacharacters escaped. */
 export function likeContains(needle: string): string {
-  return `%${needle.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+  return `%${likeLiteral(needle)}%`
+}
+
+/** `prefix%` pattern for `LIKE ? ESCAPE '\'`, with LIKE metacharacters escaped. */
+export function likePrefix(prefix: string): string {
+  return `${likeLiteral(prefix)}%`
+}
+
+/** `text` with the LIKE metacharacters (`%`, `_`) and the escape character escaped. */
+function likeLiteral(text: string): string {
+  return text.replace(/[\\%_]/g, (c) => `\\${c}`)
 }
 
 /** Validates pagination arguments and returns the values to bind for `LIMIT ? OFFSET ?` (-1 = no limit). */

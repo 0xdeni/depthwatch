@@ -165,8 +165,8 @@ export interface PoolsQuery {
   dir?: SortDir
   dex?: Dex | ''
   /**
-   * Case-insensitive substring of a token symbol, token address, pool address or v4 pool id
-   * (token names are not matched); at most 100 chars.
+   * The pools search, at most 200 chars: a pasted pool id or terms that never read the DEX, as
+   * core's `poolSearch` and `matchesPoolSearch` (packages/core/src/poolQuery.ts) define them.
    */
   q?: string
   /** USD floor on known 24 h volume (pools with unknown volume are excluded). */

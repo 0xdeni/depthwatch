@@ -239,24 +239,24 @@ The kit says to keep values locked and never interpolate between shades. v4 uses
 no others; an opacity over a kit value (white at 80 % on Blue, a 14 % Red band) is allowed, a new
 hex value is not.
 
-| Name     | Hex       | Role in Depthwatch                                             |
-| -------- | --------- | -------------------------------------------------------------- |
-| Blue     | `#0000FF` | The band; primary button; nav indicator (light); focus (light) |
-| Cerulean | `#3C8AFF` | The sell side off the band; nav indicator and focus in dark    |
-| Yellow   | `#FFD12F` | The buy side everywhere; the focus ring on the band            |
-| Green    | `#66C800` | Status ok: grades A and B, within KPI, the freshness dot       |
-| Tan      | `#B8A581` | Status warn: grade C                                           |
-| Red      | `#FC401F` | Status bad: grades D and F, breaches, KPI shortfalls           |
-| Lime     | `#B6F569` | Not used                                                       |
-| Pink     | `#FEA8CD` | Not used                                                       |
-| Gray 0   | `#FFFFFF` | Light canvas and blocks; text and marks on the band            |
-| Gray 10  | `#EEF0F3` | Light wells, tracks, panels, row hover; dark text-1            |
-| Gray 15  | `#DEE1E7` | Light hairlines and block edges                                |
-| Gray 30  | `#B1B7C3` | Light control outlines; dark text-2                            |
-| Gray 50  | `#717886` | Not used for text (4.44:1 on white and on Gray 100)            |
-| Gray 60  | `#5B616E` | Light text-2; dark control outlines                            |
-| Gray 80  | `#32353D` | Dark wells, tracks, hairlines and block edges                  |
-| Gray 100 | `#0A0B0D` | Dark canvas; the ink block and the footer in both themes; ink  |
+| Name     | Hex       | Role in Depthwatch                                                          |
+| -------- | --------- | --------------------------------------------------------------------------- |
+| Blue     | `#0000FF` | The band; primary button; nav indicator (light); focus (light)              |
+| Cerulean | `#3C8AFF` | The sell side off the band; nav indicator and focus in dark                 |
+| Yellow   | `#FFD12F` | The buy side everywhere; the focus ring on the band                         |
+| Green    | `#66C800` | Status ok: grades A and B, within KPI, the freshness dot                    |
+| Tan      | `#B8A581` | Status warn: grade C                                                        |
+| Red      | `#FC401F` | Status bad: grades D and F, breaches, KPI shortfalls                        |
+| Lime     | `#B6F569` | Not used                                                                    |
+| Pink     | `#FEA8CD` | Not used                                                                    |
+| Gray 0   | `#FFFFFF` | Light canvas and blocks; text and marks on the band                         |
+| Gray 10  | `#EEF0F3` | Light wells, tracks, panels, row hover; dark text-1                         |
+| Gray 15  | `#DEE1E7` | Light hairlines and block edges                                             |
+| Gray 30  | `#B1B7C3` | Light hollow cells, tracks and underlines; dark text-2                      |
+| Gray 50  | `#717886` | Light control outlines; not used for text (4.44:1 on white and on Gray 100) |
+| Gray 60  | `#5B616E` | Light text-2; dark control outlines                                         |
+| Gray 80  | `#32353D` | Dark wells, tracks, hairlines and block edges                               |
+| Gray 100 | `#0A0B0D` | Dark canvas; the ink block and the footer in both themes; ink               |
 
 ### 2.3 What Depthwatch may and may not use
 
@@ -357,7 +357,8 @@ under `:root[data-theme='dark']`.
   --surface: var(--g0); /* plane-1 blocks, table sheet, sections sheet */
   --surface-2: var(--g10); /* wells, tracks, panels, row hover, segmented track */
   --line: var(--g15); /* row rules, block edges */
-  --line-2: var(--g30); /* control outlines, hollow cells */
+  --line-2: var(--g30); /* hollow cells, tracks */
+  --ctl-edge: var(--g50); /* control outlines, 4.4:1 (dark: Gray 60, 3.2:1); WCAG 1.4.11 */
   --text-1: var(--g100); /* 19.7:1 */
   --text-2: var(--g60); /* 6.2:1; 5.4:1 on --surface-2 */
   --ink: var(--g100); /* the black block and the footer */
@@ -391,6 +392,7 @@ under `:root[data-theme='dark']`.
     --surface-2: var(--g80);
     --line: var(--g80);
     --line-2: var(--g60);
+    --ctl-edge: var(--g60); /* 3.2:1 on Gray 100 */
     --text-1: var(--g10); /* 17.3:1; text is never pure white off the band */
     --text-2: var(--g30); /* 9.8:1; 6.1:1 on --surface-2 */
     --ink: var(--g100);
@@ -905,13 +907,13 @@ over it.
 
 ### 5.3 Buttons and links
 
-| Variant        | Size                 | Fill and text                       | Hover            |
-| -------------- | -------------------- | ----------------------------------- | ---------------- |
-| Primary        | 48 high, radius 12   | Blue fill, white 15 px / 750        | —                |
-| On band        | 48 high, radius 12   | White fill, Blue text, navy shadow  | Gray 10 fill     |
-| Ghost          | 48 or 40 high        | 1.5 px `--line-2` inset, `--text-1` | `--text-1` inset |
-| On band, ghost | 40 high              | 1.5 px white 55 % inset, white      | White inset      |
-| Icon           | 36 × 36, 44 on touch | 1.5 px `--line-2` inset             | `--text-1` inset |
+| Variant        | Size                 | Fill and text                         | Hover            |
+| -------------- | -------------------- | ------------------------------------- | ---------------- |
+| Primary        | 48 high, radius 12   | Blue fill, white 15 px / 750          | —                |
+| On band        | 48 high, radius 12   | White fill, Blue text, navy shadow    | Gray 10 fill     |
+| Ghost          | 48 or 40 high        | 1.5 px `--ctl-edge` inset, `--text-1` | `--text-1` inset |
+| On band, ghost | 40 high              | 1.5 px white 55 % inset, white        | White inset      |
+| Icon           | 36 × 36, 44 on touch | 1.5 px `--ctl-edge` inset             | `--text-1` inset |
 - Padding 0 22 (0 14 on 40 px buttons); 15 px / 750 labels; icon buttons radius 10. At most one
   filled button per view (P11). Press scales 0.97.
 - **Strong link** (`.ulink`): 700, 2 px underline at 5 px offset in `currentColor`, 3 px on hover.
@@ -1012,7 +1014,7 @@ is a row, and rows are split by a 1 px `--line` rule. No block per section and n
 - **Columns:** Pool (the pair at 17 px / 750, then "Uniswap v3, 0.05 %" at 13 px `--text-2`;
   pools of one table that would read the same add their tick spacing, ", tick spacing 50", or when
   that is shared too their short address, ", 0x1234…abcd");
-  Health (glyph and score, or Not rated); Depth ±2 % (an 84 × 20 row glyph, then the value in a
+  Health (score and glyph, or Not rated); Depth ±2 % (an 84 × 20 row glyph, then the value in a
   fixed 6.5ch, right-aligned, so every row's spine shares one x);
   Spread at $10K ("Can't absorb $10K" when infeasible; "—" when unknown); 24 h volume; optional TVL,
   Gap score and Price through Columns (`?cols=`).
@@ -1021,7 +1023,8 @@ is a row, and rows are split by a 1 px `--line` rule. No block per section and n
 - **Unrated pools:** after the rated ones, under a 52 px `--surface-2` group row "Unrated pools",
   opened by "Show 442 unrated pools" (pages of 50, `?unrated=N`), as in v3.
 
-**Phone rows** (below 840 px): a head row ("Pool" and the sort metric, 13 px, 2 px rule), then rows
+**Phone rows** (below 840 px): a head row ("Pool" and the sort metric, 13 px, 2 px rule, with the
+grades' info button centred over the grade column when the list has a basis note), then rows
 of at least 64 px: the pool cell, the sort metric's value (15 px / 750, right) and the glyph or
 chip. **25 rated rows per page** on phones, then "Show all 50 rated pools" (`?rows=all`); 50 on
 desktop (TB8).
@@ -1269,7 +1272,7 @@ code" opens two code blocks (`--surface-2`, radius 10, 13 px mono).
 
 - **Icons** (K9): one stroke set, 16 px, 1.5–1.75 px stroke, round caps and joins,
   `currentColor`, `aria-hidden`: chevrons, back, swap, search, check, copy, external, arrows, filter
-  (three lines), columns. No icon in a tinted square.
+  (three lines), columns, info (an "i" in a circle, for a column's note). No icon in a tinted square.
 - **The mark:** §2.3. 22 px in the app bar, 28 px in the footer.
 - **Favicon** (`apps/web/public/favicon.svg`): the same mark, spine `#0a0b0d` (`#eef0f3` in dark),
   sell `#3c8aff`, buy `#ffd12f` with a 0.5 px `#0a0b0d` stroke in light.

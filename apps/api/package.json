@@ -17,8 +17,8 @@
   "dependencies": {
     "@depthwatch/core": "workspace:*",
     "@depthwatch/db": "workspace:*",
-    "@hono/node-server": "^1.19.0",
-    "hono": "^4.9.0",
+    "@hono/node-server": "^2.1.6",
+    "hono": "^4.13.16",
     "zod": "^4.1.0"
   }
 }

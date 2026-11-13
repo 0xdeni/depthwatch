@@ -535,7 +535,10 @@ closed: a missing or malformed block is off, and a swap needs both on for its ve
 `public/_headers` for Cloudflare Pages (no framing, `nosniff`, a Content-Security-Policy with `connect-src 'self'` and
 the inline script of `index.html` by hash, `data/flags.json` uncached); every build fails when that hash and the inline
 script differ or the file opens a URL pattern in two blocks (Pages was seen to serve only the last), and the server
-build leaves the file out (`plugins/securityHeaders.ts`).
+build leaves the file out (`plugins/securityHeaders.ts`). It ships `public/404.html` and `public/404.css` as well, the
+page Pages serves with HTTP 404 for every path the copy lacks, `/api/…` included; the static build fails unless the
+page runs no script, has no inline style, links home and loads only paths of its own site, and the server build leaves
+both files out (`plugins/notFoundPage.ts`).
 
 The swap panel (`src/trade/`: an exact-input swap in the one pool the page shows, nothing
 else). The Pool page gains "trade in this pool" under cost to trade only when `pages/pool/tradeGate.ts`

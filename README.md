@@ -28,8 +28,10 @@ the dashboard's optional swap panel ([below](#the-dashboard)) hands a visitor's 
 visitor's own wallet.
 
 **Live copy.** <https://depthwatch.pages.dev> is a static copy of the dashboard. This repository's
-Refresh site workflow reads Base mainnet and publishes a new copy about every three hours; each
-page says when it was read, and there is no API. The workflow's first run, on 29 October 2026,
+Refresh site workflow checks every hour and, when the last refresh is at least 2.5 hours old, reads
+Base mainnet and publishes a new copy. When GitHub starts those checks on time, the data is under
+about three hours old; GitHub can start scheduled runs late or skip them, and then it is older.
+Each page says when it was read, and there is no API. The workflow's first run, on 29 October 2026,
 had no 24 h volume and so an empty gaps feed: Base's public RPC refused the runner's `eth_getLogs`
 requests. The workflow now sends them to the endpoint in the optional `DEPTHWATCH_LOGS_RPC_URL`
 secret, if set, then to Tenderly's public gateway, not yet tried from a runner
@@ -116,7 +118,8 @@ and previews of the gaps feed and, once a mandate is registered, the market-make
 from the synthetic fixture set with no RPC endpoint. `depthwatch export` and
 `pnpm --filter @depthwatch/web build:static` turn a live database into a static copy that says
 when its data was read, how long ago that is, and the block it was read at. The live copy at
-<https://depthwatch.pages.dev> is such a build, replaced by a new one about every three hours
+<https://depthwatch.pages.dev> is such a build, replaced by a newer one when the workflow's hourly
+check finds the last one at least 2.5 hours old
 ([A free static copy](docs/DEPLOY.md#a-free-static-copy)).
 
 **Swap panel.** A static copy has an optional swap panel, off unless the site's operator switches
@@ -423,9 +426,10 @@ minutes before pruning, a sixth of that at `start`'s 30 minutes) and how to foll
 budget in the logs; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#running-as-a-service)
 explains the schedule. The `Dockerfile` at the root packages that process as an image and
 [deploy/compose.yaml](deploy/compose.yaml) runs it; the [Docker](docs/DEPLOY.md#docker) section
-of docs/DEPLOY.md has the commands. Without a server, a scheduled GitHub Actions workflow
-publishes a static copy to Cloudflare Pages about every three hours at no cost; this repository's
-copy is <https://depthwatch.pages.dev> ([A free static copy](docs/DEPLOY.md#a-free-static-copy)).
+of docs/DEPLOY.md has the commands. Without a server, a GitHub Actions workflow that checks every
+hour publishes a static copy to Cloudflare Pages at no cost, each time the last one is at least 2.5
+hours old; this repository's copy is <https://depthwatch.pages.dev>
+([A free static copy](docs/DEPLOY.md#a-free-static-copy)).
 
 `serve`, `start` and `demo` listen on `0.0.0.0` unless `--host` says otherwise and log one
 `request` line per request (method, path without the query string, status, milliseconds) and an

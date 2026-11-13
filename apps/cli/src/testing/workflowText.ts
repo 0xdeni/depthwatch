@@ -1,7 +1,8 @@
 /**
  * Readers of the GitHub workflows for the tests that pin them (`tradePreview.test.ts`,
- * `tradePreviewHeaders.test.ts`). The workflows are read as text: the repository has no YAML
- * parser, so these read only the simple shapes the files use.
+ * `tradePreviewHeaders.test.ts`, `refreshSchedule.test.ts`, `workflowRules.test.ts`). The
+ * workflows are read as text: the repository has no YAML parser, so these read only the simple
+ * shapes the files use.
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -67,6 +68,28 @@ export function deployBranches(text: string): string[] {
     .filter((line) => /wrangler\S* pages (deploy|publish|project upload)\b/.test(line))
     .map((line) => /--branch[= ](\S+)/.exec(line)?.[1] ?? 'none')
 }
+
+/** The ids of the workflow's jobs, in file order: the keys two spaces in under `jobs:`. */
+export function jobIds(text: string): string[] {
+  const lines = text.split('\n')
+  return lines
+    .slice(lines.indexOf('jobs:') + 1)
+    .flatMap((line) => /^ {2}([A-Za-z0-9_-]+):$/.exec(line)?.[1] ?? [])
+}
+
+/** The text of the job `id`, from its key under `jobs:` to the next job or comment at its level. */
+export function jobOf(text: string, id: string): string {
+  const lines = text.split('\n')
+  const jobs = lines.indexOf('jobs:')
+  const start = lines.findIndex((line, i) => jobs >= 0 && i > jobs && line === `  ${id}:`)
+  if (start < 0) throw new Error(`no job ${id}`)
+  const end = lines.findIndex((line, i) => i > start && line.trim() !== '' && indentOf(line) <= 2)
+  return lines.slice(start, end < 0 ? undefined : end).join('\n')
+}
+
+/** The schedule of the workflow: the value of every `- cron:` line, unquoted. */
+export const cronsOf = (text: string) =>
+  [...text.matchAll(/^\s*- cron: "([^"]*)"$/gm)].map((match) => match[1] ?? '')
 
 /** The text of the step named `name`, from its `- name:` line to the next step or comment. */
 export function stepOf(text: string, name: string): string {

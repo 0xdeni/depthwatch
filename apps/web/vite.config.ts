@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import { agentDocs, staticSiteInfo } from './plugins/agentDocs.js'
+import { notFoundPage } from './plugins/notFoundPage.js'
 import { HEADERS_SOURCE, securityHeaders } from './plugins/securityHeaders.js'
 import { shippedFacts, siteMeta } from './plugins/siteMeta.js'
 import { FLAGS_CACHE_CONTROL, readFlags, STATIC_FLAGS_PATH } from './plugins/staticFlags.js'
@@ -83,9 +84,10 @@ function staticBundle(source: string, flagsSource: string): Plugin {
  * Both emit the agent documents (`AGENTS.md`, `llms.txt`, `openapi.json`, see
  * `plugins/agentDocs.ts`); the static copies carry a note generated from the shipped bundle. Both
  * check `public/_headers` against the built `index.html`; only the static build keeps that file
- * (`plugins/securityHeaders.ts`). Only the static build carries the link-preview tags, with
- * absolute URLs from `VITE_SITE_URL`, and hands its app and header shell what the shipped bundle
- * holds before it loads (`plugins/siteMeta.ts`).
+ * (`plugins/securityHeaders.ts`), and the not-found page `public/404.html`, which it checks
+ * (`plugins/notFoundPage.ts`). Only the static build carries the link-preview tags, with absolute
+ * URLs from `VITE_SITE_URL`, and hands its app and header shell what the shipped bundle holds
+ * before it loads (`plugins/siteMeta.ts`).
  */
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, HERE, 'VITE_')
@@ -107,8 +109,9 @@ export default defineConfig(({ mode }) => {
             shipped: () => shippedFacts(readBundle(STATIC_BUNDLE_SOURCE)),
           }),
           headers,
+          notFoundPage({ keepFile: true }),
         ]
-      : [react(), agentDocs(), headers],
+      : [react(), agentDocs(), headers, notFoundPage({ keepFile: false })],
     server: {
       port: 5173,
       proxy: {

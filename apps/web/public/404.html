@@ -1,0 +1,55 @@
+<!doctype html>
+<!--
+  The page Cloudflare Pages serves, with HTTP 404, for every path the static copy does not have,
+  /api/... included (docs/DEPLOY.md, "A free static copy"). It runs no script and loads only
+  /404.css, the icon and one font, all from the site itself, so the Content-Security-Policy of
+  public/_headers allows it as it is. Its links start at / because Pages serves it at any depth.
+  plugins/notFoundPage.ts checks it in every static build; the server build leaves it out.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0b0d" />
+    <title>Not found – Depthwatch</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/404.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <a class="brand" href="/" aria-label="Depthwatch home">
+        <svg
+          class="mark"
+          viewBox="0 0 16 16"
+          width="22"
+          height="22"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <rect class="m-spine" x="7" y="1" width="2" height="14" rx=".5" />
+          <path class="m-sell" d="M4 3h2v2H4zM2 7h4v2H2zM0 11h6v2H0z" />
+          <path class="m-buy" d="M10 3h2v2h-2zM10 7h4v2h-4zM10 11h6v2h-6z" />
+        </svg>
+        <span>Depthwatch</span>
+      </a>
+    </header>
+    <main>
+      <p class="eyebrow">Not found</p>
+      <h1>page not found</h1>
+      <p class="say">
+        There is no page at this address. The link may be wrong, or the page may have moved.
+      </p>
+      <p class="note">
+        This copy of Depthwatch is a set of static pages with no API, so addresses under /api end
+        here too.
+      </p>
+      <p class="actions">
+        <a class="btn" href="/">Go to the home page</a>
+        <a class="ulink" href="/#/pools">Browse pools</a>
+      </p>
+    </main>
+  </body>
+</html>

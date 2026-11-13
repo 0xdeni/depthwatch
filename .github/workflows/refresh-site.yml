@@ -1,15 +1,19 @@
 name: Refresh site
 
-# A free static copy of the dashboard (docs/DEPLOY.md, "A free static copy"): every three hours
-# the pipeline runs against Base mainnet on a GitHub runner, the database is kept in the Actions
-# cache between runs, and the static build is uploaded to Cloudflare Pages. It needs the
+# A free static copy of the dashboard (docs/DEPLOY.md, "A free static copy"): about every three
+# hours the pipeline runs against Base mainnet on a GitHub runner, the database is kept in the
+# Actions cache between runs, and the static build is uploaded to Cloudflare Pages. It needs the
 # repository secrets DEPTHWATCH_RPC_URL, CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID; it runs
 # only on its schedule and by hand, never for a pull request, so no fork sees them.
 
 on:
   schedule:
-    # Minute 23, every third hour (UTC). GitHub may start a scheduled run late.
-    - cron: "23 */3 * * *"
+    # Every hour at minute 23 (UTC), a check: the job "due" lets a scheduled run refresh only when
+    # the last refresh is old enough. GitHub starts scheduled runs late, or not at all, when it is
+    # busy: from 1 to 12 November 2026 the earlier schedule, every third hour, ran 36 times, at a
+    # median gap of 7.3 hours and at most 13.1. Asking every hour, a skipped run costs an hour,
+    # not three.
+    - cron: "23 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -17,16 +21,108 @@ permissions:
   # To list the saved databases when a restore finds none (Stop if a saved database was lost).
   actions: read
 
-concurrency:
-  group: refresh-site
-  cancel-in-progress: false
-
 jobs:
+  # Whether this run refreshes. A run by hand always does. A scheduled run does when the last
+  # refresh that published started at least 150 minutes ago, and no other refresh is running or
+  # waiting: with checks on time, one refresh every three hours, the 30 minutes short of three
+  # absorbing a late start. If GitHub's API cannot say, or this job fails, the run refreshes: a
+  # refresh too many beats none.
+  due:
+    name: due
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # It only reads this workflow's runs and their jobs.
+    permissions:
+      actions: read
+    outputs:
+      due: ${{ steps.check.outputs.due }}
+    steps:
+      # The runner's own Node, no checkout and no install. It reads this workflow's runs on main,
+      # newest first, and the jobs of each (a check that was not due has its refresh skipped). A
+      # refresh counts once its publish step succeeded, even if a later step failed (a refused
+      # trade switch fails the run after publishing), and while it runs or waits to run once its
+      # run's check has finished. A refresh that failed before publishing does not count, so the
+      # next hourly check tries again. All requests share one deadline of 3 minutes, inside the
+      # job's 5. The token reaches the script through its environment only.
+      - name: Check the last refresh
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node -e '
+            const fs = require("node:fs")
+            const MIN_MINUTES = 150
+            const PUBLISH = "Publish to Cloudflare Pages"
+            const deadline = AbortSignal.timeout(180000)
+            const answer = (due, line) => {
+              console.log(line)
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, "due=" + due + "\n")
+            }
+            const get = async (path) => {
+              const url = process.env.GITHUB_API_URL + "/repos/" + process.env.GITHUB_REPOSITORY + "/actions" + path
+              const response = await fetch(url, {
+                headers: {
+                  accept: "application/vnd.github+json",
+                  authorization: "Bearer " + process.env.GITHUB_TOKEN,
+                  "x-github-api-version": "2022-11-28",
+                },
+                signal: deadline,
+              })
+              if (!response.ok) throw new Error(path + " answered HTTP " + response.status)
+              return response.json()
+            }
+            const published = (job) =>
+              Array.isArray(job.steps) && job.steps.some((step) => step.name === PUBLISH && step.conclusion === "success")
+            const check = async () => {
+              if (process.env.GITHUB_EVENT_NAME !== "schedule") {
+                answer(true, "A run by hand always refreshes.")
+                return
+              }
+              const listed = await get("/workflows/refresh-site.yml/runs?branch=main&per_page=20")
+              const runs = listed?.workflow_runs
+              if (!Array.isArray(runs)) throw new Error("the list of runs holds no workflow_runs")
+              for (const run of runs) {
+                const jobs = (await get("/runs/" + run.id + "/jobs"))?.jobs
+                if (!Array.isArray(jobs)) throw new Error("run " + run.id + " lists no jobs")
+                const refresh = jobs.find((job) => job.name === "refresh")
+                if (refresh === undefined) continue
+                if (refresh.status !== "completed") {
+                  if (!jobs.some((job) => job.name === "due" && job.status === "completed")) continue
+                  answer(false, "A refresh is running or waiting to run (" + run.html_url + "): not due.")
+                  return
+                }
+                if (!published(refresh)) continue
+                const started = Date.parse(refresh.started_at)
+                if (Number.isNaN(started)) throw new Error("run " + run.id + " has no start time")
+                const minutes = Math.floor((Date.now() - started) / 60000)
+                const due = minutes >= MIN_MINUTES
+                answer(due, "The last refresh that published started " + minutes + " minutes ago (" + run.html_url + "): " +
+                  (due ? "due." : "not due before " + MIN_MINUTES + " minutes; the next hourly check asks again."))
+                return
+              }
+              answer(true, "None of the last " + runs.length + " runs on main has a refresh that published: due.")
+            }
+            check().catch((error) => {
+              console.log("::warning::Could not read the last refresh (" + error.message + "); refreshing anyway.")
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, "due=true\n")
+            })
+          '
+
   refresh:
     name: refresh
+    needs: due
     # Only the default branch publishes and keeps the database: a run by hand from another branch
-    # would deploy that branch's build and save its database in that branch's cache.
-    if: github.ref == 'refs/heads/main'
+    # would deploy that branch's build and save its database in that branch's cache. Then only a
+    # due run, or one whose check failed (no answer is "false"); a cancelled run stops here.
+    if: github.ref == 'refs/heads/main' && !cancelled() && needs.due.outputs.due != 'false'
+    # The group Trade switch shares (trade-switch.yml): the two never publish at once. It is on this
+    # job, not on the whole run, so a check that is not due never joins it. GitHub keeps one run
+    # waiting per group and cancels the one already waiting when another joins; only a refresh,
+    # which publishes the same switch, or a newer Trade switch can replace a waiting one.
+    concurrency:
+      group: refresh-site
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     # A first run seeds the pools of the reference tokens (and, since the stocks change, of the
     # ten tokenized stocks with them: 6,200 more factory calls). On 29 October 2026 the seed took 24
@@ -57,14 +153,14 @@ jobs:
             exit 1
           fi
       # Actions are pinned to commit SHAs; the comment names the release each SHA is.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
       - name: Install pnpm
         run: npm install --global pnpm@10.28.0
       - name: Cache pnpm store
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/pnpm/store
           key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -74,7 +170,7 @@ jobs:
       # newest entry by prefix is restored, and every attempt can save its own.
       - name: Restore the database
         id: restore-db
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .depthwatch
           key: depthwatch-db-${{ github.run_id }}-${{ github.run_attempt }}
@@ -148,7 +244,7 @@ jobs:
         run: pnpm depthwatch prune
       - name: Save the database
         if: always() && hashFiles('.depthwatch/depthwatch.db') != ''
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .depthwatch
           key: depthwatch-db-${{ github.run_id }}-${{ github.run_attempt }}
@@ -177,12 +273,11 @@ jobs:
       - name: Check the bundle
         run: |
           node -e 'const b = JSON.parse(require("node:fs").readFileSync("apps/web/static-data/bundle.json", "utf8")); if (b.pools.length === 0) { console.log("::error::The bundle holds no pools; the published copy is kept."); process.exit(1) }'
+      # The build writes 404.html at the top of the output (apps/web/public/404.html): without one,
+      # Pages answers every unknown path, /api/... included, with index.html and HTTP 200, and this
+      # copy has no API.
       - name: Build the static site
-        run: |
-          pnpm --filter @depthwatch/web build:static
-          # Without a top-level 404.html, Pages answers every unknown path, /api/... included, with
-          # index.html and HTTP 200; this copy has no API.
-          printf '%s\n' '<!doctype html><meta charset="utf-8"><title>Not found</title><p>Not found. This static copy of Depthwatch has no API; the dashboard is at <a href="/">/</a>.</p>' > apps/web/dist-static/404.html
+        run: pnpm --filter @depthwatch/web build:static
       # No secret is in this step's environment and no install script runs: uploading a directory
       # of static files needs neither workerd nor esbuild.
       - name: Install wrangler

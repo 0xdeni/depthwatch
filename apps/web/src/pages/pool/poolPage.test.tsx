@@ -6,8 +6,10 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
+import { AppRoutes, Providers } from '../../App.js'
 import { createMockClient, MOCK_STOCK_POOLS } from '../../api/mock.js'
-import { NB, usd } from '../../lib/format.js'
+import type { ApiClient } from '../../api/types.js'
+import { NB, roundTripCost, usd } from '../../lib/format.js'
 import { ELIGIBILITY_LINE, VALUATION_LABEL } from '../../lib/stockText.js'
 import { expectNoTradeControls } from '../../testing/noTrade.js'
 import { PoolTitle } from './PoolTitle.js'
@@ -221,11 +223,14 @@ describe('Pool page: states', () => {
 
 describe('Pool page: a stale quote', () => {
   it('carries the "Stale price" chip in the eyebrow, and none at the market price', async () => {
-    const { pool } = await createMockClient({ now: NOW }).pool(V3_WETH_USDC)
+    const client = createMockClient({ now: NOW })
+    const { pool } = await client.pool(V3_WETH_USDC)
     const stale = render(
-      <MemoryRouter>
-        <PoolTitle pool={pool} spot={null} answer={null} staleDeviationBps={1_000} />
-      </MemoryRouter>,
+      <Providers client={client} mock>
+        <MemoryRouter>
+          <PoolTitle pool={pool} spot={null} answer={null} staleDeviationBps={1_000} />
+        </MemoryRouter>
+      </Providers>,
     )
     fireEvent.focus(within(stale.container).getByRole('button', { name: 'Stale price' }))
     expect((await screen.findByRole('tooltip')).textContent).toContain(
@@ -233,11 +238,96 @@ describe('Pool page: a stale quote', () => {
     )
     stale.unmount()
     const fresh = render(
-      <MemoryRouter>
-        <PoolTitle pool={pool} spot={null} answer={null} />
-      </MemoryRouter>,
+      <Providers client={client} mock>
+        <MemoryRouter>
+          <PoolTitle pool={pool} spot={null} answer={null} />
+        </MemoryRouter>
+      </Providers>,
     )
     expect(within(fresh.container).queryByRole('button', { name: 'Stale price' })).toBeNull()
+  })
+})
+
+describe('Pool page: costs in percent and dollars first, bps second', () => {
+  it('gives the $10K spread fact as a percent, with the dollars and bps under it', async () => {
+    const detail = await createMockClient({ now: NOW }).pool(V3_WETH_USDC)
+    const bps10k = detail.latest?.spreads.find((s) => s.notionalUsd === 10_000)?.spreadBps
+    if (typeof bps10k !== 'number') throw new Error('the mock pool has no $10K spread')
+    renderPool(V3_WETH_USDC)
+    await loaded()
+    const spread = [...facts().querySelectorAll('.fact')].find(
+      (f) => f.querySelector('dt')?.textContent === 'spread at $10K, a round trip',
+    )
+    const cost = roundTripCost(bps10k, 10_000)
+    expect(spread?.querySelector('dd')?.textContent).toBe(
+      `${cost?.percent} about ${cost?.dollars} (${cost?.bps})`,
+    )
+    expect(spread?.querySelector('dd .fv-sub')?.textContent).toMatch(
+      /^about \$[\d.]+K? \([\d.]+\sbps\)$/,
+    )
+    // The cost section's finding and its Details table read the same way.
+    const section = screen.getByRole('region', { name: 'cost to trade' })
+    expect(section.querySelector('.takeaway')?.textContent).toMatch(
+      /round trip costs [\d.]+\s%, about \$[\d.]+K? \([\d.]+\sbps\), fees included\.$/,
+    )
+    // In the table, each fillable spread is the percent over the dollars and bps.
+    fireEvent.click(within(section).getByRole('button', { name: 'Details' }), { detail: 0 })
+    const row = [...section.querySelectorAll('tbody tr')].find(
+      (r) => r.querySelector('td')?.textContent === '$10K',
+    )
+    const cell = row?.querySelectorAll('td')[1]
+    expect(cell?.querySelector('.pool-cost-pct')?.textContent).toBe(cost?.percent)
+    expect(cell?.querySelector('.pool-cost-sub')?.textContent).toBe(
+      `${cost?.dollars} (${cost?.bps})`,
+    )
+  })
+})
+
+describe('Pool page: the static site, which reads no LP owners', () => {
+  /** The mock client with this pool's owner data removed, as the static export has it. */
+  async function ownerless() {
+    const base = createMockClient({ now: NOW })
+    const detail = await base.pool(V3_WETH_USDC)
+    const latest = detail.latest
+    if (!latest?.concentration) throw new Error('the mock pool has no concentration')
+    const patch = {
+      latest: { ...latest, concentration: { ...latest.concentration, owners: null } },
+    }
+    const client: ApiClient = {
+      ...base,
+      async pool(id) {
+        return { ...(await base.pool(id)), ...patch }
+      },
+    }
+    return { client, patch }
+  }
+
+  it('titles the section by what it shows and does not say owners are not indexed', async () => {
+    const { client } = await ownerless()
+    render(
+      <Providers client={client} mock={false} staticBuild>
+        <MemoryRouter initialEntries={[`/pools/${encodeURIComponent(V3_WETH_USDC)}`]}>
+          <AppRoutes />
+        </MemoryRouter>
+      </Providers>,
+    )
+    await loaded()
+    const section = screen.getByRole('region', { name: 'how concentrated the liquidity is' })
+    expect(screen.queryByRole('region', { name: 'who provides it' })).toBeNull()
+    expect(section.querySelector('.takeaway')?.textContent).toMatch(/^The active range holds /)
+    fireEvent.click(within(section).getByRole('button', { name: 'Details' }), { detail: 0 })
+    expect(section.textContent).toContain('Active range share')
+    expect(section.textContent).not.toMatch(/not indexed/)
+  })
+
+  it('keeps "who provides it" and the owner sentence where owners can be read', async () => {
+    const { patch } = await ownerless()
+    renderPool(V3_WETH_USDC, { patch })
+    await loaded()
+    const section = screen.getByRole('region', { name: 'who provides it' })
+    expect(section.querySelector('.takeaway')?.textContent).toMatch(
+      /^LP owners are not indexed for this pool\./,
+    )
   })
 })
 

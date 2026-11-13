@@ -13,11 +13,12 @@ import {
   poolAnswer,
   spanWords,
   spreadAt,
-  spreadCellText,
+  spreadCell,
   tooFewTakeaway,
   tvlFactLabel,
   volumeFactLabel,
   whoTakeaway,
+  whoTitle,
 } from './poolText.js'
 
 const point = (notionalUsd: number, spreadBps: number | null, feasible = true): SpreadPoint => ({
@@ -29,28 +30,36 @@ const point = (notionalUsd: number, spreadBps: number | null, feasible = true): 
 })
 
 describe('costTakeaway and the spread cells', () => {
-  it('states the largest notional the pool absorbs', () => {
+  it('states the largest notional the pool absorbs, in percent and dollars, then bps', () => {
     const spreads = [point(1_000, 10), point(10_000, 13.8), point(100_000, 42)]
-    expect(costTakeaway(spreads)).toBe(`A $100K round trip costs 42.0${NB}bps, fees included.`)
+    expect(costTakeaway(spreads)).toBe(
+      `A $100K round trip costs 0.42${NB}%, about $420 (42.0${NB}bps), fees included.`,
+    )
     expect(spreadAt(spreads, 10_000)).toBe(13.8)
-    expect(spreadCellText(point(10_000, 13.8))).toBe(`13.8${NB}bps`)
+    // The Details table lays out the parts: the percent over the dollars and bps.
+    expect(spreadCell(point(10_000, 13.8))).toMatchObject({
+      percent: `0.14${NB}%`,
+      dollars: '$14',
+      bps: `13.8${NB}bps`,
+    })
+    expect(spreadCell(point(1_000, 9))).toMatchObject({ percent: `0.090${NB}%`, dollars: '$0.90' })
   })
 
   it('says the pool can’t absorb a notional that does not fill', () => {
     const spreads = [point(1_000, 10), point(10_000, null, false), point(100_000, null, false)]
     expect(costTakeaway(spreads)).toBe(
-      `The pool can’t absorb $100K; a $1K round trip costs 10.0${NB}bps.`,
+      `The pool can’t absorb $100K; a $1K round trip costs 0.10${NB}%, about $1 (10.0${NB}bps).`,
     )
     expect(spreadAt(spreads, 10_000)).toBeNull()
-    expect(spreadCellText(point(100_000, null, false))).toBe(`Can’t absorb $100K`)
+    expect(spreadCell(point(100_000, null, false))).toBe(`Can’t absorb $100K`)
   })
 
   it('treats a spread of 10,000 bps or more as one it can’t absorb: the first run stored 1.4e24', () => {
     const spreads = [point(1_000, 1.449e24), point(10_000, 1.449e24), point(100_000, 1.449e24)]
     expect(costTakeaway(spreads)).toBe('The pool can’t absorb a $1K round trip.')
     expect(spreadAt(spreads, 10_000)).toBeNull()
-    expect(spreadCellText(point(10_000, 1.449e24))).toBe(`Can’t absorb $10K`)
-    for (const text of [costTakeaway(spreads), spreadCellText(point(10_000, 1.449e24))]) {
+    expect(spreadCell(point(10_000, 1.449e24))).toBe(`Can’t absorb $10K`)
+    for (const text of [costTakeaway(spreads), String(spreadCell(point(10_000, 1.449e24)))]) {
       expect(text).not.toMatch(/\d{5,}|e\+/)
     }
   })
@@ -176,6 +185,27 @@ describe('who provides it', () => {
       `LP owners are not indexed for this pool. The active range holds 1${NB}% of the liquidity within ±5${NB}%.`,
     )
     expect(whoTakeaway(c, 'constant-product')).toBe('A full-range pool: every LP shares one range.')
+    expect(whoTitle(null, true)).toBe('who provides it')
+    expect(ownersNote(null)).toBe(
+      'Owners are not indexed for this pool, so health uses the range HHI.',
+    )
+  })
+
+  it('where owners are never read, titles the section by what it shows and drops the owner line', () => {
+    expect(whoTitle(null, false)).toBe('how concentrated the liquidity is')
+    expect(whoTakeaway(c, 'concentrated', false)).toBe(
+      `The active range holds 1${NB}% of the liquidity within ±5${NB}%.`,
+    )
+    expect(whoTakeaway(c, 'constant-product', false)).toBe(
+      'A full-range pool: every LP shares one range.',
+    )
+    expect(ownersNote(null, false)).toBeNull()
+    // A pool that does carry owner data keeps its heading and its owner sentences.
+    const some = { count: 4, top1Share: 0.53, top3Share: 1, hhi: 0.3, coverage: 0.95 }
+    expect(whoTitle(some, false)).toBe('who provides it')
+    expect(whoTakeaway({ ...c, owners: some }, 'concentrated', false)).toBe(
+      `One LP holds 53${NB}% of the liquidity near the price.`,
+    )
   })
 
   const owners = (count: number, top1Share: number, coverage: number | null) => ({

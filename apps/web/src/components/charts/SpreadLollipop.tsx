@@ -3,19 +3,22 @@
  * $1M round trip (the first three in snapshots stored before the $1M point), one row per stored
  * point, as lollipops on one shared bps axis from 0, so each spread reads as a length. Rows of
  * 40 px: the notional in a 56 px column, a 2 px `--line` track, a 4 px ink stem from 0 to the
- * value, a 16 px rounded square dot and the value 16 px after it. A notional the pool cannot absorb
- * (infeasible, or a stored spread of 10,000 bps or more) is a hollow ring at 0 labelled "Can’t
- * absorb $100K". The axis reads 0 and three nice ticks, the last with the "bps" glossary term.
+ * value, a 16 px rounded square dot and the value 16 px after it: the cost in percent over the
+ * dollars and bps it comes to ("0.18 %" over "$18 (17.8 bps)", `roundTripCost`), so a reader who
+ * does not think in bps reads the percent first. A notional the pool cannot absorb (infeasible,
+ * or a stored spread of 10,000 bps or more) is a hollow ring at 0 labelled "Can’t absorb $100K".
+ * The axis reads 0 and three nice ticks, the last with the "bps" glossary term.
  */
 import type { ReactNode } from 'react'
 import type { SpreadPoint } from '../../api/types.js'
-import { bps, cantAbsorb, NB, SPREAD_UNABSORBED_BPS, usd } from '../../lib/format.js'
+import { cantAbsorb, NB, roundTripCost, SPREAD_UNABSORBED_BPS, usd } from '../../lib/format.js'
 import { niceStepUp } from '../../lib/scale.js'
 import { Glossary } from '../ui/Glossary.js'
 import { ShowData } from './ShowData.js'
 import { vars } from './useChartWidth.js'
 import './charts.css'
 import './glyphs.css'
+import './lollipop.css'
 
 const fillable = (s: SpreadPoint): s is SpreadPoint & { spreadBps: number } =>
   s.feasible && s.spreadBps !== null && Math.round(Math.abs(s.spreadBps)) < SPREAD_UNABSORBED_BPS
@@ -30,13 +33,14 @@ export function lollipopAxis(spreads: readonly SpreadPoint[]): { max: number; ti
   }
 }
 
+/** The chart's name, in the words its labels show: "$10K costs 0.18 %, about $18 (17.8 bps)". */
 export function lollipopLabel(spreads: readonly SpreadPoint[]): string {
   return `Effective spread: ${spreads
-    .map(
-      (s) =>
-        `${usd(s.notionalUsd)} ${fillable(s) ? `costs ${bps(s.spreadBps)}` : 'can’t be absorbed'}`,
-    )
-    .join(', ')}.`
+    .map((s) => {
+      const cost = fillable(s) ? roundTripCost(s.spreadBps, s.notionalUsd) : null
+      return `${usd(s.notionalUsd)} ${cost ? `costs ${cost.text}` : 'can’t be absorbed'}`
+    })
+    .join('; ')}.`
 }
 
 export function SpreadLollipop({
@@ -53,13 +57,23 @@ export function SpreadLollipop({
         {spreads.map((s) => {
           const ok = fillable(s)
           const x = ok ? Math.min(1, Math.max(0, s.spreadBps / axis.max)) : 0
+          const cost = ok ? roundTripCost(s.spreadBps, s.notionalUsd) : null
           return (
             <div className="dot-r" key={s.notionalUsd}>
               <span className="k num">{usd(s.notionalUsd)}</span>
               <span className="dot-t" style={vars({ '--x': x })}>
                 {ok ? <i className="dot-s" /> : null}
                 <i className={`dot-d${ok ? '' : ' ring'}`} />
-                <b className="num">{ok ? bps(s.spreadBps) : cantAbsorb(s.notionalUsd)}</b>
+                {cost ? (
+                  <span className="dot-v num">
+                    <strong>{cost.percent}</strong>
+                    <small>
+                      {cost.dollars} (<b>{cost.bps}</b>)
+                    </small>
+                  </span>
+                ) : (
+                  <b className="num">{cantAbsorb(s.notionalUsd)}</b>
+                )}
               </span>
             </div>
           )

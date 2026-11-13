@@ -1,0 +1,35 @@
+/* Cost to trade (SpreadLollipop.tsx): the value after a fillable dot is two lines, the cost in
+   percent (16 px / 800, ink) over the dollars and bps it comes to (12 px, --text-2), placed where
+   the one-line value sat: its text 16 px after the dot, centred on the track. Its box takes the
+   sheet's surface, so the track runs on after the value instead of underlining it. The bps keep
+   their own `b` so the axis term and the value read the same unit. */
+.dot-t .dot-v {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--x) * 100% + 12px);
+  translate: 0 -50%;
+  display: grid;
+  gap: 3px;
+  padding: 0 6px 0 4px;
+  background: var(--surface);
+  white-space: nowrap;
+}
+.dot-v strong {
+  font-size: var(--t-body);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--text-1);
+}
+.dot-v small {
+  font-size: var(--t-caption);
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--text-2);
+}
+.dot-t .dot-v b {
+  position: static;
+  translate: none;
+  font: inherit;
+  letter-spacing: 0;
+}

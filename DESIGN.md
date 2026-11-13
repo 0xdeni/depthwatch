@@ -539,10 +539,15 @@ allows it: the bundle's switch on for the pool's DEX, a route in `TRADE_ROUTES` 
 a concentrated pool with an address, no hook, rated, not a stale quote, both tokens in `TRADE_TOKENS`;
 never in demo, mock or connecting mode, and never in the server build, which carries no switch (it still
 ships the section, the gate and the lazy panel's chunks, unreachable there: about 10 kB of its boot script). Until
-the reader clicks "Swap in this pool" the row shows the snapshot's $10K round trip with its time and
-loads no wallet code: the panel is a lazy chunk in Suspense and an error boundary ("Reload the page to
-trade"), and `src/tradeBundle.test.ts` fails when the ERC-8021 marker, `eip6963:requestProvider` or
-viem reach a boot chunk, or the boot chunks pass their byte budget. The panel finds wallets by EIP-6963
+the reader clicks "Swap in this pool" or the title's "Swap" the row shows the snapshot's $10K round
+trip with its time, and the page asks no wallet for anything: the panel is a lazy chunk in Suspense
+and an error boundary ("Reload the page to trade"), and `src/tradeBundle.test.ts` fails when the
+ERC-8021 marker, `eip6963:requestProvider` or viem reach a boot chunk, or the boot chunks pass their
+byte budget. The chunk is warmed before the click (`pages/pool/tradeIntent.ts`): hovering, pressing
+or focusing either Swap control, or the row coming within one viewport of the screen (not with
+Save-Data on), loads it and starts one EIP-6963 discovery, which only listens for the wallets the
+browser announces and goes to the panel when it opens; while a panel is open warming starts none,
+so each later look discovers afresh. The panel finds wallets by EIP-6963
 (`window.ethereum` when none announces itself), asks for Base (0x2105) when the wallet is elsewhere,
 and reads everything through the wallet's own provider: before any quote it checks the pool on chain
 (`pool.factory()` names the route, the router's `factory()` is that factory, the factory's `getPool`

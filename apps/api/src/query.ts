@@ -3,7 +3,7 @@
  * gives for the query, treats empty values as absent, and applies DESIGN.md defaults
  * (limit 50 max 200, offset 0, sort health, dir desc).
  */
-import { DEXES } from '@depthwatch/core'
+import { DEXES, poolQueryTerms } from '@depthwatch/core'
 import { z } from 'zod'
 import type { ErrorResponse } from './dto.js'
 
@@ -53,12 +53,17 @@ export const poolsQuerySchema = z.object({
   /** `true` keeps only rated pools, `false` only unrated ones; both when absent. */
   rated: boolParam,
   dex: z.preprocess(emptyToUndefined, z.enum(DEXES).optional()),
+  /**
+   * Search terms, split on whitespace, "/", "-" and ":" (core's `poolQueryTerms`), every one
+   * matching the pool, so "WETH/USDC" and "usdc weth" list the same pools. A query of separators
+   * alone ("/") is no query.
+   */
   q: z
     .string()
     .trim()
     .max(100)
     .optional()
-    .transform((value) => (value ? value : undefined)),
+    .transform((value) => (value && poolQueryTerms(value).length > 0 ? value : undefined)),
   minVolume: usdParam,
   ...pagingSchema,
 })

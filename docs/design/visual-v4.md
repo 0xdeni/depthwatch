@@ -357,7 +357,8 @@ under `:root[data-theme='dark']`.
   --surface: var(--g0); /* plane-1 blocks, table sheet, sections sheet */
   --surface-2: var(--g10); /* wells, tracks, panels, row hover, segmented track */
   --line: var(--g15); /* row rules, block edges */
-  --line-2: var(--g30); /* control outlines, hollow cells */
+  --line-2: var(--g30); /* hollow cells, tracks */
+  --ctl-edge: var(--g50); /* control outlines, 4.4:1 (dark: Gray 60, 3.2:1); WCAG 1.4.11 */
   --text-1: var(--g100); /* 19.7:1 */
   --text-2: var(--g60); /* 6.2:1; 5.4:1 on --surface-2 */
   --ink: var(--g100); /* the black block and the footer */

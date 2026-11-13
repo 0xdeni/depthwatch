@@ -1,8 +1,9 @@
 /**
  * The one stroke icon set (K9, docs/design/visual-v4.md §5.13): 16 px, viewBox 0 0 16 16, 1.5 px
  * stroke, round caps and joins, currentColor, aria-hidden: chevrons, back, swap, search, check,
- * copy, external, arrows, filter (three lines) and columns. Every arrow in the product is one of
- * these, never a text glyph (Hanken has no ↑ or ⇄). No icon sits in a tinted square.
+ * copy, external, arrows, filter (three lines), columns and info (an "i" in a circle, for a note
+ * that explains a column). Every arrow in the product is one of these, never a text glyph (Hanken
+ * has no ↑ or ⇄). No icon sits in a tinted square.
  */
 import type { ReactNode } from 'react'
 
@@ -32,6 +33,12 @@ const PATHS = {
     <>
       <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
       <path d="M6.5 2.5v11M10 2.5v11" />
+    </>
+  ),
+  info: (
+    <>
+      <circle cx="8" cy="8" r="6.25" />
+      <path d="M8 7.25v4M8 4.75v.01" />
     </>
   ),
 } satisfies Record<string, ReactNode>

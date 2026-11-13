@@ -30,16 +30,16 @@ describe('matchesQuery', () => {
     expect(matchesQuery(item, 'cbbtc')).toBe(false)
   })
 
-  it('does not match token names, exactly like the API filter it mirrors', async () => {
+  it('matches token names and a pair written either way round, like the API filter', async () => {
     const item = await wethUsdc()
     expect(item.pool.token0.name).toBe('Wrapped Ether')
     expect(item.pool.token1.name).toBe('USD Coin')
-    expect(matchesQuery(item, 'Wrapped Ether')).toBe(false)
-    expect(matchesQuery(item, 'USD Coin')).toBe(false)
-    // Across the whole mock universe a name query finds nothing, as /api/pools?q= would.
-    const all = await summaries()
-    expect(all.filter((s) => matchesQuery(s, 'Wrapped Ether'))).toEqual([])
-    expect(all.filter((s) => matchesQuery(s, 'WETH')).length).toBeGreaterThan(0)
+    expect(matchesQuery(item, 'Wrapped Ether')).toBe(true)
+    expect(matchesQuery(item, 'USD Coin')).toBe(true)
+    for (const q of ['WETH/USDC', 'usdc weth', 'weth-usdc', 'USDC:WETH', 'uniswap v3 weth'])
+      expect(matchesQuery(item, q), q).toBe(true)
+    expect(matchesQuery(item, 'weth/cbbtc')).toBe(false)
+    expect(matchesQuery(item, 'aerodrome usdc')).toBe(false)
   })
 })
 

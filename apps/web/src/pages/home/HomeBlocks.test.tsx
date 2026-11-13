@@ -66,16 +66,9 @@ describe('Home: the fact blocks over the band', () => {
     const said = gradeCounts(pools)
       .map((g) => `${g.grade} ${g.n}`)
       .join(', ')
-    // Each block's link name reads in the visual order: eyebrow, value, label.
-    expect(health.getAttribute('aria-label')).toBe(
-      `Health: ${score(totals.medianHealth)}, grade ${grade}, ${healthLabel(totals.rated)}. Grades: ${said}`,
-    )
-    expect(volume.getAttribute('aria-label')).toBe(
-      `24${NB}h volume: ${usd(totals.volume24hUsd)}, ${volumeLabel(computeGap(totals.volume24hUsd, totals.depth2Usd).turnoverRatio)}`,
-    )
-    expect(gap.getAttribute('aria-label')).toBe(
-      `Biggest gap: ${ratio(top.gap.turnoverRatio)}, ${gapLabel(top)}`,
-    )
+    // Each block's link is named by its own text (WCAG 2.5.3); the grade counts are said once.
+    for (const b of [volume, health, gap]) expect(b.hasAttribute('aria-label')).toBe(false)
+    expect(health.querySelector('.sr-only')?.textContent).toBe(`Rated pools by grade: ${said}`)
     expect(gradeCounts(pools).reduce((s, g) => s + g.n, 0)).toBe(totals.rated)
 
     expect(isMeaningfulGap(top)).toBe(true)
@@ -149,7 +142,7 @@ describe('Home: previews', () => {
       `Trades ${ratio(first.gap.turnoverRatio)} its depth a day`,
     )
     expect(within(rows[0]).getByRole('img').getAttribute('aria-label')).toMatch(
-      /^Gap score \d+ of 100; 3× turnover is 24$/,
+      /^Gap score \d+ of 100: trades 3 times its depth a day or more$/,
     )
     expect(within(gaps).getByText('Gap score 0–100; the tick marks 3× turnover')).toBeTruthy()
   })

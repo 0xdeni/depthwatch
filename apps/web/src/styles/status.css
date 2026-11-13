@@ -81,32 +81,92 @@
   color: inherit;
 }
 
-/* The concentration mark: a star on the top right corner of a grade whose concentration points
-   do not rest on LP owners, so the glyph keeps its width and the column its alignment; a button
-   for its reason above any row link, in the muted text colour. */
-.grade-basis {
+/* A rated grade is a picture, never a control: a tap on it in a row reaches the row's pool link
+   under it. ("Not rated" and "Stale price" stay buttons for their reasons.) */
+.grade:not(.is-unrated, .is-stale),
+.grade-marked {
+  pointer-events: none;
+}
+
+/* The minority mark: a "*" on the top right corner of a grade whose concentration basis differs
+   from the one its table's Health header states, so the glyph keeps its width and the column its
+   alignment. Not a control: the header's note explains it. */
+.grade-marked {
   position: relative;
   display: inline-flex;
   flex: none;
 }
-.basis-mark {
+.grade-mark {
   position: absolute;
-  z-index: 2;
   top: -7px;
   right: -8px;
   color: var(--text-2);
   font-size: var(--t-small);
   font-weight: 700;
   line-height: 1;
-  text-decoration: none;
 }
-.ink .basis-mark {
+.ink .grade-mark {
   color: var(--on-ink-2);
 }
-.grade-basis.is-fact .basis-mark {
-  top: -8px;
-  right: -10px;
-  font-size: var(--t-data);
+
+/* The Health header's info button: 24 x 24 (44 x 44 on a coarse pointer, `touch-hit`), the 16 px
+   info icon in the header's muted colour; its note says what the grades stand on. */
+.th-info {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 4px;
+  border-radius: 6px;
+  color: var(--text-2);
+  text-decoration: none;
+  vertical-align: middle;
+}
+.th-info [role="img"] {
+  display: grid;
+}
+.th-info:hover {
+  color: var(--text-1);
+}
+/* Phone pool rows have no Health header: the button sits in their head row, centred over the
+   40 px grade column and out of the row's flow, so "Pool" and the metric's name keep their places. */
+.prow-head:has(> .th-info) {
+  position: relative;
+}
+.prow-head > .th-info {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  margin: 0;
+  translate: 0 -50%;
+}
+@media (max-width: 52.49em) {
+  .blk--flush .prow-head > .th-info {
+    right: calc(var(--s4) + 8px);
+  }
+}
+
+/* The pool page's grade basis: a short text link after the score's label, smaller and quieter
+   than the label, so the label still names the score. */
+.fact dd.fact-basis {
+  order: 3;
+  margin-top: -4px;
+  white-space: normal;
+  color: var(--text-2);
+}
+.ink .fact dd.fact-basis {
+  color: var(--on-ink-2);
+}
+.fact dd.fact-basis .gloss {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  color: inherit;
+  font-size: var(--t-small);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0;
+  text-align: left;
 }
 
 /* Status chip (the scorecard's own page): 32 px, radius 9, 15 px / 800, the shape and the word in

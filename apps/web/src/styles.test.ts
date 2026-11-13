@@ -38,6 +38,9 @@ const KIT: Readonly<Record<string, string>> = {
   '--g80': '#32353d',
   '--g100': '#0a0b0d',
 }
+/** The chart stylesheets, which their components import. */
+const SRC_CHARTS = join(WEB, 'src', 'components', 'charts')
+
 /** The API badge's own colours, which its preview copies (§5.11). */
 const BADGE = ['#2a3140', '#b8232f', '#1c7a4c', '#5c6573']
 
@@ -157,6 +160,24 @@ describe('colour tokens (§2.2, §3.1)', () => {
     expect(ratio(rgbOf('#0000ff'), rgbOf('#0a0b0d'))).toBeLessThan(3)
     expect(colour(dark, '--focus')).toEqual(rgbOf('#3c8aff'))
     expect(colour(light, '--sell-band')).toEqual(rgbOf('#ffffff'))
+  })
+
+  it('outlines controls in --ctl-edge, at least 3:1 on every surface they sit on (WCAG 1.4.11)', () => {
+    const pair = (t: Map<string, string>, fg: string, bg: string) =>
+      ratio(colour(t, fg, colour(t, bg)), colour(t, bg))
+    for (const [name, t] of [
+      ['light', light],
+      ['dark', dark],
+      ['dark, forced', new Map([...light, ...darkForced])],
+    ] as const)
+      for (const bg of ['--canvas', '--surface', '--panel'])
+        expect(pair(t, '--ctl-edge', bg), `${name}: --ctl-edge on ${bg}`).toBeGreaterThanOrEqual(3)
+    // A control in a light well (Gray 10) keeps its outline too.
+    expect(pair(light, '--ctl-edge', '--surface-2')).toBeGreaterThanOrEqual(3)
+    // Inputs, checkboxes, icon buttons and ghost buttons take it; nothing outlines in --line-2.
+    const controls = stripComments(read(join(STYLES, 'controls.css')))
+    expect(controls.match(/inset 0 0 0 1\.5px var\(--ctl-edge\)/g)).toHaveLength(4)
+    expect(controls).not.toMatch(/inset 0 0 0 [\d.]+px var\(--line-2\)/)
   })
 
   it('writes every colour as a kit value (alpha allowed) or one of the badge colours', () => {
@@ -289,5 +310,65 @@ describe('fonts (§3.3)', () => {
   it('pins theme-color to white in light and Gray 100 in dark', () => {
     expect(html).toContain('media="(prefers-color-scheme: light)" content="#ffffff"')
     expect(html).toContain('media="(prefers-color-scheme: dark)" content="#0a0b0d"')
+  })
+})
+
+/**
+ * Rules jsdom cannot see, which the rows and facts rely on: a rated grade is a picture, so a tap
+ * on it reaches its row's pool link; the gap bars' score column fits "100"; the pool page's grade
+ * basis follows the score's label; the phone rows' info button sits outside the head row's flow.
+ */
+describe('rows and facts: rules a test of the markup cannot see', () => {
+  /** Selectors of a list split at its top-level commas (`:not(.a, .b)` stays one selector). */
+  const selectorList = (text: string) => {
+    const out: string[] = []
+    let depth = 0
+    let current = ''
+    for (const c of text) {
+      if (c === ',' && depth === 0) {
+        out.push(current)
+        current = ''
+        continue
+      }
+      if (c === '(') depth++
+      if (c === ')') depth--
+      current += c
+    }
+    return [...out, current].map((s) => s.trim().replace(/\s+/g, ' '))
+  }
+  /** The declarations of every top-level rule whose selector list holds `selector`. */
+  const rulesFor = (css: string, selector: string) =>
+    [...stripComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter((m) => selectorList(m[1] ?? '').includes(selector))
+      .map((m) => (m[2] ?? '').replace(/\s+/g, ' '))
+      .join(';')
+  const status = read(join(STYLES, 'status.css'))
+
+  it('lets a tap on a rated grade, marked or not, through to the row link; chips keep theirs', () => {
+    for (const selector of ['.grade:not(.is-unrated, .is-stale)', '.grade-marked'])
+      expect(rulesFor(status, selector), selector).toContain('pointer-events: none')
+    // "Not rated" and "Stale price" are buttons for their reasons: never made inert.
+    expect(stripComments(status)).not.toMatch(
+      /\.grade\.is-(unrated|stale)[^{]*\{[^}]*pointer-events: none/,
+    )
+  })
+
+  it('gives the gap bars’ score 3ch, so 100 and 99 end their bars at the same x', () => {
+    const glyphs = read(join(SRC_CHARTS, 'glyphs.css'))
+    expect(rulesFor(glyphs, '.gbar .num')).toContain('min-width: 3ch')
+  })
+
+  it('puts the pool page’s grade basis after the score’s label', () => {
+    const content = read(join(STYLES, 'content.css'))
+    const order = (css: string, selector: string) =>
+      Number(rulesFor(css, selector).match(/order: (\d+)/)?.[1])
+    expect(order(content, '.fact dd')).toBe(1)
+    expect(order(content, '.fact dt:not(.fact-eb)')).toBe(2)
+    expect(order(status, '.fact dd.fact-basis')).toBe(3)
+  })
+
+  it('takes the phone rows’ info button out of the head row’s flow, over the grade column', () => {
+    expect(rulesFor(status, '.prow-head > .th-info')).toContain('position: absolute')
+    expect(rulesFor(status, '.prow-head:has(> .th-info)')).toContain('position: relative')
   })
 })

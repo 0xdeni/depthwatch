@@ -90,7 +90,7 @@
           {
             "name": "q",
             "in": "query",
-            "description": "Case-insensitive substring of either token's symbol or address, the pool address or the Uniswap v4 pool id.",
+            "description": "Search terms split on spaces, /, - and :, every one matching the pool, case-insensitively: anywhere in either token's symbol or address, the pool address or the Uniswap v4 pool id, or at the start of a word in either token's name or the DEX. WETH/USDC and usdc weth list the same pools.",
             "schema": { "type": "string", "maxLength": 100 }
           },
           { "$ref": "#/components/parameters/MinVolume" },

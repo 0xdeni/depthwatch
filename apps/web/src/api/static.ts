@@ -11,6 +11,7 @@
  * the stock routes has no stock keys: it answers `{ items: [] }` and 404 `stock not found`.
  */
 import { GAP_FEED_MIN_VOLUME_USD, isMeaningfulGap } from '@depthwatch/core'
+import { matchesPoolQuery } from '../lib/poolQuery.js'
 import { sortValue } from '../lib/sort.js'
 import type { FetchLike } from './client.js'
 import { ApiError } from './errors.js'
@@ -56,29 +57,12 @@ function copy<T>(value: T): T {
   return structuredClone(value)
 }
 
-/** SQLite `LIKE` folds ASCII letters only; so does this. */
-function foldAscii(text: string): string {
-  return text.replace(/[A-Z]/g, (c) => c.toLowerCase())
-}
-
 /**
- * The API's `q` filter: a case-insensitive substring of either token symbol or address, the pool
- * address or the v4 pool id (token names, the pair label and the dex are not matched).
+ * The API's `q` filter, core's rule (lib/poolQuery.ts): every term of the query ("WETH/USDC",
+ * "usdc weth") matches either token's symbol or address, the pool address or the v4 pool id, or a
+ * word start in either token's name or the DEX.
  */
-export function matchesPoolQuery(item: PoolSummary, q: string): boolean {
-  const needle = foldAscii(q.trim())
-  if (!needle) return true
-  const { pool } = item
-  const fields = [
-    pool.token0.symbol,
-    pool.token1.symbol,
-    pool.token0.address,
-    pool.token1.address,
-    pool.address,
-    pool.poolId,
-  ]
-  return fields.some((field) => field !== null && foldAscii(field).includes(needle))
-}
+export { matchesPoolQuery }
 
 function compareIds(a: string, b: string): number {
   if (a === b) return 0
@@ -108,11 +92,28 @@ function page<T>(items: readonly T[], limit: number, offset: number): T[] {
 }
 
 /**
- * Every gap-feed entry at `minVolumeUsd`: `gap_score IS NOT NULL AND volume_24h_usd >= floor`,
- * best gap score first, ties by pool id. The bundle holds the feed at its default floor; a lower
- * floor adds scored pools from `pools` with the gap metrics of their `poolDetails`.
+ * `ORDER BY gap_score DESC, turnover DESC NULLS LAST, pool_id ASC`, as `ScoresRepo.gaps` sorts:
+ * every pool trading 100× its depth or more scores 100, so a tie goes to the larger turnover.
  */
-function gapFeed(bundle: StaticBundle, minVolumeUsd: number): GapItem[] {
+function compareGaps(a: GapItem, b: GapItem): number {
+  const score = (b.gap.gapScore ?? 0) - (a.gap.gapScore ?? 0)
+  if (score !== 0) return score
+  const ta = a.gap.turnoverRatio
+  const tb = b.gap.turnoverRatio
+  if (ta !== tb) {
+    if (ta === null) return 1
+    if (tb === null) return -1
+    return tb - ta
+  }
+  return compareIds(a.pool.pool.id, b.pool.pool.id)
+}
+
+/**
+ * Every gap-feed entry at `minVolumeUsd`: `gap_score IS NOT NULL AND volume_24h_usd >= floor`,
+ * best gap score first, ties by turnover then pool id. The bundle holds the feed at its default
+ * floor; a lower floor adds scored pools from `pools` with the gap metrics of their `poolDetails`.
+ */
+export function gapFeed(bundle: StaticBundle, minVolumeUsd: number): GapItem[] {
   const byId = new Map<string, GapItem>()
   const keep = (summary: PoolSummary) =>
     summary.gapScore !== null &&
@@ -133,10 +134,7 @@ function gapFeed(bundle: StaticBundle, minVolumeUsd: number): GapItem[] {
       },
     })
   }
-  return [...byId.values()].sort(
-    (a, b) =>
-      (b.gap.gapScore ?? 0) - (a.gap.gapScore ?? 0) || compareIds(a.pool.pool.id, b.pool.pool.id),
-  )
+  return [...byId.values()].sort(compareGaps)
 }
 
 export function createStaticClient(bundle: StaticBundle): ApiClient {

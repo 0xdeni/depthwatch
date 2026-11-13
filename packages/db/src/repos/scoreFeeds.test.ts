@@ -153,3 +153,33 @@ describe('ScoresRepo feeds over the whole scored set', () => {
     expect(db.scores.topBy('depth', { token: FIXTURE_WETH.address }).total).toBe(4)
   })
 })
+
+describe('ScoresRepo.gaps: equal gap scores', () => {
+  let db: Database
+  afterEach(() => db.close())
+
+  it('orders a tie by turnover, highest first, then by pool id', () => {
+    // Every pool trading 100× its depth or more scores 100: the feed's head must still lead with
+    // the largest turnover (195×), not the smallest address (101×).
+    const pools = [6, 7, 8, 9, 10].map((n) => fixturePool({ address: fixtureAddress(n) }))
+    const [p6, p7, p8, p9, p10] = pools as [PoolMeta, PoolMeta, PoolMeta, PoolMeta, PoolMeta]
+    db = openDatabase(':memory:')
+    db.pools.upsertMany(pools)
+    db.pools.setTracked(
+      pools.map((p) => p.id),
+      true,
+    )
+    db.scores.upsertMany([
+      fixtureScore({ poolId: p6.id, gapScore: 100, volume24hUsd: 1_010_000, depth2Usd: 10_000 }),
+      fixtureScore({ poolId: p7.id, gapScore: 100, volume24hUsd: 1_950_000, depth2Usd: 10_000 }),
+      fixtureScore({ poolId: p8.id, gapScore: 100, volume24hUsd: 1_740_000, depth2Usd: 10_000 }),
+      fixtureScore({ poolId: p9.id, gapScore: 99.9, volume24hUsd: 990_000, depth2Usd: 10_000 }),
+      // The same turnover as p8: the pool id decides.
+      fixtureScore({ poolId: p10.id, gapScore: 100, volume24hUsd: 3_480_000, depth2Usd: 20_000 }),
+    ])
+    const [first, second] = [p8.id, p10.id].sort()
+    expect(ids(db.scores.gaps())).toEqual([p7.id, first, second, p6.id, p9.id])
+    expect(ids(db.scores.gaps({ limit: 1 }))).toEqual([p7.id])
+    expect(ids(db.scores.gaps({ limit: 2, offset: 3 }))).toEqual([p6.id, p9.id])
+  })
+})

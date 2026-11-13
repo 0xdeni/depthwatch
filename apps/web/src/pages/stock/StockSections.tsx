@@ -11,6 +11,7 @@
  *   links to a swap.
  */
 import type { StockDetail, StockPoolRow } from '../../api/stockTypes.js'
+import { basisMarked, HealthBasisNote, healthBasis } from '../../components/ui/HealthBasis.js'
 import { HealthCell, StaleQuoteChip } from '../../components/ui/PoolCells.js'
 import { Section } from '../../components/ui/Section.js'
 import { PoolCell } from '../../components/ui/Table.js'
@@ -140,6 +141,8 @@ function Flags({ row }: { row: StockPoolRow }) {
 export function PoolsSection({ detail }: { detail: StockDetail }) {
   const n = detail.pools.length
   const inSums = detail.sidesKnownPools
+  // The grades' basis is said once, in the Health header; a minority basis marks its rows.
+  const basis = healthBasis(detail.pools.map((row) => row.pool.health))
   const takeaway = !n
     ? 'Depthwatch scores no pool of this stock yet.'
     : inSums === n
@@ -164,7 +167,10 @@ export function PoolsSection({ detail }: { detail: StockDetail }) {
                   $10K spread
                 </th>
                 <th scope="col">From Chainlink’s answer</th>
-                <th scope="col">Health</th>
+                <th scope="col" aria-label="Health">
+                  Health
+                  <HealthBasisNote basis={basis} />
+                </th>
                 <th scope="col">Sums</th>
               </tr>
             </thead>
@@ -181,7 +187,10 @@ export function PoolsSection({ detail }: { detail: StockDetail }) {
                     <DeviationCell row={row} />
                   </td>
                   <td>
-                    <HealthCell health={row.pool.health} />
+                    <HealthCell
+                      health={row.pool.health}
+                      marked={basisMarked(basis, row.pool.health)}
+                    />
                   </td>
                   <td>
                     <Flags row={row} />

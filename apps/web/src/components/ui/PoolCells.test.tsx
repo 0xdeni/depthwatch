@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { PoolSummary } from '../../api/types.js'
 import { NB } from '../../lib/format.js'
 import { UNKNOWN_REASON } from '../../lib/poolsTable.js'
-import { BASIS_MARK, BASIS_MARK_LABEL } from '../../lib/rating.js'
+import { BASIS_MARK } from '../../lib/rating.js'
 import { DEMO_POOLS, summary } from '../charts/chartFixtures.js'
 import { DepthCell, HealthCell, metricCell } from './PoolCells.js'
 import { PoolsTable } from './PoolsTable.js'
@@ -54,30 +54,49 @@ describe('HealthCell', () => {
   })
 })
 
-describe('HealthCell: the concentration mark', () => {
-  it('marks a grade whose concentration does not rest on LP owners, with the reason', async () => {
-    render(<HealthCell health={rated} />)
-    expect(screen.queryByRole('button', { name: BASIS_MARK_LABEL })).toBeNull()
-    cleanup()
-    const reasons = {
-      ranges: 'spreads over price ranges',
-      neutral: 'scored neutral, 10 of 20',
-    } as const
-    for (const [basis, words] of Object.entries(reasons)) {
+describe('HealthCell: the concentration basis', () => {
+  it('reads score, then glyph, the order of the pool page’s fact', () => {
+    const { container } = render(<HealthCell health={rated} />)
+    expect(container.textContent).toBe('71B')
+    const cell = container.querySelector('.td-health')
+    expect(cell?.firstElementChild?.className).toBe('n')
+    expect(cell?.lastElementChild?.classList.contains('grade')).toBe(true)
+  })
+
+  it('carries no mark and no button of its own: its table’s Health header says the basis', () => {
+    for (const basis of ['owners', 'ranges', 'neutral', null] as const) {
       const { container, unmount } = render(
-        <MemoryRouter>
-          <HealthCell health={{ ...rated, concentrationBasis: basis as keyof typeof reasons }} />
-        </MemoryRouter>,
+        <HealthCell health={{ ...rated, concentrationBasis: basis }} />,
       )
       expect(within(container).getByRole('img', { name: 'Grade B' })).toBeTruthy()
-      expect(container.textContent).toBe(`B${BASIS_MARK}${BASIS_MARK_LABEL}71`)
-      fireEvent.focus(within(container).getByRole('button', { name: BASIS_MARK_LABEL }))
-      expect((await screen.findByRole('tooltip')).textContent).toContain(words)
+      expect(container.textContent).toBe('71B')
+      expect(within(container).queryByRole('button')).toBeNull()
+      expect(container.textContent).not.toContain(BASIS_MARK)
       unmount()
     }
-    // a score stored before the basis was recorded says nothing it does not know
-    render(<HealthCell health={{ ...rated, concentrationBasis: null }} />)
-    expect(screen.queryByRole('button', { name: BASIS_MARK_LABEL })).toBeNull()
+  })
+
+  it('marks a grade whose basis the header names as the exception, never as a control', () => {
+    const { container } = render(
+      <HealthCell health={{ ...rated, concentrationBasis: 'neutral' }} marked />,
+    )
+    expect(within(container).getByRole('img', { name: 'Grade B' })).toBeTruthy()
+    expect(container.querySelector('.grade-mark')?.textContent).toBe(BASIS_MARK)
+    expect(container.querySelector('.grade-mark')?.getAttribute('aria-hidden')).toBe('true')
+    expect(container.querySelector('.sr-only')?.textContent).toBe(', concentration scored neutral')
+    expect(within(container).queryByRole('button')).toBeNull()
+  })
+
+  it('never marks an unrated pool or a grade stored before the basis was recorded', () => {
+    const plain = render(<HealthCell health={{ ...rated, concentrationBasis: null }} marked />)
+    expect(plain.container.querySelector('.grade-mark')).toBeNull()
+    plain.unmount()
+    const none = render(
+      <MemoryRouter>
+        <HealthCell health={{ ...unrated('thin'), concentrationBasis: 'ranges' }} marked />
+      </MemoryRouter>,
+    )
+    expect(none.container.querySelector('.grade-mark')).toBeNull()
   })
 })
 

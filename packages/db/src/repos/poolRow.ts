@@ -2,7 +2,16 @@
  * Shared SELECT fragments, filter builder and row mapper for pools joined with their tokens.
  * Used by PoolsRepo and ScoresRepo so a PoolMeta is materialised in exactly one place.
  */
-import type { Address, Dex, Hex, PoolKind, PoolMeta, TokenInfo } from '@depthwatch/core'
+import {
+  type Address,
+  type Dex,
+  type Hex,
+  POOL_QUERY_WORD_BREAKS,
+  type PoolKind,
+  type PoolMeta,
+  poolQueryTerms,
+  type TokenInfo,
+} from '@depthwatch/core'
 import {
   type BindValue,
   colBigint,
@@ -31,7 +40,11 @@ export const POOL_FROM = `pools p
 export interface PoolFilter {
   dex?: Dex
   tracked?: boolean
-  /** Case-insensitive substring of a token symbol, token address, pool address or v4 pool id. */
+  /**
+   * Search text, split into terms by core's `poolQueryTerms`; every term must match, as core's
+   * `matchesPoolTerms` says: anywhere in either token's symbol or address, the pool address or the
+   * v4 pool id, or at the start of a word in either token's name or the DEX.
+   */
   q?: string
   /**
    * A token address (any case): pools with exactly it as token0 or token1. Unlike `q`, never
@@ -48,9 +61,40 @@ export interface PoolRecord {
 
 const LIKE = `LIKE ? ESCAPE '\\'`
 
+/** The columns a search term may match anywhere: token symbols and addresses, the pool's address and id. */
+const ANYWHERE_COLUMNS = [
+  't0.symbol',
+  't0.address',
+  't1.symbol',
+  't1.address',
+  'p.address',
+  'p.pool_id',
+] as const
+
+/** The columns a term must match at the start of a word: token names and the DEX id. */
+const WORD_COLUMNS = ['t0.name', 't1.name', 'p.dex'] as const
+
+/** `column` with a space before each word: a leading space, and every word break as a space. */
+function spacedWords(column: string): string {
+  return `(' ' || ${POOL_QUERY_WORD_BREAKS.reduce((sql, mark) => `replace(${sql}, '${mark}', ' ')`, column)})`
+}
+
+/** One term's condition: core's `matchesPoolTerms` for a single term, in SQL. */
+const TERM_SQL = `(${[
+  ...ANYWHERE_COLUMNS.map((column) => `${column} ${LIKE}`),
+  ...WORD_COLUMNS.map((column) => `${spacedWords(column)} ${LIKE}`),
+].join(' OR ')})`
+
+/** The parameters of `TERM_SQL` for one folded term: contains it, or contains " " + it. */
+function termParams(term: string): BindValue[] {
+  const anywhere = likeContains(term)
+  const wordStart = `% ${anywhere.slice(1)}`
+  return [...ANYWHERE_COLUMNS.map(() => anywhere), ...WORD_COLUMNS.map(() => wordStart)]
+}
+
 /** Whether the filter reads token columns: only `q` matches symbols; the rest filters `pools` alone. */
 export function filterReadsTokens(filter: PoolFilter): boolean {
-  return Boolean(filter.q?.trim())
+  return poolQueryTerms(filter.q).length > 0
 }
 
 /** WHERE conditions (without the keyword) and their bound parameters for a PoolFilter. */
@@ -70,13 +114,10 @@ export function poolFilterClauses(filter: PoolFilter): { clauses: string[]; para
     clauses.push('(p.token0 = ? OR p.token1 = ?)')
     params.push(token, token)
   }
-  const q = filter.q?.trim()
-  if (q) {
-    const pattern = likeContains(q)
-    clauses.push(
-      `(t0.symbol ${LIKE} OR t1.symbol ${LIKE} OR t0.address ${LIKE} OR t1.address ${LIKE} OR p.address ${LIKE} OR p.pool_id ${LIKE})`,
-    )
-    params.push(pattern, pattern, pattern, pattern, pattern, pattern)
+  // Every term must match somewhere, in either token: "usdc weth" finds the WETH / USDC pools.
+  for (const term of poolQueryTerms(filter.q)) {
+    clauses.push(TERM_SQL)
+    params.push(...termParams(term))
   }
   return { clauses, params }
 }

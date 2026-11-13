@@ -19,8 +19,15 @@ export { MEANINGFUL_GAP_TURNOVER }
 /** The threshold's gap score (23.9) from core, so the tick can never disagree with the scores. */
 export const MEANINGFUL_GAP_SCORE = computeGap(MEANINGFUL_GAP_TURNOVER, 1).gapScore ?? 0
 
+/**
+ * The meter's accessible name, in plain words: the score, and which side of the tick it sits on
+ * ("Gap score 100 of 100: trades 3 times its depth a day or more").
+ */
 export function turnoverLabel(gapScore: number | null): string {
-  return `Gap score ${score(gapScore)} of 100; ${MEANINGFUL_GAP_TURNOVER}× turnover is ${Math.round(MEANINGFUL_GAP_SCORE)}`
+  if (gapScore === null) return 'Gap score unknown'
+  const times = `${MEANINGFUL_GAP_TURNOVER} times its depth a day`
+  const trades = gapScore >= MEANINGFUL_GAP_SCORE ? `${times} or more` : `under ${times}`
+  return `Gap score ${score(gapScore)} of 100: trades ${trades}`
 }
 
 export function TurnoverGlyph({

@@ -73,6 +73,17 @@ describe('poolsQuerySchema', () => {
     })
   })
 
+  it('keeps a pair search as written and drops a query of separators alone', () => {
+    const q = (value: string) => {
+      const parsed = parseQuery(poolsQuerySchema, { q: value })
+      if (!parsed.ok) throw new Error(parsed.error.error)
+      return parsed.data.q
+    }
+    expect(q(' WETH/USDC ')).toBe('WETH/USDC')
+    expect(q('usdc weth')).toBe('usdc weth')
+    for (const blank of ['/', ' - ', ': /', '\t']) expect(q(blank), blank).toBeUndefined()
+  })
+
   it('accepts every DEXES id, the Aero ones included, and only those', () => {
     for (const dex of DEXES) {
       const parsed = parseQuery(poolsQuerySchema, { dex })

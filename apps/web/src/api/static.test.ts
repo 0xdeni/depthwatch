@@ -150,7 +150,7 @@ describe('static client: pools', () => {
     })
   })
 
-  it('matches q against symbols, token and pool addresses and v4 pool ids only', async () => {
+  it('matches q against symbols, names and addresses, pool addresses, v4 pool ids and the dex', async () => {
     const client = createStaticClient(BASE)
     const symbol = async (q: string) => (await client.pools({ q, limit: 200 })).items
     const weth = await symbol('  wEtH ')
@@ -173,12 +173,14 @@ describe('static client: pools', () => {
     expect(ids(await symbol(v4.pool.poolId.slice(2, 14)))).toEqual([v4.pool.id])
     expect(ids(await symbol(v3.pool.address.slice(-10)))).toEqual([v3.pool.id])
 
-    // Not matched by the API: token names, the pair label, the dex.
+    // A token's name, the pair as written ("WETH / USDC") and the dex match too.
     const name = BASE.pools[0]?.pool.token0.name ?? ''
     expect(name.length).toBeGreaterThan(4)
-    expect(await symbol(name)).toHaveLength(0)
-    expect(await symbol('WETH / USDC')).toHaveLength(0)
-    expect(await symbol('uniswap')).toHaveLength(0)
+    expect(ids(await symbol(name))).toContain(BASE.pools[0]?.pool.id)
+    expect(ids(await symbol('WETH / USDC'))).toContain(BASE.pools[0]?.pool.id)
+    const uniswap = await symbol('uniswap')
+    expect(uniswap.length).toBe(BASE.pools.filter((p) => p.pool.dex.startsWith('uniswap')).length)
+    expect(await symbol('WETH / nothere')).toHaveLength(0)
   })
 
   it('pages with limit and offset, default 50, at most 200', async () => {
@@ -198,7 +200,7 @@ describe('static client: pools', () => {
 })
 
 describe('static client: gaps', () => {
-  it('serves the default feed: best gap score first, ties by id, the floor echoed', async () => {
+  it('serves the default feed: best gap score first, ties by turnover then id, the floor echoed', async () => {
     const client = createStaticClient(BASE)
     const res = await client.gaps()
     expect(res.minVolumeUsd).toBe(10_000)
@@ -206,7 +208,9 @@ describe('static client: gaps', () => {
       [...BASE.gaps]
         .sort(
           (a, b) =>
-            (b.gap.gapScore ?? 0) - (a.gap.gapScore ?? 0) || byId(a.pool.pool.id, b.pool.pool.id),
+            (b.gap.gapScore ?? 0) - (a.gap.gapScore ?? 0) ||
+            (b.gap.turnoverRatio ?? -1) - (a.gap.turnoverRatio ?? -1) ||
+            byId(a.pool.pool.id, b.pool.pool.id),
         )
         .map((g) => g.pool.pool.id),
     )

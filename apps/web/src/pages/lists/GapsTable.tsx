@@ -6,6 +6,12 @@
  * right after the pool (TB7).
  */
 import type { GapItem, SortDir } from '../../api/types.js'
+import {
+  basisMarked,
+  type HealthBasis,
+  HealthBasisNote,
+  healthBasis,
+} from '../../components/ui/HealthBasis.js'
 import { HealthCell } from '../../components/ui/PoolCells.js'
 import { PoolCell, SortHeader } from '../../components/ui/Table.js'
 import { Unknown, UnknownNote } from '../../components/ui/Unknown.js'
@@ -32,7 +38,7 @@ function unknownOf(g: GapItem, k: GapsSortKey): string | null {
   return null
 }
 
-function Cell({ g, k }: { g: GapItem; k: GapsSortKey }) {
+function Cell({ g, k, basis }: { g: GapItem; k: GapsSortKey; basis: HealthBasis }) {
   const why = unknownOf(g, k)
   switch (k) {
     case 'volume':
@@ -46,7 +52,7 @@ function Cell({ g, k }: { g: GapItem; k: GapsSortKey }) {
     case 'health':
       return (
         <td>
-          <HealthCell health={g.pool.health} />
+          <HealthCell health={g.pool.health} marked={basisMarked(basis, g.pool.health)} />
         </td>
       )
     case 'tvl':
@@ -68,6 +74,8 @@ export function GapsTable({
   const rows = sortGaps(items, sort, dir)
   const ties = poolTieBreaks(rows.map((g) => g.pool.pool))
   const columns = useIsPhone() ? PHONE_COLUMNS : COLUMNS
+  // The grades' basis is said once, in the Health header; a minority basis marks its rows.
+  const basis = healthBasis(rows.map((g) => g.pool.health))
   return (
     <div className="lists-gtable-wrap">
       <table className="ptable lists-gtable">
@@ -82,7 +90,13 @@ export function GapsTable({
                 active={sort === key}
                 dir={dir}
                 onSort={() => onSort(key)}
-                note={<UnknownNote reasons={rows.map((g) => unknownOf(g, key))} />}
+                note={
+                  key === 'health' ? (
+                    <HealthBasisNote basis={basis} />
+                  ) : (
+                    <UnknownNote reasons={rows.map((g) => unknownOf(g, key))} />
+                  )
+                }
               />
             ))}
           </tr>
@@ -98,7 +112,7 @@ export function GapsTable({
                 />
               </td>
               {columns.map((k) => (
-                <Cell key={k} g={g} k={k} />
+                <Cell key={k} g={g} k={k} basis={basis} />
               ))}
             </tr>
           ))}

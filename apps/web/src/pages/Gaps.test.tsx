@@ -145,7 +145,7 @@ describe('Gaps: the ranked rows', () => {
     )
     expect(first.querySelector('.lists-gap-ratio')?.textContent).toBe(ratio(top.gap.turnoverRatio))
     expect(within(first).getByRole('img').getAttribute('aria-label')).toBe(
-      'Gap score 91 of 100; 3× turnover is 24',
+      'Gap score 91 of 100: trades 3 times its depth a day or more',
     )
   })
 

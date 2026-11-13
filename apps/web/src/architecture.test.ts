@@ -112,15 +112,25 @@ describe('the v4 build (docs/design/visual-v4.md §7)', () => {
     const viem = importers(/from 'viem(?:\/[\w-]+)?'/)
     expect(viem.length).toBeGreaterThan(0)
     expect(viem.filter((f) => !f.startsWith('trade/'))).toEqual([])
-    // The panel is reached only through the lazy import of pages/pool/TradeSection.tsx.
+    // The panel is reached only through its lazy chunk: the entry pages/pool/tradeChunk.ts (the
+    // panel and the wallet discovery it starts with), which only pages/pool/tradeIntent.ts
+    // imports, dynamically, for TradeSection.tsx's lazy panel and the warming on intent.
     const panelImporters = appSources().filter(
       (f) =>
         !f.startsWith('trade/') && /trade\/[\w]+\.js'/.test(readFileSync(join(SRC, f), 'utf8')),
     )
-    expect(panelImporters).toEqual(['pages/pool/TradeSection.tsx'])
+    expect(panelImporters).toEqual(['pages/pool/tradeChunk.ts'])
+    const chunkImporters = appSources().filter((f) =>
+      /import\('\.\/tradeChunk\.js'\)|from '[./]*(?:pool\/)?tradeChunk\.js'/.test(
+        readFileSync(join(SRC, f), 'utf8').replace(/typeof import\('\.\/tradeChunk\.js'\)/g, ''),
+      ),
+    )
+    expect(chunkImporters).toEqual(['pages/pool/tradeIntent.ts'])
+    const intent = readFileSync(join(SRC, 'pages', 'pool', 'tradeIntent.ts'), 'utf8')
+    expect(intent).toMatch(/chunk \?\?= import\('\.\/tradeChunk\.js'\)/)
+    expect(intent).not.toMatch(/from '\.\/tradeChunk\.js'/)
     const section = readFileSync(join(SRC, 'pages', 'pool', 'TradeSection.tsx'), 'utf8')
-    expect(section).toMatch(/lazy\(\(\) => import\('\.\.\/\.\.\/trade\/TradePanel\.js'\)\)/)
-    expect(section).not.toMatch(/^import [^\n]*trade\//m)
+    expect(section).toMatch(/lazy\(\(\) => loadTradeChunk\(\)/)
   })
 
   it('has the new parts of the file map, and the session first view replaces the Home intro', () => {

@@ -2,11 +2,14 @@
  * The Pool sections that read the latest snapshot and score (ia-v3 §4.3, docs/design/visual-v4.md
  * §5.7, §6.4): health, cost to trade and who provides it, rows of the sections sheet. Each is one
  * lowercase heading, one finding, one visual and a Details trigger in the head (K10) whose panel,
- * under the visual, holds the numbers behind it (L2).
+ * under the visual, holds the numbers behind it (L2). Costs read in percent and dollars first, bps
+ * second. The static site reads no LP owners: there a pool without owner data shows how
+ * concentrated its liquidity is, under that heading, without saying that owners are not indexed.
  */
 import { HEALTH_MAX, ownersCoverPool } from '@depthwatch/core'
 import { Link } from 'react-router-dom'
-import type { PoolDetail } from '../../api/types.js'
+import { useIsStatic } from '../../api/context.js'
+import type { PoolDetail, SpreadPoint } from '../../api/types.js'
 import { HEALTH_PARTS, HealthBar } from '../../components/charts/HealthBar.js'
 import { ShareBar } from '../../components/charts/ShareBar.js'
 import { SpreadLollipop } from '../../components/charts/SpreadLollipop.js'
@@ -20,8 +23,9 @@ import {
   costTakeaway,
   healthTakeaway,
   ownersNote,
-  spreadCellText,
+  spreadCell,
   whoTakeaway,
+  whoTitle,
 } from './poolText.js'
 
 const HHI_DEFINITION =
@@ -94,6 +98,23 @@ export function HealthSection({ detail }: { detail: PoolDetail }) {
   )
 }
 
+/**
+ * A Details spread cell: the percent over the dollars and bps, which break apart only where the
+ * column is narrow (a phone), never inside a figure; or "Can’t absorb $10K".
+ */
+function SpreadCell({ s }: { s: SpreadPoint }) {
+  const cost = spreadCell(s)
+  if (typeof cost === 'string') return cost
+  return (
+    <>
+      <span className="pool-cost-pct">{cost.percent}</span>
+      <span className="pool-cost-sub">
+        <span>{cost.dollars}</span> <span>({cost.bps})</span>
+      </span>
+    </>
+  )
+}
+
 export function CostSection({ detail }: { detail: PoolDetail }) {
   const spreads = [...(detail.latest?.spreads ?? [])].sort((a, b) => a.notionalUsd - b.notionalUsd)
   const { token0, token1 } = detail.pool
@@ -132,7 +153,9 @@ export function CostSection({ detail }: { detail: PoolDetail }) {
                 {spreads.map((s) => (
                   <tr key={s.notionalUsd}>
                     <td>{usd(s.notionalUsd)}</td>
-                    <td className="r num">{spreadCellText(s)}</td>
+                    <td className="r num">
+                      <SpreadCell s={s} />
+                    </td>
                     <td className="r num">{price(s.buyAvgPrice)}</td>
                     <td className="r num">{price(s.sellAvgPrice)}</td>
                   </tr>
@@ -154,12 +177,14 @@ export function CostSection({ detail }: { detail: PoolDetail }) {
 export function WhoSection({ detail }: { detail: PoolDetail }) {
   const c = detail.latest?.concentration ?? null
   const fullRange = detail.pool.kind !== 'concentrated'
+  // The static site's data never carries LP owners.
+  const ownersRead = !useIsStatic()
   // Owner shares are drawn only where they describe the pool; otherwise the active range is.
   const owners = c?.owners ?? null
   const covering = ownersCoverPool(owners)
   const listed = owners !== null && owners.count > 0 ? owners : null
   const indexed = covering ? '' : 'indexed '
-  const note = c ? ownersNote(owners) : null
+  const note = c ? ownersNote(owners, ownersRead) : null
   const visual = !c ? (
     <p className="muted">Concentration appears after the first snapshot.</p>
   ) : covering ? (
@@ -175,8 +200,8 @@ export function WhoSection({ detail }: { detail: PoolDetail }) {
   return (
     <Section
       id="s-who"
-      title="who provides it"
-      takeaway={whoTakeaway(c, detail.pool.kind)}
+      title={whoTitle(owners, ownersRead)}
+      takeaway={whoTakeaway(c, detail.pool.kind, ownersRead)}
       details={
         c
           ? {

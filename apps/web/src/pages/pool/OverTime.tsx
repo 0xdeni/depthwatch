@@ -24,7 +24,7 @@ import { TextChange } from '../../components/ui/TextChange.js'
 import { bps, count, NB, price, score, tokenText, uptime, usd } from '../../lib/format.js'
 import { baseQuote } from '../../lib/orient.js'
 import { useIsPhone } from '../../lib/useMediaQuery.js'
-import { overTimeCaption, persistenceParts, tooFewTakeaway } from './poolText.js'
+import { overTimeCaption, persistenceParts, spreadHeadText, tooFewTakeaway } from './poolText.js'
 
 const DAY = 86_400
 const WINDOW_LABEL: Readonly<Record<HistoryWindow, string>> = {
@@ -55,6 +55,8 @@ function mainSeries(): MultipleSeries<HistoryPoint>[] {
       label: 'Spread at $10K',
       value: (pt) => pt.spread10kBps,
       format: bps,
+      // Percent first, bps second; the bracket's ends stay in bps, the unit of its precision.
+      head: spreadHeadText,
       minSpan: 0.02,
     },
   ]

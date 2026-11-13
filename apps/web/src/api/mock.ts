@@ -246,7 +246,12 @@ export function createMockClient(opts: MockOptions = {}): ApiClient {
       const minVolumeUsd = query.minVolume ?? GAP_FEED_MIN_VOLUME_USD
       const ranked: GapItem[] = pools
         .filter((p) => (p.volume24hUsd ?? 0) >= minVolumeUsd && p.gap.gapScore !== null)
-        .sort((a, b) => (b.gap.gapScore ?? 0) - (a.gap.gapScore ?? 0))
+        // As the API: equal scores (100 from 100× up) go by turnover, highest first.
+        .sort(
+          (a, b) =>
+            (b.gap.gapScore ?? 0) - (a.gap.gapScore ?? 0) ||
+            (b.gap.turnoverRatio ?? 0) - (a.gap.turnoverRatio ?? 0),
+        )
         .map((p) => ({ pool: summarize(p), gap: p.gap }))
       return {
         items: page(ranked, query.limit, query.offset),

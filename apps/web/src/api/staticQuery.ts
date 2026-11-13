@@ -7,7 +7,7 @@
  * `''` are omitted (`buildQuery`), anything else becomes `String(value)`; then, like the API,
  * blank values count as absent and the schema's defaults apply.
  */
-import { DEXES, type Dex } from '@depthwatch/core'
+import { DEXES, type Dex, POOL_QUERY_MAX_LENGTH } from '@depthwatch/core'
 import { ApiError } from './errors.js'
 import type {
   ErrorIssue,
@@ -177,7 +177,7 @@ export function parsePoolsQuery(query: PoolsQuery): ParsedPoolsQuery {
   const sort = enumParam(issues, 'sort', query.sort, POOL_SORTS, 'health')
   const dir = enumParam(issues, 'dir', query.dir, SORT_DIRS, 'desc')
   const dex = optionalEnum(issues, 'dex', present(query.dex), DEXES)
-  const q = textParam(issues, 'q', query.q, 100)
+  const q = textParam(issues, 'q', query.q, POOL_QUERY_MAX_LENGTH)
   const minVolume = usdParam(issues, 'minVolume', query.minVolume)
   const rated = boolParam(issues, 'rated', query.rated)
   const page = paging(issues, query)

@@ -17,7 +17,7 @@ async function wethUsdc(): Promise<PoolSummary> {
 }
 
 describe('matchesQuery', () => {
-  it('matches the same fields as the API: token symbol, token address, pool address or id', async () => {
+  it('matches the same fields as the API: token symbol, token address or pool address', async () => {
     const item = await wethUsdc()
     expect(matchesQuery(item, 'weth')).toBe(true)
     expect(matchesQuery(item, 'USDC')).toBe(true)
@@ -25,21 +25,42 @@ describe('matchesQuery', () => {
     expect(matchesQuery(item, item.pool.token0.address.slice(0, 10))).toBe(true)
     expect(matchesQuery(item, item.pool.token1.address.toUpperCase())).toBe(true)
     expect(matchesQuery(item, item.pool.address ?? '')).toBe(true)
-    expect(matchesQuery(item, V3_WETH_USDC)).toBe(true)
     expect(matchesQuery(item, '  ')).toBe(true)
     expect(matchesQuery(item, 'cbbtc')).toBe(false)
   })
 
-  it('does not match token names, exactly like the API filter it mirrors', async () => {
+  it('matches a pasted pool id: its DEX, then the start of its address', async () => {
+    const item = await wethUsdc()
+    for (const q of [
+      V3_WETH_USDC,
+      V3_WETH_USDC.toUpperCase(),
+      'uniswap-v3 : 0xd0b53d',
+      encodeURIComponent(V3_WETH_USDC),
+      `https://depthwatch.pages.dev/#/pools/${encodeURIComponent(V3_WETH_USDC)}?window=7d`,
+    ])
+      expect(matchesQuery(item, q), q).toBe(true)
+    expect(matchesQuery(item, V3_WETH_USDC.replace('uniswap-v3', 'aerodrome-slipstream'))).toBe(
+      false,
+    )
+    expect(matchesQuery(item, 'uniswap-v3:0xd0b6')).toBe(false)
+  })
+
+  it('matches token names and a pair written either way round, like the API filter', async () => {
     const item = await wethUsdc()
     expect(item.pool.token0.name).toBe('Wrapped Ether')
     expect(item.pool.token1.name).toBe('USD Coin')
-    expect(matchesQuery(item, 'Wrapped Ether')).toBe(false)
-    expect(matchesQuery(item, 'USD Coin')).toBe(false)
-    // Across the whole mock universe a name query finds nothing, as /api/pools?q= would.
-    const all = await summaries()
-    expect(all.filter((s) => matchesQuery(s, 'Wrapped Ether'))).toEqual([])
-    expect(all.filter((s) => matchesQuery(s, 'WETH')).length).toBeGreaterThan(0)
+    expect(matchesQuery(item, 'Wrapped Ether')).toBe(true)
+    expect(matchesQuery(item, 'USD Coin')).toBe(true)
+    for (const q of ['WETH/USDC', 'usdc weth', 'weth-usdc', 'USDC:WETH'])
+      expect(matchesQuery(item, q), q).toBe(true)
+    expect(matchesQuery(item, 'weth/cbbtc')).toBe(false)
+  })
+
+  it('never matches the DEX by its words: the DEX has its own filter', async () => {
+    const item = await wethUsdc()
+    // "uniswap" and "v3" name the pool's DEX, which search terms never read
+    for (const q of ['uniswap v3 weth', 'uniswap', 'aerodrome usdc'])
+      expect(matchesQuery(item, q), q).toBe(false)
   })
 })
 

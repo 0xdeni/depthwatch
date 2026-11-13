@@ -8,7 +8,8 @@
  * scale, spread at $10K, 24 h volume) and the optional ones from Columns. A table wider than its
  * sheet scrolls inside its wrapper instead of the page. Phones: rows of at least 64 px with the
  * pool cell, the value of the current sort metric (15 px / 750) and the glyph or chip, under a
- * head row that names the metric; the page decides how many rows show.
+ * head row that names the metric and holds the grades' info button over their column; the page
+ * decides how many rows show.
  */
 import { Fragment, useRef } from 'react'
 import type { PoolSummary } from '../../api/types.js'
@@ -25,6 +26,7 @@ import {
 } from '../../lib/poolsTable.js'
 import { useOverflowX } from '../../lib/useOverflowX.js'
 import { RatingGlyph } from './GradeGlyph.js'
+import { basisMarked, HealthBasisNote, healthBasis } from './HealthBasis.js'
 import { type CellKey, DepthCell, HealthCell, metricCell, unknownReason } from './PoolCells.js'
 import { PoolCell, SortHeader } from './Table.js'
 import { UnknownNote } from './Unknown.js'
@@ -87,12 +89,16 @@ export function PoolsTable({
   const tableRef = useRef<HTMLTableElement | null>(null)
   const scrolls = useOverflowX(wrapRef, tableRef)
   const ties = poolTieBreaks(rows.map((p) => p.pool))
+  // The grades' basis is said once, in the Health header (on phones over the grade column); a
+  // minority basis marks its rows.
+  const basis = healthBasis(rows.map((p) => p.health))
   if (phone) {
     return (
       <>
-        <div className="prow-head" aria-hidden="true">
-          <span>Pool</span>
-          <span>{SORT_LABEL[sort]}</span>
+        <div className="prow-head">
+          <HealthBasisNote basis={basis} />
+          <span aria-hidden="true">Pool</span>
+          <span aria-hidden="true">{SORT_LABEL[sort]}</span>
         </div>
         <ol className="rowlist prow" aria-label={label}>
           {rows.map((p, i) => (
@@ -102,7 +108,7 @@ export function PoolsTable({
                 <div className="rl-row">
                   <PoolCell pool={p.pool} tieBreak={ties.get(p.pool.id)} />
                   <span className="metric num">{metricCell(p, sort, now)}</span>
-                  <RatingGlyph health={p.health} />
+                  <RatingGlyph health={p.health} marked={basisMarked(basis, p.health)} />
                 </div>
               </li>
             </Fragment>
@@ -114,7 +120,11 @@ export function PoolsTable({
   const max = glyphMax(rows)
   // The column's "—" explained once, in its header (D6); health shows the Not rated chip instead.
   const note = (key: CellKey) =>
-    key === 'health' ? null : <UnknownNote reasons={rows.map((p) => unknownReason(p, key))} />
+    key === 'health' ? (
+      <HealthBasisNote basis={basis} />
+    ) : (
+      <UnknownNote reasons={rows.map((p) => unknownReason(p, key))} />
+    )
   const header = (key: PoolsSortKey, text: string = SORT_LABEL[key]) => (
     <SortHeader
       key={key}
@@ -162,7 +172,7 @@ export function PoolsTable({
                   <PoolCell pool={p.pool} linkClass="row-link" tieBreak={ties.get(p.pool.id)} />
                 </td>
                 <td>
-                  <HealthCell health={p.health} />
+                  <HealthCell health={p.health} marked={basisMarked(basis, p.health)} />
                 </td>
                 <td>
                   <DepthCell pool={p} max={max} />

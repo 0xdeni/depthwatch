@@ -34,11 +34,57 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 10px 12px;
   margin-top: var(--s3);
   font-size: var(--t-pair);
   font-weight: 650;
   line-height: 1.3;
+}
+/* No price and no swap: no line. */
+.pool-line:empty {
+  display: none;
+}
+/* Hidden copies in one grid cell size the price (both directions) and its toggle (the other
+   direction's words): the line is as wide either way, so a flip changes neither its wrap nor the
+   toggle's place, and the band below holds still. The shown price lies over its copies, out of
+   the flow, so its settling characters size nothing. */
+.pool-hold {
+  position: relative;
+  display: inline-grid;
+  white-space: nowrap;
+  text-align: left;
+}
+.pool-hold > * {
+  grid-area: 1 / 1;
+}
+.pool-hold > .is-ghost {
+  visibility: hidden;
+}
+.pool-hold > .pool-price {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+/* The price's unit toggle: words in the second tier, a prose link's underline, nothing that looks
+   like a button beside the price (a 44 px hit area on touch). */
+.pool-flip {
+  font-size: var(--t-small);
+  font-weight: 650;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+@media (hover: hover) and (pointer: fine) {
+  .pool-flip:hover {
+    color: var(--text-1);
+  }
+}
+/* "Swap": the page's one filled button in the first view (P11), the 40 px size so the price leads,
+   spaced by the line's gap alone so that, wrapped onto its own line, it starts where the price
+   does. On touch it is 44 px high, as every control there is. */
+@media (pointer: coarse) {
+  .pool-line .btn.pool-swap {
+    height: 44px;
+  }
 }
 .pool-error {
   margin-top: var(--s5);
@@ -53,6 +99,33 @@
 .pool-facts .facts-note .ulink {
   white-space: nowrap;
 }
+/* Under the spread fact's percent: the dollars and bps it comes to, in the label's tier. */
+.pool-facts .fv-sub {
+  display: block;
+  margin-top: var(--s2);
+  font-size: var(--t-small);
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.35;
+  white-space: normal;
+  color: var(--on-ink-2);
+}
+/* The cost Details table's spread cell: the percent over the dollars and bps it comes to. No
+   figure ever breaks; on a phone the dollars and the bps take a line each, so the four columns fit
+   the screen at 390 px. */
+.pool-cost-pct {
+  display: block;
+  white-space: nowrap;
+}
+.pool-cost-sub {
+  display: block;
+  font-size: var(--t-small);
+  line-height: 1.3;
+  color: var(--text-2);
+}
+.pool-cost-sub > span {
+  white-space: nowrap;
+}
 .pool-rest {
   margin-top: var(--s5);
 }
@@ -64,6 +137,24 @@
 }
 .pool-ts-cap {
   max-width: 70ch;
+}
+
+/* Trade in this pool: three short facts and "Swap in this pool" at rest; the loading line keeps
+   the resting height while the panel loads (an inline min-height from TradeSection.tsx). */
+.pool-trade {
+  display: grid;
+  gap: var(--s4);
+  align-content: start;
+}
+.pool-trade-facts {
+  display: grid;
+  gap: var(--s2);
+  max-width: 60ch;
+  color: var(--text-2);
+}
+.pool-trade-facts b {
+  font-weight: 700;
+  color: var(--text-1);
 }
 
 /* Mandates on this pool: the rows say it; on phones the finding would repeat their status words. */

@@ -340,7 +340,11 @@ Then the footer. There is no "What we measure" section: Methodology's metric ind
 - the DEX and "stable" chips.
 
 **States:**
-- **No results:** "No pools match "xyz"." followed by a "Clear search" button.
+- **No results:** "No pools match "xyz"." followed by a "Clear search" button. Search reads tokens and
+  addresses, never the DEX: a search that names a DEX adds "search reads tokens and addresses, and DEXes
+  have their own filter" and offers that DEX with the rest of the search ("Search "weth" on Uniswap v3"),
+  or "Clear search" when it names more than one; a pasted pool id of another DEX than the filter's names
+  its DEX and offers "Show all DEXes", which keeps the id.
 - **Loading:** a skeleton of 6 rows.
 - **Refetching:** keep the rows, dim them, and show the 2 px bar (`M10`).
 
@@ -370,7 +374,10 @@ Then the footer. There is no "What we measure" section: Methodology's metric ind
 - **H1:** "WETH / USDC". The token symbols link to their token pages.
 - **Secondary line:**
   - "Aerodrome Slipstream, 0.05 % fee", then "1 WETH = 2,460.32 USDC";
-  - a ⇄ button (`aria-label` "Show price in WETH") flips to the inverse (`N2`).
+  - a text toggle, "Show price in WETH", flips to the inverse (`N2`): words, not the ⇄ glyph,
+    so nothing beside the price reads as a swap button;
+  - where the swap panel is on for the pool, a small primary "Swap" button that brings "trade in
+    this pool" into view, opens it and moves focus into it.
 - **Answer:** "It takes $6.1M of buying to lift WETH 2 % and $5.1M of selling to push it down."
 - **Variants:**
   - **Unpriced side:** "The buy side is unknown: USDC has no USD price."
@@ -392,7 +399,7 @@ Then the footer. There is no "What we measure" section: Methodology's metric ind
 ```
 desktop 1440×900
   WETH / USDC                                                             h1
-  Aerodrome Slipstream, 0.05 % fee      1 WETH = 2,460.32 USDC  ⇄         text-2
+  Aerodrome Slipstream, 0.05 % fee  1 WETH = 2,460.32 USDC  Show price in WETH  text-2
   It takes $6.1M of buying to lift WETH 2 % and $5.1M of selling         answer, h2 size, 400
   to push it down.
   ┌──────────────── mirrored depth curve, 340 px, dot texture, no box ────────────────┐
@@ -453,7 +460,7 @@ v4 amended ([visual-v4.md §1.8](visual-v4.md#18-rules-this-spec-amends)): the c
 
 | v2                                    | v3                                                                                                                                                                           |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 8 header stats                        | Price in the secondary line. Inverse behind ⇄. TVL, spread, volume and health in the facts row. Depth in the answer. Gap score as a conditional callout, otherwise in About. |
+| 8 header stats                        | Price in the secondary line. A toggle inverts. TVL, spread, volume and health in the facts row. Depth in the answer. Gap score as a conditional callout, otherwise in About. |
 | 7-fragment meta line                  | DEX and fee in the secondary line. Everything else in About.                                                                                                                 |
 | Depth ladder with 12 permanent labels | Curve with 2 labels. Token amounts in the tooltip and "Show data".                                                                                                           |
 | Equal 2×2 panel grid                  | Ordered sections, one visual each, no boxes                                                                                                                                  |
@@ -744,7 +751,7 @@ L-levels are as defined in §1.4. "Tooltip" always has a non-hover path (focus, 
 |                     | DEX, fee                                                                                                | Secondary line                                                                                 |
 |                     | Tick spacing, stable, not tracked, hooks, contract or pool id, snapshot time, scored time               | About this pool (L3)                                                                           |
 |                     | Price                                                                                                   | Secondary line                                                                                 |
-|                     | Inverse price                                                                                           | ⇄ toggle (L2)                                                                                  |
+|                     | Inverse price                                                                                           | Text toggle (L2)                                                                               |
 |                     | TVL, spread $10K, 24 h volume, health                                                                   | Facts row                                                                                      |
 |                     | Depth ±2 %                                                                                              | Answer sentence (per side), plus curve labels                                                  |
 |                     | Gap score                                                                                               | Callout when turnover ≥ 3×, otherwise About (L3)                                               |

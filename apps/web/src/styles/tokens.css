@@ -27,7 +27,8 @@
   --surface: var(--g0); /* plane-1 blocks, table sheet, sections sheet */
   --surface-2: var(--g10); /* wells, tracks, panels, row hover, segmented track */
   --line: var(--g15); /* row rules, block edges */
-  --line-2: var(--g30); /* control outlines, hollow cells */
+  --line-2: var(--g30); /* hollow cells, tracks, dotted underlines */
+  --ctl-edge: var(--g50); /* outlines of inputs, checkboxes, icon and ghost buttons: 4.4:1 */
   --text-1: var(--g100); /* 19.7:1 */
   --text-2: var(--g60); /* 6.2:1; 5.4:1 on --surface-2 */
   --ink: var(--g100); /* the black block and the footer */
@@ -84,6 +85,7 @@
     --surface-2: var(--g80);
     --line: var(--g80);
     --line-2: var(--g60);
+    --ctl-edge: var(--g60); /* 3.2:1 on Gray 100 */
     --text-1: var(--g10); /* 17.3:1; text is never pure white off the band */
     --text-2: var(--g30); /* 9.8:1; 6.1:1 on --surface-2 */
     --ink: var(--g100);
@@ -120,6 +122,7 @@
   --surface-2: var(--g80);
   --line: var(--g80);
   --line-2: var(--g60);
+  --ctl-edge: var(--g60); /* 3.2:1 on Gray 100 */
   --text-1: var(--g10); /* 17.3:1; text is never pure white off the band */
   --text-2: var(--g30); /* 9.8:1; 6.1:1 on --surface-2 */
   --ink: var(--g100);

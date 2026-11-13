@@ -23,7 +23,9 @@ import {
   cantAbsorb,
   clockTime,
   NB,
+  type RoundTripCost,
   ratio,
+  roundTripCost,
   SPREAD_UNABSORBED_BPS,
   score,
   scoreExact,
@@ -125,30 +127,58 @@ function costs(s: SpreadPoint): s is SpreadPoint & { spreadBps: number } {
   )
 }
 
-/** "A $100K round trip costs 13.8 bps, fees included." for the largest notional the pool absorbs. */
+/**
+ * "A $100K round trip costs 0.14 %, about $138 (13.8 bps), fees included." for the largest
+ * notional the pool absorbs: percent and dollars first, bps second (`roundTripCost`).
+ */
 export function costTakeaway(spreads: readonly SpreadPoint[]): string {
   const sorted = [...spreads].sort((a, b) => b.notionalUsd - a.notionalUsd)
   const largest = sorted[0]
   const fillable = sorted.find(costs)
   if (!largest) return 'No round trip was measured in the latest snapshot.'
   if (!fillable) return `The pool can’t absorb a ${usd(sorted.at(-1)?.notionalUsd)} round trip.`
+  const cost = costWords(fillable)
   if (fillable === largest)
-    return `A ${usd(fillable.notionalUsd)} round trip costs ${bps(fillable.spreadBps)}, fees included.`
-  return `The pool can’t absorb ${usd(largest.notionalUsd)}; a ${usd(fillable.notionalUsd)} round trip costs ${bps(fillable.spreadBps)}.`
+    return `A ${usd(fillable.notionalUsd)} round trip costs ${cost}, fees included.`
+  return `The pool can’t absorb ${usd(largest.notionalUsd)}; a ${usd(fillable.notionalUsd)} round trip costs ${cost}.`
 }
 
-/** One notional's spread in the Details table: basis points, or "Can’t absorb $10K". */
-export function spreadCellText(s: SpreadPoint): string {
-  return costs(s) ? bps(s.spreadBps) : cantAbsorb(s.notionalUsd)
+/** A fillable round trip's cost in words: "0.14 %, about $138 (13.8 bps)". */
+function costWords(s: SpreadPoint & { spreadBps: number }): string {
+  return roundTripCost(s.spreadBps, s.notionalUsd)?.text ?? cantAbsorb(s.notionalUsd)
+}
+
+/**
+ * One notional's cost in the Details table: its parts, which the cell lays out as the percent
+ * over the dollars and bps ("0.14 %" over "$14 (13.8 bps)"), as the spread fact and the cost
+ * chart do; or the words "Can’t absorb $10K".
+ */
+export function spreadCell(s: SpreadPoint): RoundTripCost | string {
+  return (costs(s) ? roundTripCost(s.spreadBps, s.notionalUsd) : null) ?? cantAbsorb(s.notionalUsd)
+}
+
+/**
+ * The over-time spread at $10K, in the multiple's head: percent first, bps second, as the facts
+ * row reads it ("0.18 % (17.8 bps)"); "—" where `bps` prints no number.
+ */
+export function spreadHeadText(spreadBps: number | null): string {
+  const cost = roundTripCost(spreadBps, 10_000)
+  return cost ? `${cost.percent} (${cost.bps})` : bps(spreadBps)
 }
 
 /**
  * "One LP holds 53 % of the liquidity near the price." when the indexed owners cover the pool
  * (core's `ownersCoverPool`). Owners that cover less are a part of the pool: it says how much they
  * hold and the largest one's share of that. With no owner in the band, or none indexed, it reads
- * the active range instead; a full-range pool has one range by construction.
+ * the active range instead; a full-range pool has one range by construction. `ownersRead` is
+ * false where the data never carries LP owners (the static site): a pool without owner data then
+ * reads the active range alone, without saying that owners are not indexed.
  */
-export function whoTakeaway(concentration: ConcentrationMetrics | null, kind: string): string {
+export function whoTakeaway(
+  concentration: ConcentrationMetrics | null,
+  kind: string,
+  ownersRead = true,
+): string {
   if (!concentration) return 'No concentration data in the latest snapshot.'
   const { owners } = concentration
   if (ownersCoverPool(owners))
@@ -158,16 +188,30 @@ export function whoTakeaway(concentration: ConcentrationMetrics | null, kind: st
   if (kind !== 'concentrated') return 'A full-range pool: every LP shares one range.'
   const range = `The active range holds ${shareOf(concentration.activeRangeShare)} of the liquidity within ±${concentration.bandPct}${NB}%.`
   if (owners) return `No indexed LP owner holds liquidity near the price. ${range}`
-  return `LP owners are not indexed for this pool. ${range}`
+  return ownersRead ? `LP owners are not indexed for this pool. ${range}` : range
+}
+
+/**
+ * The section's heading: "who provides it" where owners can be read; where they cannot (the
+ * static site) and the pool has no owner data, the section shows how concentrated the liquidity
+ * is, and says that instead.
+ */
+export function whoTitle(owners: ConcentrationMetrics['owners'], ownersRead: boolean): string {
+  return owners === null && !ownersRead ? 'how concentrated the liquidity is' : 'who provides it'
 }
 
 /**
  * The note under the who-provides-it details when the owner shares do not describe the pool, and
- * so are not what health reads; null when they do.
+ * so are not what health reads; null when they do, and where owners are never read and this pool
+ * has none (the heading already says what the section shows).
  */
-export function ownersNote(owners: ConcentrationMetrics['owners']): string | null {
+export function ownersNote(
+  owners: ConcentrationMetrics['owners'],
+  ownersRead = true,
+): string | null {
   if (ownersCoverPool(owners)) return null
-  if (!owners) return 'Owners are not indexed for this pool, so health uses the range HHI.'
+  if (!owners)
+    return ownersRead ? 'Owners are not indexed for this pool, so health uses the range HHI.' : null
   if (owners.count === 0)
     return 'No indexed owner holds liquidity in the band, so health uses the range HHI.'
   return `Indexed owners cover ${coverageWords(owners.coverage)} of the liquidity in the band, so health uses the range HHI; the LP shares above are of that part.`

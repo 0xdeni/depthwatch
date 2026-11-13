@@ -523,8 +523,8 @@ F, two D).
 _What `ranges` means._ The range HHI says how the in-band liquidity is spread over price ranges, not
 who owns it: twenty ranges can belong to one LP. It is the best structural signal without owners, so
 concentrated pools keep it, and `concentrationBasis` marks every score that rests on it (the
-dashboard marks such a grade). The first live database indexed no positions, so all 46 of its rated
-concentrated pools rest on it.
+dashboard states the basis once per list, at its Health column, and on the pool page). The first
+live database indexed no positions, so all 46 of its rated concentrated pools rest on it.
 
 ### Persistence (max 20)
 
@@ -634,7 +634,8 @@ Turnover of 1× (a day's volume equals the ±2 % depth) → 0; 10× → 50; 100�
 → 0. `turnoverRatio` and `gapScore` are `null` when volume or depth is unknown or depth is 0.
 
 **Feed.** `GET /api/gaps` lists pools with `volume24hUsd ≥ 10,000` sorted by `gapScore`
-descending. The volume floor keeps dust pools with a single trade out of the feed.
+descending; ties (every pool at 100× or more scores 100) by turnover, highest first, then pool id.
+The volume floor keeps dust pools with a single trade out of the feed.
 
 **Meaningful gap.** A feed pool whose `turnover ≥ 3` (`MEANINGFUL_GAP_TURNOVER`, a gap score of
 23.86) trades at least three times its ±2 % depth a day: a meaningful gap, the threshold every

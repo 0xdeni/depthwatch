@@ -140,7 +140,7 @@ export const SECTIONS: readonly MetricSection[] = [
           midpoint, with a note.
         </p>
         <p>
-          {`Concentration counts the largest LP’s share only when the indexed owners cover at least ${u(90, '%')} of the liquidity near the price; otherwise a concentrated pool is scored from how its liquidity spreads over price ranges, and an Aerodrome v2 or Aero v2 pool, one full range by construction, scores the neutral 10. A grade that does not rest on LP owners carries a star that says so.`}
+          {`Concentration counts the largest LP’s share only when the indexed owners cover at least ${u(90, '%')} of the liquidity near the price; otherwise a concentrated pool is scored from how its liquidity spreads over price ranges, and an Aerodrome v2 or Aero v2 pool, one full range by construction, scores the neutral 10. Where a list’s grades do not all rest on LP owners, an info button at its Health column says what most of them rest on, and a star marks each grade that rests on something else; a pool’s page names any basis other than LP owners under its score.`}
         </p>
         <p>
           {`A grade only means something where there is liquidity to grade. A pool is rated when both sides within ±${u(2, '%')} are known and the thinner one holds at least $5K. Any other pool shows “Not rated” instead of a letter, with the reason: too thin to rate, too thin on one side, no USD price, a hooked pool that is not modelled, or transfers paused, a tokenized stock’s pool in which every swap reverts. It keeps its score and its four parts, and stays in every list; the median health on Home and in the stats counts rated pools only.`}

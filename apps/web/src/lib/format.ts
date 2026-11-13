@@ -7,6 +7,7 @@ import { DEXES, type Dex, type HealthGrade, hasDynamicFee, type TokenInfo } from
 import { groupDigits, rawToDecimal } from './raw.js'
 import { type NamedToken, unitText } from './tokenNames.js'
 
+export { type RoundTripCost, roundTripCost } from './roundTripCost.js'
 export { type NamedToken, pairLabel, tokenText, unitText } from './tokenNames.js'
 
 /** No-break space: between a number and its unit or % (N7). */

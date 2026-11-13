@@ -171,7 +171,7 @@ export function SmallMultiples<T extends { timestamp: number }>({
         ))}
         <span className="sr-only" aria-live="polite">
           {cur
-            ? `${full(cur.timestamp)}: ${series.map((s) => `${s.label} ${s.format(s.value(cur))}`).join(', ')}`
+            ? `${full(cur.timestamp)}: ${series.map((s) => `${s.label} ${(s.head ?? s.format)(s.value(cur))}`).join(', ')}`
             : ''}
         </span>
       </div>

@@ -16,8 +16,8 @@ function MedianHealth({ value }: { value: number | null }) {
   if (value === null) return <Unknown reason="No pool on this DEX is rated yet." />
   return (
     <span className="td-health">
-      <GradeGlyph grade={healthGrade(value)} />
       <span className="n">{score(value)}</span>
+      <GradeGlyph grade={healthGrade(value)} />
     </span>
   )
 }

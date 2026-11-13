@@ -7,7 +7,7 @@
  * `?q=weth`). The sort keys, columns and order are the shared pools table's (lib/poolsTable.ts);
  * the API orders by every key.
  */
-import { DEXES, type Dex } from '@depthwatch/core'
+import { DEXES, type Dex, POOL_QUERY_MAX_LENGTH } from '@depthwatch/core'
 import type { SortDir } from '../../api/types.js'
 import { count } from '../../lib/format.js'
 import {
@@ -46,7 +46,9 @@ export function readPoolsState(params: URLSearchParams): PoolsState {
   const unrated = Number.parseInt(params.get('unrated') ?? '', 10)
   const ratedOnly = params.get('rated') === '1'
   return {
-    q: params.get('q') ?? '',
+    // The API takes 200 characters: a pasted pool link with tracking parameters is cut to them,
+    // which keeps its id, instead of failing the whole list.
+    q: (params.get('q') ?? '').slice(0, POOL_QUERY_MAX_LENGTH),
     ...readTableState(params, DEFAULT_SORT),
     dex,
     page: Number.isFinite(page) && page > 1 ? Math.min(page, 100) : 1,

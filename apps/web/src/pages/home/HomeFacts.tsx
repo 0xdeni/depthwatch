@@ -6,15 +6,22 @@
  * - Health: the median with its grade, "median health of the 50 rated pools", and a bar of the
  *   grade distribution sized by count, each segment in its status colour with "A 7" under it.
  * - Biggest gap: "205×", "WETH / USDT, Aerodrome CL: volume over depth", and two nested squares to
- *   scale: the outline is a day's volume, the solid square the depth within 2 %.
+ *   scale: the hatched square is a day's volume, the solid one the depth within 2 %. The fact
+ *   is the head of the gap feed, which the API orders by gap score, then turnover: every pool at
+ *   100× or more scores 100, and the largest turnover still comes first.
  * On phones the three become rows of one ink block and the micro-visuals are dropped (home.css).
  * Without a meaningful gap the third fact is the highest turnover; with no gap feed it is left out.
+ * Each block is one link named by its own text, in reading order (eyebrow, label, value), so its
+ * name holds what is seen (WCAG 2.5.3); unseen pauses keep its numbers apart ("median health of
+ * the 79 rated pools: 76, grade B. Rated pools by grade: …"). The micro-visuals are hidden from
+ * that name; the health block says the grade counts its bar shows in one hidden sentence.
  */
 import { computeGap, type HealthGrade, healthGrade } from '@depthwatch/core'
 import type { GapItem, PoolSummary, StatsResponse } from '../../api/types.js'
 import { vars } from '../../components/charts/useChartWidth.js'
 import { Block } from '../../components/ui/Block.js'
 import { Fact } from '../../components/ui/Fact.js'
+import '../../components/charts/glyphs.css'
 import { count, DASH, gradeTone, NB, ratio, score, usd } from '../../lib/format.js'
 import { gapLabel, healthLabel, isMeaningfulGap, volumeLabel } from './copy.js'
 
@@ -63,9 +70,14 @@ function VolumeBars({ volume, depth }: { volume: number; depth: number }) {
 
 type GradeCount = ReturnType<typeof gradeCounts>[number]
 
-/** "A 7, B 18, C 9, D 13, F 3" */
-const countsText = (counts: readonly GradeCount[]) =>
-  counts.map((g) => `${g.grade} ${count(g.n)}`).join(', ')
+/** "Rated pools by grade: A 7, B 18, C 9, D 13, F 3": the bar's counts, for a screen reader. */
+export const countsText = (counts: readonly GradeCount[]) =>
+  `Rated pools by grade: ${counts.map((g) => `${g.grade} ${count(g.n)}`).join(', ')}`
+
+/** A pause a screen reader hears in a block's link name, between its label, value and counts. */
+function Pause({ mark }: { mark: string }) {
+  return <span className="sr-only">{mark}</span>
+}
 
 /** The grade distribution of the rated pools, one segment per grade sized by its count. */
 function GradeSpread({ counts }: { counts: readonly GradeCount[] }) {
@@ -89,9 +101,11 @@ function GapSquares({ turnover }: { turnover: number }) {
   return (
     <span className="hf-nest" aria-hidden="true">
       <span className="hf-box" style={vars({ '--out': `${outline.toFixed(2)}px` })}>
-        <i style={vars({ '--in': `${solid.toFixed(2)}px` })} />
+        {/* The day's volume is a hatched area, so a tiny depth never leaves an empty box. */}
+        <b className="nest-vol" />
+        <i className="nest-depth" style={vars({ '--in': `${solid.toFixed(2)}px` })} />
       </span>
-      <span className="cap">Outline: a day’s volume. Solid: depth ±2{NB}%. Area to scale.</span>
+      <span className="cap">Hatched: a day’s volume. Solid: depth ±2{NB}%. Area to scale.</span>
     </span>
   )
 }
@@ -114,11 +128,6 @@ export function HomeFacts({
   const volume = { eyebrow: `24${NB}h volume`, label: volumeLabel(turnover) }
   const health = { eyebrow: 'Health', label: healthLabel(totals.rated) }
   const grade = median === null ? null : healthGrade(median)
-  // Each block is one link; its name reads in the visual order: eyebrow, value, label.
-  const healthName =
-    median === null
-      ? `${health.eyebrow}: ${health.label}`
-      : `${health.eyebrow}: ${score(median)}, grade ${grade}, ${health.label}${counts.length ? `. Grades: ${countsText(counts)}` : ''}`
   const gap =
     top && topRatio !== null
       ? {
@@ -129,48 +138,62 @@ export function HomeFacts({
       : null
   return (
     <div className="grid home-facts">
-      <Block
-        variant="ink"
-        over
-        span={5}
-        to="/pools?sort=volume"
-        linkLabel={`${volume.eyebrow}: ${usd(totals.volume24hUsd)}, ${volume.label}`}
-        className="fact-blk"
-      >
+      <Block variant="ink" over span={5} to="/pools?sort=volume" className="fact-blk">
         <dl className="facts">
-          <Fact eyebrow={volume.eyebrow} value={usd(totals.volume24hUsd)} label={volume.label} />
+          <Fact
+            eyebrow={volume.eyebrow}
+            value={usd(totals.volume24hUsd)}
+            label={
+              <>
+                {volume.label}
+                <Pause mark=":" />
+              </>
+            }
+          />
         </dl>
         {totals.volume24hUsd !== null ? (
           <VolumeBars volume={totals.volume24hUsd} depth={totals.depth2Usd} />
         ) : null}
       </Block>
-      <Block
-        over
-        span={gap ? 4 : 7}
-        to="/pools?sort=health"
-        linkLabel={healthName}
-        className="fact-blk"
-      >
+      <Block over span={gap ? 4 : 7} to="/pools?sort=health" className="fact-blk">
         <dl className="facts">
           <Fact
             eyebrow={health.eyebrow}
-            value={median === null ? DASH : score(median)}
+            value={
+              median === null ? (
+                DASH
+              ) : (
+                <>
+                  {score(median)}
+                  <Pause mark="," />
+                </>
+              )
+            }
             grade={grade}
-            label={health.label}
+            label={
+              <>
+                {health.label}
+                <Pause mark=":" />
+              </>
+            }
           />
         </dl>
         <GradeSpread counts={counts} />
+        {counts.length ? <span className="sr-only">{`. ${countsText(counts)}`}</span> : null}
       </Block>
       {gap && topRatio !== null ? (
-        <Block
-          over
-          span={3}
-          to="/gaps"
-          linkLabel={`${gap.eyebrow}: ${gap.value}, ${gap.label}`}
-          className="fact-blk"
-        >
+        <Block over span={3} to="/gaps" className="fact-blk">
           <dl className="facts">
-            <Fact eyebrow={gap.eyebrow} value={gap.value} label={gap.label} />
+            <Fact
+              eyebrow={gap.eyebrow}
+              value={gap.value}
+              label={
+                <>
+                  {gap.label}
+                  <Pause mark=":" />
+                </>
+              }
+            />
           </dl>
           <GapSquares turnover={topRatio} />
         </Block>

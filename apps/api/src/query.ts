@@ -3,7 +3,7 @@
  * gives for the query, treats empty values as absent, and applies DESIGN.md defaults
  * (limit 50 max 200, offset 0, sort health, dir desc).
  */
-import { DEXES } from '@depthwatch/core'
+import { DEXES, POOL_QUERY_MAX_LENGTH, poolQueryTerms } from '@depthwatch/core'
 import { z } from 'zod'
 import type { ErrorResponse } from './dto.js'
 
@@ -53,12 +53,20 @@ export const poolsQuerySchema = z.object({
   /** `true` keeps only rated pools, `false` only unrated ones; both when absent. */
   rated: boolParam,
   dex: z.preprocess(emptyToUndefined, z.enum(DEXES).optional()),
+  /**
+   * The pools search, core's `poolSearch`: a pasted pool id ("uniswap-v3:0xd0b5…", also with
+   * "%3A" for the ":" or as the pool's link) finds the pools on that DEX whose address or v4 pool
+   * id starts with its hex; any other text is split into terms on whitespace, "/", "-", ":" and
+   * "," (`poolQueryTerms`), every one matching the pool, so "WETH/USDC" and "usdc weth" list the
+   * same pools. A query of separators alone ("/") is no query. At most 200 characters, room for
+   * a v4 pool's link.
+   */
   q: z
     .string()
     .trim()
-    .max(100)
+    .max(POOL_QUERY_MAX_LENGTH)
     .optional()
-    .transform((value) => (value ? value : undefined)),
+    .transform((value) => (value && poolQueryTerms(value).length > 0 ? value : undefined)),
   minVolume: usdParam,
   ...pagingSchema,
 })

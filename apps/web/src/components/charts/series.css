@@ -18,11 +18,14 @@
 .sm + .sm {
   margin-top: 24px;
 }
+/* The value goes under the label, still at the right, whenever the two do not fit on one line
+   (a scrubbed time beside "0.17 % (17.3 bps)" on a phone): nothing runs out of the row. */
 .sm-h {
   --t-sm-value: 1.25rem; /* the head value, 20 px */
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 12px;
+  gap: 2px 12px;
 }
 .sm-h .meta {
   font-size: var(--t-small);
@@ -98,12 +101,6 @@
 .mmc .xh {
   stroke: var(--text-2);
   stroke-width: 1px;
-}
-@media (max-width: 22.49em) {
-  .sm-h {
-    flex-wrap: wrap;
-    row-gap: 2px;
-  }
 }
 
 /* ---------- Market-maker chart: Yellow buy above, Cerulean sell below, Red breach bands ---------- */

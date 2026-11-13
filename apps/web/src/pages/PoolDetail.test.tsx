@@ -72,9 +72,27 @@ describe('Pool page: the title section and the band (visual-v4 §6.4)', () => {
     const flip = screen.getByRole('button', { name: 'Show price in WETH' })
     const before = document.querySelector('.pool-price')?.textContent ?? ''
     expect(before).toMatch(/^1\sWETH = [\d,.]+\sUSDC$/)
+    // Hidden copies size the price (both directions) and the toggle (the other direction's
+    // words), so the line is as wide either way and a flip moves nothing.
+    const ghosts = () =>
+      [...document.querySelectorAll('.pool-line .pool-hold > .is-ghost')].map((g) => [
+        g.getAttribute('aria-hidden'),
+        g.textContent,
+      ])
+    const after = expect.stringMatching(/^1\sUSDC = 0\.\d+\sWETH$/)
+    expect(ghosts()).toEqual([
+      ['true', before],
+      ['true', after],
+      ['true', 'Show price in USDC'],
+    ])
     fireEvent.click(flip, { detail: 0 })
     expect(screen.getByRole('button', { name: 'Show price in USDC' })).toBeTruthy()
     expect(document.querySelector('.pool-price')?.textContent).toMatch(/^1\sUSDC = 0\.\d+\sWETH$/)
+    expect(ghosts()).toEqual([
+      ['true', before],
+      ['true', after],
+      ['true', 'Show price in WETH'],
+    ])
   })
 
   it('builds the page once with the first view, every step over by 450 ms', async () => {

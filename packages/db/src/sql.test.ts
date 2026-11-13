@@ -9,6 +9,7 @@ import {
   colText,
   colTextOrNull,
   likeContains,
+  likePrefix,
   normalizeAddress,
   page,
   type Row,
@@ -64,6 +65,8 @@ describe('helpers', () => {
   it('escapes LIKE metacharacters', () => {
     expect(likeContains('we_th%\\')).toBe('%we\\_th\\%\\\\%')
     expect(likeContains('usdc')).toBe('%usdc%')
+    expect(likePrefix('0xd0b5')).toBe('0xd0b5%')
+    expect(likePrefix('a_b%')).toBe('a\\_b\\%%')
   })
 
   it('validates pagination', () => {

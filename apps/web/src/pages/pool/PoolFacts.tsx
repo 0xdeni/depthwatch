@@ -1,7 +1,8 @@
 /**
  * The Pool facts row (docs/design/visual-v4.md §6.4, §5.6): one ink block stacked over the band's
  * lower edge, value first and the comparison in the label (P4): health with its grade, "the
- * median rated pool scores 61"; spread at $10K, a round trip; 24 h volume, "14× the depth within
+ * median rated pool scores 61"; spread at $10K, a round trip, in percent with the dollars and bps
+ * it comes to under it ("0.18 %", "about $18 (17.8 bps)"); 24 h volume, "14× the depth within
  * 2 %"; TVL, "of which 10 % sits within 2 %". Four columns from 1024 px, 2 × 2 on phones. When the
  * pool trades 3× its depth a day or more, the gap callout follows under a Gray 80 rule with "See
  * all gaps" (TB9). Unknown values are "—" with the reason on hover, focus or tap (D6).
@@ -15,7 +16,7 @@ import { Fact, FactsRow } from '../../components/ui/Fact.js'
 import { Glossary } from '../../components/ui/Glossary.js'
 import { NotRatedChip } from '../../components/ui/GradeGlyph.js'
 import { Unknown } from '../../components/ui/Unknown.js'
-import { bps, cantAbsorb, score, usd } from '../../lib/format.js'
+import { cantAbsorb, roundTripCost, score, usd } from '../../lib/format.js'
 import { tvlReason } from '../../lib/poolsTable.js'
 import { unratedDetail } from '../../lib/rating.js'
 import { GAP_FEED } from '../../lib/useGapFeed.js'
@@ -50,6 +51,7 @@ export function PoolFacts({ detail }: { detail: PoolDetail }) {
   const stats = useStats()
   const { score: health, latest, pool, gap } = detail
   const spread10k = latest ? spreadAt(latest.spreads, 10_000) : null
+  const cost10k = roundTripCost(spread10k, 10_000)
   // No spread on a priced pool: it "can't absorb" the trade (null, or more than a trade can pay).
   // A hooked pool has no spread at all: it is not modelled.
   const hooked = health?.unratedReason === 'hooked'
@@ -95,7 +97,7 @@ export function PoolFacts({ detail }: { detail: PoolDetail }) {
           value={
             spreadUnabsorbed ? (
               <span className="fv-words">{cantAbsorb(10_000)}</span>
-            ) : spread10k === null ? (
+            ) : cost10k === null ? (
               <Unknown
                 reason={
                   hooked
@@ -104,7 +106,12 @@ export function PoolFacts({ detail }: { detail: PoolDetail }) {
                 }
               />
             ) : (
-              bps(spread10k)
+              <>
+                {cost10k.percent}{' '}
+                <span className="fv-sub">
+                  about {cost10k.dollars} ({cost10k.bps})
+                </span>
+              </>
             )
           }
           label="spread at $10K, a round trip"

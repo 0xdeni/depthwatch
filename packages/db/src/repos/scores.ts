@@ -159,14 +159,18 @@ export class ScoresRepo {
     return { items, total: countRow ? colNumber(countRow, 'n') : 0 }
   }
 
-  /** Liquidity gaps feed: real volume on thin depth, best gap score first. */
+  /**
+   * Liquidity gaps feed: real volume on thin depth, best gap score first. Equal scores (every pool
+   * trading 100× its depth or more scores 100) go by turnover, highest first, then by pool id.
+   */
   gaps(options: GapsOptions = {}): ScoredPoolRow[] {
     const minVolumeUsd = options.minVolumeUsd ?? DEFAULT_GAP_MIN_VOLUME_USD
     const [limit, offset] = page(options.limit, options.offset, DEFAULT_LIMIT)
     return this.ctx
       .all(
         `${JOINED_SELECT} WHERE s.gap_score IS NOT NULL AND s.volume_24h_usd >= ?
-          ORDER BY s.gap_score DESC, s.pool_id ASC LIMIT ? OFFSET ?`,
+          ORDER BY s.gap_score DESC, json_extract(s.gap_json, '$.turnoverRatio') DESC NULLS LAST,
+            s.pool_id ASC LIMIT ? OFFSET ?`,
         [minVolumeUsd, limit, offset],
       )
       .map(rowToScoredPool)

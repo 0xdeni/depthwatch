@@ -351,7 +351,7 @@ th[aria-sort] .sort-btn svg {
   font-weight: 650;
   color: var(--text-2);
 }
-.prow-head span:last-child {
+.prow-head > span:last-child {
   padding-right: 52px;
 }
 .prow .rl-row {

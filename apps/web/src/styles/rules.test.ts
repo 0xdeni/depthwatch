@@ -160,6 +160,10 @@ describe('layout guards (§5.1, §8.11)', () => {
     expect(block(standalone, '.dock')).toMatch(/position:\s*sticky;[\s\S]*bottom:\s*0/)
   })
 
+  it('wraps a pasted pool id or link quoted in an empty state inside its sheet', () => {
+    expect(block(allCss, '.empty p')).toMatch(/overflow-wrap:\s*anywhere/)
+  })
+
   it('keeps one- and two-word disclosure labels on one line', () => {
     expect(block(allCss, '.disc-label')).toMatch(/text-wrap:\s*pretty/)
     expect(block(allCss, '.disc-label.is-short')).toMatch(/text-wrap:\s*balance/)
@@ -208,6 +212,20 @@ describe('reads and labels that hold still (§5.6, §5.8, §5.9)', () => {
 
   it('wraps fact labels as prose, never leaving one word alone on the last line', () => {
     expect(block(css, '.fact dt:not(.fact-eb)')).toMatch(/text-wrap:\s*pretty/)
+  })
+
+  it('sizes the pool price and its toggle by hidden copies, so a flip moves nothing', () => {
+    expect(block(css, '.pool-hold')).toMatch(/display:\s*inline-grid/)
+    expect(block(css, '.pool-hold > *')).toMatch(/grid-area:\s*1 \/ 1/)
+    expect(block(css, '.pool-hold > .is-ghost')).toMatch(/visibility:\s*hidden/)
+    // The shown price, settling in character by character, sizes nothing.
+    expect(block(css, '.pool-hold > .pool-price')).toMatch(/position:\s*absolute/)
+  })
+
+  it('wraps a small multiple’s head at any width, so a long value never runs out of its row', () => {
+    // "Spread at $10K 12 Nov, 11:28" beside "0.17 % (17.3 bps)" is wider than a 360 px phone.
+    expect(block(css, '.sm-h')).toMatch(/flex-wrap:\s*wrap/)
+    expect(block(css, '.sm-h b')).toMatch(/margin-left:\s*auto/)
   })
 
   it('keeps a grade chip beside a fact value out of the value’s tight tracking', () => {

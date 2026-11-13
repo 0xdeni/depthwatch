@@ -4,7 +4,7 @@
  * connecting mode, and never for a tokenized stock's pool. Before the click it shows the
  * snapshot's figure, labelled as the snapshot's, with its time; nothing here loads wallet code
  * before a click (jsdom has no IntersectionObserver and these tests send no pointer events), and
- * the click loads the lazy panel.
+ * the click loads the lazy panel, its loading line keeping the row's resting height.
  */
 import type { TradeFlags } from '@depthwatch/core'
 import { QueryClient } from '@tanstack/react-query'
@@ -212,8 +212,15 @@ describe('the pool page', () => {
   it('loads the panel only on the click, which then looks for wallets', async () => {
     await renderPage(V3, ON)
     expect(screen.queryByRole('heading', { name: 'Connect a wallet' })).toBeNull()
+    const slot = screen
+      .getByRole('region', { name: 'trade in this pool' })
+      .querySelector<HTMLElement>('.pool-trade')
+    if (!slot) throw new Error('no trade slot')
+    slot.getBoundingClientRect = () => ({ height: 312.5 }) as DOMRect
     fireEvent.click(screen.getByRole('button', { name: 'Swap in this pool' }))
     expect(screen.getByRole('status').textContent).toBe('Loading the swap panel…')
+    // The loading line keeps the row's resting height, so the page below holds still.
+    expect(screen.getByRole('status').style.minHeight).toBe('312.5px')
     // The button that had focus is gone: the loading line takes it.
     expect(document.activeElement).toBe(screen.getByRole('status'))
     // The first import of the chunk is transformed on the fly here, hence the longer wait.
@@ -224,6 +231,9 @@ describe('the pool page', () => {
     )
     expect(document.activeElement).toBe(heading)
     expect(await screen.findByText(/No wallet was found in this browser/)).toBeTruthy()
+    // The panel takes its own height: the resting one went with the loading line.
+    expect(slot.style.minHeight).toBe('')
+    expect(slot.querySelector('[style*="min-height"]')).toBeNull()
   })
 
   it('closes the panel when the page moves to another pool, which ends its run', async () => {

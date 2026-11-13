@@ -11,7 +11,7 @@
  */
 import type { ReactNode } from 'react'
 import type { SpreadPoint } from '../../api/types.js'
-import { bps, cantAbsorb, NB, roundTripCost, SPREAD_UNABSORBED_BPS, usd } from '../../lib/format.js'
+import { cantAbsorb, NB, roundTripCost, SPREAD_UNABSORBED_BPS, usd } from '../../lib/format.js'
 import { niceStepUp } from '../../lib/scale.js'
 import { Glossary } from '../ui/Glossary.js'
 import { ShowData } from './ShowData.js'
@@ -33,13 +33,14 @@ export function lollipopAxis(spreads: readonly SpreadPoint[]): { max: number; ti
   }
 }
 
+/** The chart's name, in the words its labels show: "$10K costs 0.18 %, about $18 (17.8 bps)". */
 export function lollipopLabel(spreads: readonly SpreadPoint[]): string {
   return `Effective spread: ${spreads
-    .map(
-      (s) =>
-        `${usd(s.notionalUsd)} ${fillable(s) ? `costs ${bps(s.spreadBps)}` : 'can’t be absorbed'}`,
-    )
-    .join(', ')}.`
+    .map((s) => {
+      const cost = fillable(s) ? roundTripCost(s.spreadBps, s.notionalUsd) : null
+      return `${usd(s.notionalUsd)} ${cost ? `costs ${cost.text}` : 'can’t be absorbed'}`
+    })
+    .join('; ')}.`
 }
 
 export function SpreadLollipop({

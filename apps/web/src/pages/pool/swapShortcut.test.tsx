@@ -4,7 +4,8 @@
  * and moves focus into it, smoothly for a pointer and at once for the keyboard or reduced motion.
  * Hovering, pressing or focusing a way in, or the row coming within one viewport, warms the panel
  * (its chunk and wallet discovery) without opening anything; with Save-Data on only intent does.
- * The early discovery goes to the panel once. Opening keeps the row's resting height.
+ * The early discovery goes to the panel once, and none starts while a panel is open. The loading
+ * line keeps the row's resting height; the open panel takes its own.
  */
 import type { TradeFlags } from '@depthwatch/core'
 import { QueryClient } from '@tanstack/react-query'
@@ -73,12 +74,13 @@ describe('Swap on the price line', () => {
     await renderPage(ON)
     const line = title().querySelector('.pool-line')
     const buttons = within(line as HTMLElement).getAllByRole('button')
-    expect(buttons.map((b) => b.textContent)).toEqual(['Show price in WETH', 'Swap'])
+    const toggle = within(line as HTMLElement).getByRole('button', { name: 'Show price in WETH' })
+    expect(buttons).toEqual([toggle, swap()])
     expect(swap().className).toBe('btn primary is-sm pool-swap')
     // The toggle is words: no glyph, and its name is exactly what it shows.
-    const toggle = buttons[0] as HTMLElement
     expect(toggle.querySelector('svg')).toBeNull()
     expect(toggle.getAttribute('aria-label')).toBeNull()
+    expect(toggle.querySelector(':scope > :not(.is-ghost)')?.textContent).toBe('Show price in WETH')
   })
 
   it('is absent when the switch is off, for a venue on hold, and in mock mode', async () => {
@@ -172,6 +174,38 @@ describe('warming the panel on intent', () => {
     await waitFor(() => expect(discover).toHaveBeenCalledTimes(2))
   })
 
+  it('starts no discovery while the panel is open, so “Look again” discovers afresh', async () => {
+    const fires: (() => void)[] = []
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          const self = this as unknown as IntersectionObserver
+          fires.push(() => callback([{ isIntersecting: true } as IntersectionObserverEntry], self))
+        }
+        observe() {}
+        disconnect() {}
+      },
+    )
+    await renderPage(ON)
+    // The keyboard: focus warms, Enter opens at once and the panel takes that discovery.
+    fireEvent.focus(swap())
+    await waitFor(() => expect(discover).toHaveBeenCalledTimes(1), SLOW)
+    fireEvent.click(swap(), { detail: 0 })
+    await connect()
+    expect(await screen.findByText(/No wallet was found in this browser/)).toBeTruthy()
+    // The row now near the viewport, and the title's Swap hovered again: neither discovers.
+    act(() => {
+      for (const fire of fires) fire()
+    })
+    fireEvent.pointerEnter(swap())
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(discover).toHaveBeenCalledTimes(1)
+    // The reader turns a wallet on and looks again: a new discovery finds it.
+    fireEvent.click(screen.getByRole('button', { name: 'Look again' }))
+    await waitFor(() => expect(discover).toHaveBeenCalledTimes(2))
+  })
+
   it('warms on hover or focus of “Swap in this pool” too', async () => {
     await renderPage(ON)
     fireEvent.pointerEnter(within(tradeRow()).getByRole('button', { name: 'Swap in this pool' }))
@@ -231,15 +265,14 @@ describe('warming the panel on intent', () => {
 })
 
 describe('the trade row’s resting height', () => {
-  it('is kept while the panel loads, so the page below does not jump', async () => {
+  it('is not kept once the panel is open: the panel takes its own height', async () => {
     await renderPage(ON)
     const slot = tradeRow().querySelector<HTMLElement>('.pool-trade')
     if (!slot) throw new Error('no trade slot')
-    expect(slot.style.minHeight).toBe('')
     slot.getBoundingClientRect = () => ({ height: 312.5 }) as DOMRect
     fireEvent.click(within(tradeRow()).getByRole('button', { name: 'Swap in this pool' }))
-    expect(slot.style.minHeight).toBe('312.5px')
     await connect()
-    expect(slot.style.minHeight).toBe('312.5px')
+    expect(slot.style.minHeight).toBe('')
+    expect(slot.querySelector('[style*="min-height"]')).toBeNull()
   })
 })

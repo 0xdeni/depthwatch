@@ -5,9 +5,10 @@
  * facts about the swap and "Swap in this pool". The panel (wallet discovery, viem, the Builder
  * Code) is a lazy chunk inside Suspense and an error boundary that asks for a reload when the chunk
  * cannot load (an old tab after a deploy); intent warms it (`tradeIntent.ts`), and once loaded it
- * draws without a loading line. Opening keeps the row's resting height, so the page below does
- * not jump while the panel loads. Focus goes to the loading line, then to the panel's first
- * heading, or to Reload when the chunk fails: the button that had it is gone. Nothing
+ * draws without a loading line. The loading line keeps the row's resting height, so the page
+ * below does not jump while the panel loads; the panel then takes its own height. While a panel
+ * is open, warming starts no wallet discovery. Focus goes to the loading line, then to the panel's
+ * first heading, or to Reload when the chunk fails: the button that had it is gone. Nothing
  * wallet-related is in this file.
  */
 import {
@@ -32,6 +33,7 @@ import { tradeGate } from './tradeGate.js'
 import {
   loadedTradeChunk,
   loadTradeChunk,
+  markPanelOpen,
   onTradeOpen,
   PANEL_DEPS,
   requestTradeOpen,
@@ -71,10 +73,17 @@ function useFocusOnMount<T extends HTMLElement>() {
   return ref
 }
 
-function Loading() {
+/** The loading line, as tall as the row was at rest (`minHeight`), so the page below holds still. */
+function Loading({ minHeight }: { minHeight: number }) {
   const ref = useFocusOnMount<HTMLParagraphElement>()
   return (
-    <p className="muted" role="status" tabIndex={-1} ref={ref}>
+    <p
+      className="muted"
+      role="status"
+      tabIndex={-1}
+      ref={ref}
+      style={minHeight > 0 ? { minHeight } : undefined}
+    >
       Loading the swap panel…
     </p>
   )
@@ -128,12 +137,15 @@ function TradeFacts() {
 
 function TradeRow({ detail, gate }: { detail: PoolDetail; gate: NonNullable<Gate> }) {
   const [open, setOpen] = useState(false)
-  // The row's height at rest, kept while the panel loads and draws its first step.
+  // The row's height at rest, kept by the loading line only: the panel and a load error then
+  // take their own height.
   const [rest, setRest] = useState(0)
   const slot = useRef<HTMLDivElement | null>(null)
   const isOpen = useRef(open)
   isOpen.current = open
   useWarmNearViewport(slot)
+  // An open panel's later looks discover afresh: warming starts no discovery meanwhile.
+  useEffect(() => (open ? markPanelOpen() : undefined), [open])
 
   const openPanel = useCallback(() => {
     if (isOpen.current) return
@@ -163,14 +175,10 @@ function TradeRow({ detail, gate }: { detail: PoolDetail; gate: NonNullable<Gate
 
   return (
     <Section id="s-trade" title="trade in this pool" takeaway={tradeTakeaway(detail)}>
-      <div
-        className="pool-trade"
-        ref={slot}
-        style={open && rest > 0 ? { minHeight: rest } : undefined}
-      >
+      <div className="pool-trade" ref={slot}>
         {open ? (
           <PartErrorBoundary fallback={<LoadError />}>
-            <Suspense fallback={<Loading />}>
+            <Suspense fallback={<Loading minHeight={rest} />}>
               <Panel detail={detail} venue={gate.venue} flagsAtLoad={gate.flags} />
             </Suspense>
           </PartErrorBoundary>

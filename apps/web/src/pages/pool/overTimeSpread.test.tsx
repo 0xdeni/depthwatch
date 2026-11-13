@@ -1,13 +1,16 @@
 /**
  * The over-time spread at $10K reads as the facts row does, percent first and bps second, in the
- * multiple's head and its summary; the range bracket keeps bps, the unit of its 0.1 precision.
+ * multiple's head and its summary, on the pool page too; the range bracket keeps bps, the unit of
+ * its 0.1 precision.
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
+import { createMockClient } from '../../api/mock.js'
 import type { HistoryPoint } from '../../api/types.js'
 import { type MultipleSeries, SmallMultiples } from '../../components/charts/SmallMultiples.js'
 import { bps, NB } from '../../lib/format.js'
 import { spreadHeadText } from './poolText.js'
+import { loaded, NOW, renderPool, V3_WETH_USDC } from './testing.js'
 
 afterEach(cleanup)
 
@@ -75,6 +78,27 @@ describe('the over-time spread multiple', () => {
     const ends = [...container.querySelectorAll('.sm-range text')].map((t) => t.textContent)
     expect(ends).toEqual([`60.2${NB}bps`])
     expect(container.querySelector('.sm-h b')?.textContent).toBe(`0.60${NB}% (60.2${NB}bps)`)
+  })
+
+  it('is the one the pool page draws', async () => {
+    const history = await createMockClient({ now: NOW }).history(V3_WETH_USDC, '7d')
+    const latest = history.points[history.points.length - 1]?.spread10kBps ?? null
+    renderPool(V3_WETH_USDC)
+    await loaded()
+    const section = screen.getByRole('region', { name: 'over time' })
+    const multiple = await waitFor(() => {
+      const found = [...section.querySelectorAll('.sm')].find((m) =>
+        m.querySelector('.sm-h .meta')?.textContent?.startsWith('Spread at $10K'),
+      )
+      if (!found) throw new Error('no spread multiple yet')
+      return found as HTMLElement
+    })
+    const head = spreadHeadText(latest)
+    expect(head).toMatch(new RegExp(`^[\\d.]+${NB}% \\([\\d.]+${NB}bps\\)$`))
+    expect(multiple.querySelector('.sm-h b')?.textContent).toBe(head)
+    expect(within(multiple).getByRole('img').getAttribute('aria-label')).toMatch(
+      new RegExp(`latest ${head.replace(/[.()]/g, '\\$&')}\\.$`),
+    )
   })
 
   it('rewrites the head with the scrubbed sample in the same words', () => {

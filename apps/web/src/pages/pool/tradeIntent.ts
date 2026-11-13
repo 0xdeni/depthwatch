@@ -5,8 +5,8 @@
  *   or the trade section coming within one viewport of the screen, loads the chunk and starts
  *   wallet discovery. Discovery only listens for the wallets this browser announces (EIP-6963):
  *   it asks no wallet for anything and opens nothing. A discovery started early goes to the panel
- *   once, when it opens; every later look discovers afresh. With Save-Data on, only a pointer or
- *   focus warms.
+ *   once, when it opens; while a panel is open, warming starts none, so every later look
+ *   discovers afresh. With Save-Data on, only a pointer or focus warms.
  * - Opening: the title's "Swap" sends an open request for its pool, which that pool's trade
  *   section takes (`onTradeOpen`).
  */
@@ -21,6 +21,8 @@ type Found = Awaited<ReturnType<Chunk['discoverWallets']>>
 let chunk: Promise<Chunk> | null = null
 let loaded: Chunk | null = null
 let early: Promise<Found> | null = null
+/** Panels open on the page: while any is, warming loads the chunk but starts no discovery. */
+let openPanels = 0
 
 /** The panel's chunk, loaded once; a load that failed is forgotten, so the next intent retries. */
 export function loadTradeChunk(): Promise<Chunk> {
@@ -42,11 +44,14 @@ export function loadedTradeChunk(): Chunk | null {
   return loaded
 }
 
-/** Loads the chunk and starts wallet discovery; at most one early discovery waits at a time. */
+/**
+ * Loads the chunk and starts wallet discovery; at most one early discovery waits at a time, and
+ * none while a panel is open (the panel's next look would take it instead of discovering afresh).
+ */
 export function prefetchTrade(): void {
   loadTradeChunk().then(
     (m) => {
-      early ??= m.discoverWallets()
+      if (openPanels === 0) early ??= m.discoverWallets()
     },
     // A chunk that cannot load is reported when the reader opens the panel.
     () => undefined,
@@ -58,6 +63,14 @@ export function discoverForPanel(): Promise<Found> {
   const ready = early
   early = null
   return ready ?? loadTradeChunk().then((m) => m.discoverWallets())
+}
+
+/** Marks a panel open until the returned function is called (the trade row's effect). */
+export function markPanelOpen(): () => void {
+  openPanels++
+  return () => {
+    openPanels--
+  }
 }
 
 /** What the trade section hands the panel (its `deps`). */

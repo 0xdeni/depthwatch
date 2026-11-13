@@ -44,6 +44,27 @@
 .pool-line:empty {
   display: none;
 }
+/* Hidden copies in one grid cell size the price (both directions) and its toggle (the other
+   direction's words): the line is as wide either way, so a flip changes neither its wrap nor the
+   toggle's place, and the band below holds still. The shown price lies over its copies, out of
+   the flow, so its settling characters size nothing. */
+.pool-hold {
+  position: relative;
+  display: inline-grid;
+  white-space: nowrap;
+  text-align: left;
+}
+.pool-hold > * {
+  grid-area: 1 / 1;
+}
+.pool-hold > .is-ghost {
+  visibility: hidden;
+}
+.pool-hold > .pool-price {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
 /* The price's unit toggle: words in the second tier, a prose link's underline, nothing that looks
    like a button beside the price (a 44 px hit area on touch). */
 .pool-flip {
@@ -118,8 +139,8 @@
   max-width: 70ch;
 }
 
-/* Trade in this pool: three short facts and "Swap in this pool" at rest; the panel keeps the
-   resting height while it loads (an inline min-height from TradeSection.tsx). */
+/* Trade in this pool: three short facts and "Swap in this pool" at rest; the loading line keeps
+   the resting height while the panel loads (an inline min-height from TradeSection.tsx). */
 .pool-trade {
   display: grid;
   gap: var(--s4);

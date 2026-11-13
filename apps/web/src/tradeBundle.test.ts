@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
  * The swap panel stays out of what the site loads at boot (DESIGN.md, "Dashboard (apps/web)"):
- * the chunks a page loads before anyone clicks "Swap in this pool" carry no wallet code, no viem
+ * the chunks a page loads at boot, before anything warms the panel, carry no wallet code, no viem
  * and no Builder Code, and stay within a byte budget, while the lazy panel chunk carries both the
  * ERC-8021 marker and the EIP-6963 request (the control: else the first check proves nothing).
  * Builds in memory twice: as `pnpm build` does (the server build), and as the static site's

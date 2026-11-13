@@ -8,8 +8,9 @@
  * right, bottom-aligned, the answer sentence. The toggle is words, not the swap glyph, so nothing
  * beside the price looks like a second swap button. The line starts from the pool's base token
  * (`lib/orient.ts`), so a price below 1 ("1 USDC = 0.7576 AERO") only shows behind the toggle.
- * Only the characters that change settle in (§4.3); a keyboard flip swaps instantly. The title and
- * the answer rise with the first view, the rest fades in (`data-in`).
+ * Only the characters that change settle in (§4.3); a keyboard flip swaps instantly. The price and
+ * the toggle keep the width of their longer direction, so a flip moves nothing on the line or
+ * below it. The title and the answer rise with the first view, the rest fades in (`data-in`).
  */
 import { type ReactNode, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -34,22 +35,42 @@ function PriceLine({ pool, spot }: { pool: PoolMetaDto; spot: number | null }) {
   // The default line reads from the base token; the toggle shows the other direction.
   const { inverted } = baseQuote(pool, spot)
   const flip = inverse !== inverted
-  const line =
-    spot === null || spot <= 0 ? null : flip ? priceLine(t1, t0, 1 / spot) : priceLine(t0, t1, spot)
+  const ok = spot !== null && spot > 0
+  const lines: readonly [string, string] | null = ok
+    ? [priceLine(t0, t1, spot), priceLine(t1, t0, 1 / spot)]
+    : null
+  // The price sits over hidden copies of both directions, the toggle over a copy of the other
+  // direction's words, so the line is as wide either way (and while the price settles in) and
+  // keeps its wrap, and the toggle its place, when it flips.
   return (
     <p className="pool-line" data-in="">
-      {line === null ? null : (
+      {lines === null ? null : (
         <>
-          <TextChange className="num pool-price" value={line} animate={animate} />
+          <span className="pool-hold">
+            <span className="num is-ghost" aria-hidden="true">
+              {lines[0]}
+            </span>
+            <span className="num is-ghost" aria-hidden="true">
+              {lines[1]}
+            </span>
+            <TextChange
+              className="num pool-price"
+              value={flip ? lines[1] : lines[0]}
+              animate={animate}
+            />
+          </span>
           <button
             type="button"
-            className="plink pool-flip touch-hit"
+            className="plink pool-flip pool-hold touch-hit"
             onClick={(e) => {
               setAnimate(!isKeyboardClick(e))
               setInverse((v) => !v)
             }}
           >
-            Show price in {flip ? t1 : t0}
+            <span>Show price in {flip ? t1 : t0}</span>
+            <span className="is-ghost" aria-hidden="true">
+              Show price in {flip ? t0 : t1}
+            </span>
           </button>
         </>
       )}

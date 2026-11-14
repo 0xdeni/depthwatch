@@ -565,8 +565,11 @@ input unused) is refused whatever the quoter. Amounts, minimum, impact, size cap
 core's (docs/METRICS.md, "Swap checks"). The review names each token by symbol, name and address on
 Base, linked to Basescan. Approval is exact and skipped when the allowance covers the input; the
 panel reads `data/flags.json` again with `cache: 'no-store'` when it connects and before each
-signature request, and before each one it also re-quotes (a lower minimum goes back to the review)
-and simulates the exact transaction from the account. A started approve-then-swap asks the wallet for
+signature request, and before each one it also re-quotes and simulates the exact transaction from
+the account. While the fresh quote still pays at least the minimum the reader reviewed, the swap is
+signed at the higher of that minimum and the fresh quote's own (`recheckedMinOut` in
+`trade/flow.ts`), never below the reviewed one; a fresh quote below it goes back to the review.
+A started approve-then-swap asks the wallet for
 nothing more once the panel has moved on (another account, network or wallet, or another page). ETH
 in is `value` with WETH as `tokenIn` (on SwapRouter02, whose swap refunds nothing, followed by
 `refundETH()`); ETH out is the router's `unwrapWETH9(minOut, account)` in the same multicall, with

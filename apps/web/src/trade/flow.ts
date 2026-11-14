@@ -13,6 +13,7 @@ import {
   combineTradeFlags,
   type Dex,
   humanPriceToRawPrice,
+  maxBigint,
   type TokenInfo,
   type TradeDecision,
   type TradeFlags,
@@ -92,6 +93,31 @@ export interface Plan {
   needsApproval: boolean
   /** An earlier approval of 2^128 or more is in place (shown as a note, never asked for). */
   unlimitedAllowance: boolean
+  /**
+   * Set on a plan a fresh quote sent back to the review (`price-moved`): the minimum the reader had
+   * reviewed, which that quote no longer covers. `minOut` is then the fresh quote's minimum.
+   */
+  movedFrom?: bigint
+}
+
+/**
+ * The `amountOutMinimum` to sign after a fresh quote, or null when the reviewed one no longer
+ * holds. The fresh quote is what the swap pays at its block; while it is at least the reviewed
+ * minimum, the swap is signed at the higher of the reviewed minimum and the fresh quote's own
+ * (`minAmountOut` after slippage), so the signed minimum is never below what the reader reviewed
+ * and a better price raises it. A fresh quote below the reviewed minimum would fail onchain at
+ * that minimum, and signing a lower one would break the promise the review made: back to the
+ * review (`price-moved`).
+ */
+export function recheckedMinOut(reviewed: bigint, fresh: Quoted): bigint | null {
+  if (fresh.decision.kind === 'refuse' || fresh.live.amountOut < reviewed) return null
+  return maxBigint(reviewed, fresh.decision.minAmountOut)
+}
+
+/** The plan a fresh quote below the reviewed minimum sends back to the review. */
+function movedPlan(plan: Plan, fresh: Quoted): Plan {
+  const minOut = fresh.decision.kind === 'refuse' ? plan.minOut : fresh.decision.minAmountOut
+  return { ...plan, quoted: fresh, minOut, movedFrom: plan.minOut }
 }
 
 const UNLIMITED = 1n << 128n
@@ -235,8 +261,8 @@ async function signAndWait(
 /**
  * Approves the router for exactly the swap's input, unless the allowance already covers it. Before
  * the approval's signature request it quotes again with the switch's limits as read now, so an
- * approval is never asked for a swap core would refuse, or whose minimum has fallen (that goes
- * back to the review, the approval still to come).
+ * approval is never asked for a swap core would refuse, or whose fresh quote no longer covers the
+ * reviewed minimum (`recheckedMinOut`: that goes back to the review, the approval still to come).
  */
 export async function approveStep(
   env: TradeEnv,
@@ -254,8 +280,8 @@ export async function approveStep(
   const fresh = await quoteSwap(env, plan.side, plan.amountIn, plan.slippageBps, flags)
   if (fresh.decision.kind === 'refuse')
     return { kind: 'stopped', reason: 'refused', decision: fresh.decision }
-  const minOut = fresh.decision.minAmountOut
-  if (minOut < plan.minOut) return { kind: 'price-moved', plan: { ...plan, quoted: fresh, minOut } }
+  if (recheckedMinOut(plan.minOut, fresh) === null)
+    return { kind: 'price-moved', plan: movedPlan(plan, fresh) }
   const tx = approveCall(token, router, plan.amountIn)
   try {
     await simulate(env.clients, env.path, env.account, tx)
@@ -270,9 +296,10 @@ export async function approveStep(
 }
 
 /**
- * The swap: the switch, a fresh quote (a lower minimum goes back to the review), balance and
- * allowance, the deadline from the quote's block, the exact transaction simulated and its gas
- * estimated, the switch again, then the one signature request and the wait.
+ * The swap: the switch, a fresh quote (signed at `recheckedMinOut`, never below the reviewed
+ * minimum; a quote below it goes back to the review), balance and allowance, the deadline from the
+ * quote's block, the exact transaction simulated and its gas estimated, the switch again, then the
+ * one signature request and the wait.
  */
 export async function swapStep(
   env: TradeEnv,
@@ -287,9 +314,9 @@ export async function swapStep(
   const fresh = await quoteSwap(env, side, amountIn, plan.slippageBps, flags)
   if (fresh.decision.kind === 'refuse')
     return { kind: 'stopped', reason: 'refused', decision: fresh.decision }
-  const minOut = fresh.decision.minAmountOut
-  if (minOut < plan.minOut)
-    return { kind: 'price-moved', plan: { ...plan, quoted: fresh, minOut, needsApproval: false } }
+  const minOut = recheckedMinOut(plan.minOut, fresh)
+  if (minOut === null)
+    return { kind: 'price-moved', plan: { ...movedPlan(plan, fresh), needsApproval: false } }
   const tokenIn = side.ethIn ? null : side.tokenIn.address
   if ((await balanceOf(env.clients.plain, env.account, tokenIn)) < amountIn)
     return { kind: 'stopped', reason: 'balance-low' }

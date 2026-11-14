@@ -1047,7 +1047,9 @@ prices are exact fractions of raw token1 per raw token0 (for a concentrated pool
   tolerance in whole bps: 50 by default, accepted from 1 to `min(maxSlippageBps, 300)`, where
   `maxSlippageBps` comes from the trade flag and 300 is a ceiling no flag can raise. Rounded down,
   so the bound is at most one raw unit below the exact tolerance. A `minOut` of 0 protects nothing
-  and is refused.
+  and is refused. The panel signs at the higher of the `minOut` of the quote it reads just before
+  signing and the one the reader reviewed, while that quote is at least the reviewed one; a quote
+  below it goes back to the review (DESIGN.md, "Dashboard (apps/web)").
 - **Deadline.** The latest block's timestamp + 300 s, from the chain rather than the browser's
   clock.
 - **Price impact**, fees included, is the effective spread's leg impact (see

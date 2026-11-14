@@ -129,7 +129,7 @@ describe('the quote after the review', () => {
     fake.state.quoteFactor = 0.9
     fireEvent.click(reviewButton())
     const watched = watchReview()
-    await screen.findByText(/move the price too far/)
+    await screen.findByText(/This swap would cost [^/]* against the pool’s price/)
     await waitFor(() => expect(quotes.reached()).toBe(true))
     expect(card().className).toContain('is-updating')
     expect(card().textContent).not.toContain('and at least')

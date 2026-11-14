@@ -1,0 +1,85 @@
+/* The swap panel's review, steps and receipt (trade/TradeReview.tsx, trade/TradeSteps.tsx), loaded
+   with the panel's lazy chunk. v4 tokens only (docs/design/visual-v4.md §3). The rest of the
+   panel's styles are trade.css, which loads after this file: a rule here that changes one of its
+   classes names both classes. */
+
+/* The review's action row stays at the bottom of the screen while the review is in view, so the
+   primary action is on screen as the review opens, above the home indicator of a phone. */
+.review-act {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  gap: var(--s3);
+  justify-items: start;
+  width: 100%;
+  padding-block: var(--s3) calc(var(--s3) + env(safe-area-inset-bottom));
+  background: var(--surface);
+  box-shadow: 0 -1px 0 var(--line);
+}
+/* An installed app on a phone: above the dock (shell.css), which already keeps the safe area. */
+@media (max-width: 52.49em) and (display-mode: standalone) {
+  .review-act {
+    bottom: calc(64px + env(safe-area-inset-bottom));
+    padding-bottom: var(--s3);
+  }
+}
+
+/* The price moved below the reviewed minimum: said at the button, with the warn rule. */
+.trade-note.review-moved {
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+
+/* The figures: two columns on a phone, as many as fit from 600 px (trade.css), across the review
+   (whose items otherwise take only their own width). */
+.trade-figs.review-figs {
+  width: 100%;
+  max-width: 44rem;
+}
+@media (max-width: 37.49em) {
+  .trade-figs.review-figs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--s4);
+  }
+}
+
+/* "Contracts and addresses": each value's words, then its shortened address. */
+.review-addr {
+  width: 100%;
+}
+.review-addr .disc-inner > p {
+  margin-top: var(--s3);
+}
+
+/* A step: the wallet's request in a sentence, then, after a while, the way out. */
+.review-stage {
+  max-width: 52ch;
+}
+.review-stuck {
+  display: grid;
+  gap: var(--s3);
+  justify-items: start;
+  width: 100%;
+  max-width: 60ch;
+  padding: var(--s4);
+  border-radius: var(--r-ctl);
+  background: var(--panel);
+  box-shadow: var(--panel-edge);
+}
+
+/* The receipt's heading: the ok shape (a Green circle, a Gray 100 check) before the words. */
+.review-done-h {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.review-ok {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--ok);
+  color: var(--on-status);
+  flex: none;
+}

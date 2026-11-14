@@ -4,7 +4,7 @@
  * connecting mode, and never for a tokenized stock's pool. Before the click it shows the
  * snapshot's figure, labelled as the snapshot's, with its time; nothing here loads wallet code
  * before a click (jsdom has no IntersectionObserver and these tests send no pointer events), and
- * the click loads the lazy panel, its loading line keeping the row's resting height.
+ * the click loads the lazy panel, its loading lines keeping the row's resting height.
  */
 import type { TradeFlags } from '@depthwatch/core'
 import { QueryClient } from '@tanstack/react-query'
@@ -223,6 +223,11 @@ describe('the pool page', () => {
     expect(screen.getByRole('status').style.minHeight).toBe('312.5px')
     // The button that had focus is gone: the loading line takes it.
     expect(document.activeElement).toBe(screen.getByRole('status'))
+    // The panel, loaded, shows the same line until its first look for wallets ends, as tall.
+    const panelLine = () => slot.querySelector<HTMLElement>('.trade [role="status"]')
+    await waitFor(() => expect(panelLine()).not.toBeNull(), { timeout: 10_000 })
+    expect(panelLine()?.textContent).toBe('Loading the swap panel…')
+    expect(panelLine()?.style.minHeight).toBe('312.5px')
     // The first import of the chunk is transformed on the fly here, hence the longer wait.
     const heading = await screen.findByRole(
       'heading',

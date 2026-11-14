@@ -1,20 +1,27 @@
 /**
  * What the swap panel reads on chain, all through the connected wallet's own provider (no RPC of
  * Depthwatch's, no key): the pool's identity, the live quote and the pool's price at one block,
- * balances and allowances. Quoters are only ever called with `eth_call`.
+ * balances and allowances, and the review's estimate of the network fee. Quoters are only ever
+ * called with `eth_call`; nothing here asks the wallet to sign.
  */
 import {
   clFactoryGetPoolAbi,
   isTradeToken,
   slipstreamSwapRouterAbi,
   swapRouter02Abi,
+  TOKENS,
   type TradeRoute,
   tradeErc20Abi,
   tradePoolAbi,
   tradeRouteFor,
   uniswapV3GetPoolAbi,
 } from '@depthwatch/chain/addresses'
-import { type Address, type Fraction, sqrtPriceX96ToRawPrice } from '@depthwatch/core'
+import {
+  type Address,
+  type Fraction,
+  sqrtPriceX96ToRawPrice,
+  tradeDeadline,
+} from '@depthwatch/core'
 import {
   type Abi,
   type Client,
@@ -23,10 +30,14 @@ import {
   custom,
   decodeFunctionResult,
   encodeFunctionData,
+  hexToBigInt,
+  numberToHex,
 } from 'viem'
 import { call, getBalance, getBlock } from 'viem/actions'
 import { base } from 'viem/chains'
-import { decodeQuote, type PoolKey, quoteCall } from './venue.js'
+import { withBuilderSuffix } from './builderCode.js'
+import type { Plan, TradeEnv } from './flow.js'
+import { decodeQuote, type PoolKey, quoteCall, swapCall } from './venue.js'
 import type { Eip1193Provider } from './wallets.js'
 
 /** A refusal the panel words for the reader (`trade/text.ts`). */
@@ -242,4 +253,66 @@ export async function allowanceOf(
 /** The latest block's timestamp, unix seconds: the deadline counts from it, not the browser. */
 export async function latestTimestamp(client: Client): Promise<bigint> {
   return (await getBlock(client, { blockTag: 'latest' })).timestamp
+}
+
+/**
+ * The network fee the review shows: an estimate of the swap's gas at the wallet's gas price, in wei
+ * (`ethUsd`: the snapshot's ETH price, for dollars), `reading` until it is known, or `wallet` when
+ * only the wallet can say (it builds the transaction itself, the swap waits for an approval, or
+ * the wallet would not estimate).
+ */
+export type FeeEstimate =
+  | { kind: 'estimate'; wei: bigint; ethUsd: number | null }
+  | { kind: 'reading' }
+  | { kind: 'wallet' }
+
+/**
+ * The review's network fee of `plan`, through the wallet's own provider and never a signature
+ * request: on the EOA path, the wallet's `eth_estimateGas` of the swap as it would be signed now
+ * (the reviewed minimum, the deadline from the reviewed quote's block, the suffix appended) times
+ * its `eth_gasPrice`. Base's fee for the transaction's data is not in it: no standard method
+ * gives it before sending, so the review says a small data fee comes on top. A smart wallet
+ * (`calls`) builds and may sponsor its own transaction, and a swap that needs an approval first
+ * cannot be estimated before it: both are left to the wallet, as is any error.
+ */
+export async function reviewFee(env: TradeEnv, plan: Plan): Promise<FeeEstimate> {
+  if (env.path !== 'eoa' || plan.needsApproval) return { kind: 'wallet' }
+  const { side } = plan
+  const tx = swapCall({
+    route: env.checked.route,
+    pool: env.checked.key,
+    tokenIn: side.tokenIn.address,
+    tokenOut: side.tokenOut.address,
+    amountIn: plan.amountIn,
+    minOut: plan.minOut,
+    account: env.account,
+    deadline: tradeDeadline(plan.quoted.live.timestamp),
+    ethIn: side.ethIn,
+    ethOut: side.ethOut,
+  })
+  const request = {
+    from: env.account,
+    to: tx.to,
+    data: withBuilderSuffix(tx.data),
+    value: numberToHex(tx.value),
+  }
+  try {
+    const client = env.clients.plain
+    const [gas, price] = await Promise.all([
+      client.request({ method: 'eth_estimateGas', params: [request] }, { retryCount: 0 }),
+      client.request({ method: 'eth_gasPrice' }, { retryCount: 0 }),
+    ])
+    const wei = hexToBigInt(gas) * hexToBigInt(price)
+    if (wei <= 0n) return { kind: 'wallet' }
+    const weth = TOKENS.WETH.address
+    const ethUsd =
+      env.token0.address === weth
+        ? env.snapshot.token0Usd
+        : env.token1.address === weth
+          ? env.snapshot.token1Usd
+          : null
+    return { kind: 'estimate', wei, ethUsd }
+  } catch {
+    return { kind: 'wallet' }
+  }
 }

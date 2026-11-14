@@ -211,7 +211,7 @@ describe('the swap limit', () => {
     await connect()
     await screen.findByText(/Balance: 1 ETH/)
     type('0.5')
-    expect(await screen.findByText(/Swaps are limited to \$1K each for now/)).toBeTruthy()
+    expect(await screen.findByText(/Swaps are limited to \$1,000 each for now/)).toBeTruthy()
     expect(document.getElementById(reasonId())?.textContent).toBe(
       'The amount is above the swap limit.',
     )

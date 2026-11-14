@@ -3,10 +3,10 @@
  * reader sends is written exactly, what they receive at least is rounded down (so the promise
  * holds), and the estimate is `amount` of lib/format (4 significant figures).
  */
-import type { TradeDecision } from '@depthwatch/core'
-import { NB, usd } from '../lib/format.js'
+import { TRADE_PRICE_IMPACT_MAX_BPS, type TradeDecision } from '@depthwatch/core'
+import { NB } from '../lib/format.js'
 import { groupDigits } from '../lib/raw.js'
-import { type StopReason, TradeStop } from './reads.js'
+import { type FeeEstimate, type StopReason, TradeStop } from './reads.js'
 
 /** Digits grouped by thousands with commas, then an optional decimal part: "1,250.5". */
 const GROUPED = /^[1-9]\d{0,2}(?:,\d{3})+(?:\.\d*)?$/
@@ -65,8 +65,21 @@ export function bpsPercent(bps: number): string {
   return `${(bps / 100).toFixed(2).replace(/\.?0+$/, '')}${NB}%`
 }
 
-/** Why core refused the trade, in a sentence. */
-export function refusalText(decision: Extract<TradeDecision, { kind: 'refuse' }>): string {
+/** Whole dollars, grouped: "$1,000", "$3,842". */
+export function wholeUsd(value: number): string {
+  return `$${Math.round(value).toLocaleString('en-US')}`
+}
+
+/**
+ * Why core refused the trade, in a sentence. `feeBps`: the pool's live fee, when the caller has
+ * it. Price impact includes the fee, and a smaller amount brings it down towards the fee alone, so
+ * only a fee at or above the limit is said to keep any amount over it; below that, a smaller
+ * amount can pass.
+ */
+export function refusalText(
+  decision: Extract<TradeDecision, { kind: 'refuse' }>,
+  feeBps?: number,
+): string {
   const { reason, value, limit } = decision
   const at = (v: number | undefined) => (v === undefined ? '' : ` (${bpsPercent(v)})`)
   switch (reason) {
@@ -85,12 +98,21 @@ export function refusalText(decision: Extract<TradeDecision, { kind: 'refuse' }>
     case 'size-unpriced':
       return 'This swap can’t be valued in dollars, so it is not allowed here.'
     case 'size-above-max': {
+      if (value === undefined || limit === undefined)
+        return 'This swap is above the size limit for now. Try a smaller amount.'
       // Just over the limit, both round to the same figure: say "just over" rather than repeat it.
-      const size = usd(value) === usd(limit) ? 'just over that' : `about ${usd(value)}`
-      return `Swaps are limited to ${usd(limit)} each for now; this one is ${size}. Try a smaller amount.`
+      const size =
+        wholeUsd(value) === wholeUsd(limit) ? 'just over that' : `about ${wholeUsd(value)}`
+      return `Swaps are limited to ${wholeUsd(limit)} each for now; this one is ${size}. Try a smaller amount.`
     }
-    case 'price-impact-above-max':
-      return `This amount would move the price too far${at(value)}; the limit is 5${NB}%. Try a smaller amount.`
+    case 'price-impact-above-max': {
+      const much = value === undefined ? 'too much' : bpsPercent(value)
+      const cost = `This swap would cost ${much} against the pool’s price, its fee included; the limit is 5${NB}%.`
+      // The fee is the same at any size: only a fee that reaches the limit keeps every amount over.
+      if (feeBps !== undefined && feeBps >= (limit ?? TRADE_PRICE_IMPACT_MAX_BPS))
+        return `${cost} The pool’s own fee alone is ${bpsPercent(feeBps)}, so a smaller amount would not bring it under the limit.`
+      return `${cost} Try a smaller amount.`
+    }
     case 'quote-inconsistent':
       return 'The live price and the pool’s state disagree. Try again in a moment.'
     case 'snapshot-price-missing':
@@ -147,6 +169,33 @@ export function stopText(
   }
 }
 
+/** An allowance this large is "any amount", as on the review (`Plan.unlimitedAllowance`). */
+const ANY_AMOUNT = 1n << 128n
+
+/**
+ * The receipt's line about the approval sent for this swap, from what the DEX contract may still
+ * take after it (`left`, read through the wallet once the swap is confirmed): nothing, so the
+ * approval was used up; an amount, which a wallet that let the reader raise the approval's amount
+ * leaves ("any amount" from 2^128, as on the review); or, while it is read or when it cannot be,
+ * only what Depthwatch asked for.
+ */
+export function approvalUsedText(
+  sent: string,
+  left: bigint | 'reading' | null,
+  token: { symbol: string; decimals: number },
+): string {
+  if (left === 0n)
+    return `Your approval of exactly ${sent} was used by this swap, so the DEX contract can’t take more.`
+  if (typeof left === 'bigint') {
+    const amount =
+      left >= ANY_AMOUNT
+        ? `any amount of your ${token.symbol}`
+        : `${exactAmount(left, token.decimals)}${NB}${token.symbol} of yours`
+    return `The DEX contract can still use ${amount} from an approval; you can remove it in your wallet.`
+  }
+  return `Depthwatch asked your wallet to approve exactly ${sent} for this swap.`
+}
+
 /** What a confirmed approval leaves when its swap is not made: the fee paid, the allowance. */
 export function approvalLeftText(sendText: string): string {
   return `Your approval went through, and you paid its network fee. The DEX contract may still use exactly ${sendText} of yours until you swap or remove the approval in your wallet.`
@@ -173,7 +222,8 @@ export function failedStepText(
   what: 'approval' | 'swap',
   { approved, rejected, lost, hash }: FailedStep,
 ): string {
-  if (rejected) return approved ? SWAP_CANCELLED : CANCELLED
+  if (rejected)
+    return approved ? SWAP_CANCELLED : what === 'approval' ? APPROVAL_CANCELLED : CANCELLED
   if (lost) return lostTrackText(what, errorMessage(error), hash !== null)
   if (error instanceof TradeStop) return stopText(error.reason, what, approved)
   return `The ${what} was not sent: ${errorMessage(error)}`
@@ -189,12 +239,26 @@ interface FailedStep {
 /** An approval of a plan, as the review wrote its amount (`ApprovalLeft` of TradeReview.tsx). */
 type Approved = { amount: string } | null
 
-/** The review again after a fresh quote's minimum fell; an approval of it still covers it. */
+/**
+ * What the review adds after a fresh quote fell below the reviewed minimum, besides the new and
+ * the reviewed minimum (`movedText`): what an approval made before the move still covers. Empty
+ * without one.
+ */
 export function priceMovedText(approval: Approved): string {
-  const kept = approval
-    ? `; your approval of ${approval.amount} went through and still covers this amount`
+  return approval
+    ? `Your approval of ${approval.amount} went through and still covers this swap.`
     : ''
-  return `The price moved since you reviewed${kept}. Check the new amounts before you swap.`
+}
+
+/**
+ * The review's note when a fresh quote no longer covered the reviewed minimum: the new minimum and
+ * the one reviewed, rounded down like every minimum shown, and how much less it is, to the nearest
+ * hundredth of a percent ("0.12 % less"; nothing when that rounds to 0).
+ */
+export function movedText(was: bigint, now: bigint, decimals: number, unit: string): string {
+  const less = was > now ? Number(((was - now) * 20_000n + was) / (2n * was)) : 0
+  const by = less > 0 ? `, ${bpsPercent(less)} less` : ''
+  return `The price moved since you reviewed: you now receive at least ${floorAmount(now, decimals)}${NB}${unit} (was ${floorAmount(was, decimals)}${by}).`
 }
 
 /** Back to the form when only paying out ETH failed its simulation; WETH out is offered. */
@@ -211,7 +275,43 @@ export function errorMessage(error: unknown): string {
   return line.length > 160 ? `${line.slice(0, 157)}…` : line || 'unknown error'
 }
 
-export const CANCELLED = 'Cancelled; nothing was sent.'
+/** A swap turned down in the wallet, with no approval before it. */
+export const CANCELLED = 'You cancelled the swap in your wallet, so nothing was sent.'
+/** An approval turned down in the wallet. */
+export const APPROVAL_CANCELLED = 'You cancelled the approval in your wallet, so nothing was sent.'
 /** A swap rejected in the wallet after its approval went through. */
 export const SWAP_CANCELLED = 'You cancelled the swap, so it was not sent.'
+/** A connection turned down in the wallet. */
+export const CONNECT_CANCELLED = 'You cancelled the connection in your wallet. Nothing was shared.'
+/** A switch to Base turned down in the wallet. */
+export const SWITCH_CANCELLED = 'You cancelled the switch to Base in your wallet.'
 export const NOTHING_SWAPPED = 'Nothing was swapped; you paid only the network fee.'
+
+/**
+ * The review's network fee, in a few words that fit one line in each state, so the review does not
+ * move when the estimate arrives: the gas of the exact swap at the wallet's gas price, in dollars
+ * at the snapshot's ETH price (in ETH without one). Base's small fee for the transaction's data is
+ * not in it; the review's note under the figures says so (`DATA_FEE`).
+ */
+export function networkFeeText(fee: FeeEstimate): string {
+  if (fee.kind === 'reading') return 'Estimating…'
+  if (fee.kind === 'wallet') return 'In your wallet'
+  if (fee.ethUsd === null) return `About ${floorAmount(fee.wei, 18, 2)}${NB}ETH`
+  const dollars = (Number(fee.wei) / 1e18) * fee.ethUsd
+  return dollars < 0.01 ? 'Under $0.01' : `About $${dollars.toFixed(2)}`
+}
+
+/** The review's note on the network fee: true whether it was estimated or left to the wallet. */
+export const DATA_FEE =
+  'Base also charges a small fee for the transaction’s data; your wallet shows the total before you confirm.'
+
+/**
+ * How the received amount compares with the minimum the reader reviewed: "0.5 % more than your
+ * minimum", rounded down, "exactly your minimum", or "just over your minimum" under 0.01 %.
+ */
+export function overMinimumText(received: bigint, minimum: bigint): string | null {
+  if (minimum <= 0n || received < minimum) return null
+  if (received === minimum) return 'exactly your minimum'
+  const bps = Number(((received - minimum) * 10_000n) / minimum)
+  return bps === 0 ? 'just over your minimum' : `${bpsPercent(bps)} more than your minimum`
+}

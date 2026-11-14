@@ -4,12 +4,12 @@
  * repeats what the snapshot measured, labelled as the snapshot's and not live, with three short
  * facts about the swap and "Swap in this pool". The panel (wallet discovery, viem, the Builder
  * Code) is a lazy chunk inside Suspense and an error boundary that asks for a reload when the chunk
- * cannot load (an old tab after a deploy); intent warms it (`tradeIntent.ts`), and once loaded it
- * draws without a loading line. The loading line keeps the row's resting height, so the page
- * below does not jump while the panel loads; the panel then takes its own height. While a panel
- * is open, warming starts no wallet discovery. Focus goes to the loading line, then to the panel's
- * first heading, or to Reload when the chunk fails: the button that had it is gone. Nothing
- * wallet-related is in this file.
+ * cannot load (an old tab after a deploy); intent warms it (`tradeIntent.ts`). The loading line
+ * keeps the row's resting height, so the page below does not jump while the panel loads; the
+ * panel, loaded, shows the same line, as tall (`restHeight`), until its first look for wallets
+ * ends, then takes its own height. While a panel is open, warming starts no wallet discovery.
+ * Focus goes to the loading line, then to the panel's first heading, or to Reload when the chunk
+ * fails: the button that had it is gone. Nothing wallet-related is in this file.
  */
 import {
   type ComponentProps,
@@ -137,8 +137,8 @@ function TradeFacts() {
 
 function TradeRow({ detail, gate }: { detail: PoolDetail; gate: NonNullable<Gate> }) {
   const [open, setOpen] = useState(false)
-  // The row's height at rest, kept by the loading line only: the panel and a load error then
-  // take their own height.
+  // The row's height at rest, kept by the loading lines only (this one, then the panel's while
+  // it looks for wallets): the panel and a load error then take their own height.
   const [rest, setRest] = useState(0)
   const slot = useRef<HTMLDivElement | null>(null)
   const isOpen = useRef(open)
@@ -179,7 +179,12 @@ function TradeRow({ detail, gate }: { detail: PoolDetail; gate: NonNullable<Gate
         {open ? (
           <PartErrorBoundary fallback={<LoadError />}>
             <Suspense fallback={<Loading minHeight={rest} />}>
-              <Panel detail={detail} venue={gate.venue} flagsAtLoad={gate.flags} />
+              <Panel
+                detail={detail}
+                venue={gate.venue}
+                flagsAtLoad={gate.flags}
+                restHeight={rest}
+              />
             </Suspense>
           </PartErrorBoundary>
         ) : (

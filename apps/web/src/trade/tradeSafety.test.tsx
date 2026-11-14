@@ -60,12 +60,12 @@ describe('outcomes the wallet reports', () => {
     expect(screen.getByRole('alert').textContent).toBe(
       'Nothing was swapped; you paid only the network fee.',
     )
-    expect(screen.queryByRole('heading', { name: 'Swap done' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Swap complete' })).toBeNull()
     // The bundle transaction itself reads as successful: only the wallet's status says otherwise.
     expect(fake.state.methods).toContain('wallet_getCallsStatus')
   })
 
-  it('does not say "Swap done" when the included swap paid nothing to the account', async () => {
+  it('does not say "Swap complete" when the included swap paid nothing to the account', async () => {
     const fake = wallet()
     const inner = fake.provider.request.bind(fake.provider)
     fake.provider.request = async (args: { method: string; params?: unknown }) => {
@@ -81,7 +81,7 @@ describe('outcomes the wallet reports', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Swap' }))
     await screen.findByRole('heading', { name: 'Swap included, not confirmed' })
     expect(pageText()).toContain('found no payment to your account in it')
-    expect(screen.getByRole('link', { name: 'View the transaction on Basescan' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'View the swap on Basescan' })).toBeTruthy()
   })
 })
 
@@ -93,7 +93,7 @@ describe('a flow whose panel has gone asks the wallet for nothing more', () => {
     await connect()
     await enter('100', 'USDC')
     await review()
-    fireEvent.click(screen.getByRole('button', { name: /^Approve 100\sUSDC$/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Approve and swap' }))
     await waitFor(() => expect(fake.state.sent).toHaveLength(1))
     cleanup()
     release()
@@ -109,7 +109,7 @@ describe('a flow whose panel has gone asks the wallet for nothing more', () => {
     await connect()
     await enter('100', 'USDC')
     await review()
-    fireEvent.click(screen.getByRole('button', { name: /^Approve 100\sUSDC$/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Approve and swap' }))
     await waitFor(() => expect(fake.state.sent).toHaveLength(1))
     fake.emit('accountsChanged', ['0x00000000000000000000000000000000000b0b00'])
     release()
@@ -194,9 +194,10 @@ describe('an allowance that changed between the review and the click', () => {
     await connect()
     await enter('100', 'USDC')
     await review()
-    expect(pageText()).not.toContain('Allow the DEX contract')
+    expect(pageText()).toContain('Your wallet will ask once, to swap: an earlier approval already')
+    expect(pageText()).not.toContain('ask twice')
     fireEvent.click(screen.getByRole('button', { name: 'Swap' }))
-    await screen.findByRole('heading', { name: 'Swap done' })
+    await screen.findByRole('heading', { name: 'Swap complete' })
     expect(fake.state.sent.map((tx) => tx.to)).toEqual([UNISWAP.router])
   })
 
@@ -207,10 +208,14 @@ describe('an allowance that changed between the review and the click', () => {
     await enter('100', 'USDC')
     await review()
     fake.state.allowances.set(KEY, 100_000_000n)
-    fireEvent.click(screen.getByRole('button', { name: /^Approve 100\sUSDC$/ }))
-    await screen.findByRole('heading', { name: 'Swap done' })
+    fireEvent.click(screen.getByRole('button', { name: 'Approve and swap' }))
+    const done = await screen.findByRole('heading', { name: 'Swap complete' })
     expect(fake.state.sent.map((tx) => tx.to)).toEqual([UNISWAP.router])
     expect(pageText()).not.toContain('Your approval went through')
+    // No approval was sent, though the review expected one: the receipt names none and links none.
+    const receipt = done.closest('.trade-done')?.textContent ?? ''
+    expect(receipt).not.toMatch(/Your approval|approve exactly|can still use|can’t take more/)
+    expect(screen.queryByRole('link', { name: 'View the approval on Basescan' })).toBeNull()
   })
 
   it('stops with the reason when the allowance fell after the review', async () => {
@@ -245,7 +250,7 @@ describe('an approval that went through before the swap was not made', () => {
     await connect()
     await enter('100', 'USDC')
     await review()
-    fireEvent.click(screen.getByRole('button', { name: /^Approve 100\sUSDC$/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Approve and swap' }))
     await screen.findByRole('heading', { name: 'Not swapped' })
     expect(screen.getByRole('alert').textContent).toBe(
       'You cancelled the swap, so it was not sent.',
@@ -266,7 +271,7 @@ describe('an approval that went through before the swap was not made', () => {
     await review()
     // Simulations of the approval pass; the swap's simulation (to the router) fails.
     fake.state.failSimulation = true
-    fireEvent.click(screen.getByRole('button', { name: /^Approve 100\sUSDC$/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Approve and swap' }))
     await screen.findByRole('heading', { name: 'Not swapped' })
     expect(fake.state.sent).toHaveLength(1)
     expect(screen.getByRole('alert').textContent).toMatch(
@@ -286,7 +291,7 @@ describe('a smart contract account without the dataSuffix capability', () => {
     await review()
     expect(pageText()).toContain('may not be recorded for this swap')
     fireEvent.click(screen.getByRole('button', { name: 'Swap' }))
-    await screen.findByRole('heading', { name: 'Swap done' })
+    await screen.findByRole('heading', { name: 'Swap complete' })
     expect(fake.state.sent[0]?.from).toBe(ACCOUNT)
   })
 
@@ -297,7 +302,7 @@ describe('a smart contract account without the dataSuffix capability', () => {
     await enter('0.1')
     await review()
     fireEvent.click(screen.getByRole('button', { name: 'Swap' }))
-    await screen.findByRole('heading', { name: 'Swap done' })
+    await screen.findByRole('heading', { name: 'Swap complete' })
     details()
     expect(pageText()).toContain(
       'Not found in the transaction’s input. The swap itself is not affected.',

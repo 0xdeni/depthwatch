@@ -1,59 +1,137 @@
 /**
- * The swap panel's later views: the review ("you send exactly … you receive at least …", each
- * token with its name and address on Base), a step in progress, and the outcome. Presentational:
- * `TradeSwap` owns the state and the actions.
+ * The swap panel's review: what the reader sends exactly and receives at least, then the figures
+ * that matter before signing (rate, cost against the pool's price with its fee, slippage, network
+ * fee), the wallet requests to expect, and under "Contracts and addresses" each token, the pool,
+ * the DEX contract and the recipient, named and linked to Basescan (closed below 840 px, open
+ * from 840 px). The action row stays at the bottom of the screen while the review is in view, so
+ * on a phone Swap is visible as the review opens, and the page scrolls focus clear of it; a price
+ * that moved below the reviewed minimum is said there, at the button. Presentational: `TradeSwap`
+ * owns the state and the actions. The later views live in TradeSteps.tsx and are exported from
+ * here as well.
  */
-import type { TokenInfo } from '@depthwatch/core'
+
+import { type RefObject, useContext, useEffect, useRef, useState } from 'react'
 import type { PoolDetail } from '../api/types.js'
 import { Button } from '../components/ui/Button.js'
 import { Disclosure } from '../components/ui/Disclosure.js'
-import { amount, dexLabel, feeText, group, NB } from '../lib/format.js'
+import { amount, dexLabel, feeText, group, NB, price, shortAddress, usd } from '../lib/format.js'
+import { rawToDecimal } from '../lib/raw.js'
 import { BUILDER_CODE } from './builderCode.js'
-import type { Plan, Stage, StepResult } from './flow.js'
-import { approvalLeftText, bpsPercent, exactAmount, floorAmount } from './text.js'
+import type { Plan, Side } from './flow.js'
+import { type FeeEstimate, reviewFee } from './reads.js'
+import { AddressLink, type Confirmed, contractName, PanelContext, unitOf } from './TradeSteps.js'
+import {
+  bpsPercent,
+  DATA_FEE,
+  exactAmount,
+  floorAmount,
+  movedText,
+  networkFeeText,
+} from './text.js'
 import { useStepFocus } from './useStepFocus.js'
+import './review.css'
 
-const BASESCAN = 'https://basescan.org'
+export {
+  type ApprovalLeft,
+  type Confirmed,
+  contractName,
+  DoneView,
+  FailedView,
+  PanelContext,
+  type PanelShared,
+  SentNote,
+  type SentTx,
+  TxLink,
+  unitOf,
+  WorkingView,
+} from './TradeSteps.js'
 
-/** The unit of a side: ETH when it travels as ETH, else the token's symbol. */
-export function unitOf(token: { symbol: string }, eth: boolean): string {
-  return eth ? 'ETH' : token.symbol
-}
-
-function Explorer({ kind, value }: { kind: 'address' | 'token' | 'tx'; value: string }) {
-  return (
-    <a
-      className="plink addr"
-      href={`${BASESCAN}/${kind}/${value}`}
-      target="_blank"
-      rel="noreferrer noopener"
-    >
-      {value}
-    </a>
-  )
-}
-
-export function TxLink({ hash, what = 'transaction' }: { hash: string; what?: string }) {
-  return (
-    <a className="ulink" href={`${BASESCAN}/tx/${hash}`} target="_blank" rel="noreferrer noopener">
-      View the {what} on Basescan
-    </a>
-  )
+/** The review's network fee, read once per reviewed plan through the panel's wallet. */
+function useReviewFee(plan: Plan): FeeEstimate {
+  const shared = useContext(PanelContext)
+  const env = shared?.env ?? null
+  const [fee, setFee] = useState<FeeEstimate>({ kind: env ? 'reading' : 'wallet' })
+  useEffect(() => {
+    if (!env) return
+    let live = true
+    setFee({ kind: 'reading' })
+    void reviewFee(env, plan).then((next) => {
+      if (live) setFee(next)
+    })
+    return () => {
+      live = false
+    }
+  }, [env, plan])
+  return fee
 }
 
 /**
- * A token of the swap as the allowlist compiles it in: symbol, name and its address on Base,
- * linked to Basescan, so a lookalike symbol can be told apart. ETH travels as WETH.
+ * Focus is never covered (base.css, Focus A2): a control in the review that takes focus under the
+ * action row, which sticks to the bottom of the screen, is scrolled just above it. Browsers count
+ * such a control as in view and leave it there; the row's own controls never move the page.
  */
-function TokenFact({ token, eth, dir }: { token: TokenInfo; eth: boolean; dir: 'in' | 'out' }) {
+function useClearOfRow(
+  review: RefObject<HTMLDivElement | null>,
+  row: RefObject<HTMLDivElement | null>,
+): void {
+  useEffect(() => {
+    const box = review.current
+    if (!box) return
+    const onFocus = (event: FocusEvent) => {
+      const bar = row.current
+      const target = event.target
+      if (!bar || !(target instanceof Element) || bar.contains(target)) return
+      const over = target.getBoundingClientRect().bottom - bar.getBoundingClientRect().top
+      if (over > 0) window.scrollBy({ top: over + 8, behavior: 'instant' })
+    }
+    box.addEventListener('focusin', onFocus)
+    return () => box.removeEventListener('focusin', onFocus)
+  }, [review, row])
+}
+
+/** A human amount of raw units, for rates and dollar values only (never for what is signed). */
+function human(raw: bigint, decimals: number): number {
+  return Number(rawToDecimal(raw.toString(), decimals, 18) ?? 0)
+}
+
+/** "1 ETH = 3,840.15 USDC", the larger unit first. */
+function rateText(plan: Plan, inUnit: string, outUnit: string): string {
+  const { side, amountIn, quoted } = plan
+  const inH = human(amountIn, side.tokenIn.decimals)
+  const outH = human(quoted.live.amountOut, side.tokenOut.decimals)
+  if (inH <= 0 || outH <= 0) return '—'
+  const rate = outH / inH
+  return rate >= 1
+    ? `1${NB}${inUnit} = ${price(rate)}${NB}${outUnit}`
+    : `1${NB}${outUnit} = ${price(1 / rate)}${NB}${inUnit}`
+}
+
+/** The input's dollar value at the snapshot's price, or null without one. */
+function sendUsd(plan: Plan, detail: PoolDetail): number | null {
+  const { pool, latest } = detail
+  const first = plan.side.tokenIn.address === pool.token0.address.toLowerCase()
+  const each = first ? latest?.token0Usd : latest?.token1Usd
+  return each == null ? null : human(plan.amountIn, plan.side.tokenIn.decimals) * each
+}
+
+/** The wallet requests to expect, and why a token needs an approval when ETH does not. */
+function stepsText(plan: Plan, send: string, to: string): string {
+  const { side } = plan
+  if (plan.needsApproval)
+    return `Your wallet will ask twice: first to let ${to} use exactly ${send}, and no more, then to swap. A token such as ${side.tokenIn.symbol} needs that approval before a contract can move it; ETH doesn’t.`
+  if (side.ethIn) return 'Your wallet will ask once, to swap. ETH needs no approval.'
+  return `Your wallet will ask once, to swap: an earlier approval already covers ${send}.`
+}
+
+/** The tokens' line in "Contracts and addresses": "ETH, sent as WETH Wrapped Ether". */
+function tokenLine(side: Side, dir: 'in' | 'out') {
+  const token = dir === 'in' ? side.tokenIn : side.tokenOut
+  const eth = dir === 'in' ? side.ethIn : side.ethOut
   return (
-    <dd>
-      <span>
-        {eth ? `ETH, ${dir === 'in' ? 'sent as' : 'paid out from'} ` : null}
-        <strong>{token.symbol}</strong> {token.name}, on Base
-      </span>
-      <Explorer kind="token" value={token.address} />
-    </dd>
+    <span>
+      {eth ? `ETH, ${dir === 'in' ? 'sent as' : 'paid out from'} ` : null}
+      <strong>{token.symbol}</strong> {token.name}
+    </span>
   )
 }
 
@@ -72,38 +150,59 @@ export function ReviewView({
   router: string
   account: string
   suffixMayBeLost: boolean
+  /** What TradeSwap adds after a price move: what an approval made before it still covers. */
   note: string | null
   onConfirm: () => void
   onBack: () => void
 }) {
-  const focus = useStepFocus(`review:${plan.minOut}:${note}`)
+  const shared = useContext(PanelContext)
+  const moved = plan.movedFrom !== undefined
+  // After a price move, focus goes to the note at the button, not back to the top: one of the two
+  // is drawn.
+  const focusKey = `review:${plan.minOut}:${moved}:${note}`
+  const focus = useStepFocus(focusKey)
+  const focusNote = useStepFocus<HTMLParagraphElement>(focusKey)
+  const networkFee = useReviewFee(plan)
+  const box = useRef<HTMLDivElement | null>(null)
+  const row = useRef<HTMLDivElement | null>(null)
+  useClearOfRow(box, row)
   const { side, amountIn, quoted } = plan
   const inUnit = unitOf(side.tokenIn, side.ethIn)
   const outUnit = unitOf(side.tokenOut, side.ethOut)
-  const sendText = `${exactAmount(amountIn, side.tokenIn.decimals)}${NB}${inUnit}`
+  const send = `${exactAmount(amountIn, side.tokenIn.decimals)}${NB}${inUnit}`
+  const minText = `${floorAmount(plan.minOut, side.tokenOut.decimals)}${NB}${outUnit}`
   const decision = quoted.decision
   const impact = decision.kind === 'refuse' ? 0 : Math.max(0, decision.priceImpactBps)
+  const dollars = sendUsd(plan, detail)
+  const name = contractName(router)
+  const to = `${name} (${shortAddress(router)})`
+  const confirm = () => {
+    // After a price move, an approval sent for this swap before it still belongs to it.
+    const prev = shared?.confirmed.current ?? null
+    const kept = moved && prev?.send === send ? prev.approvalHash : null
+    const memo: Confirmed = { send, twoSteps: plan.needsApproval, approvalHash: kept }
+    if (shared) shared.confirmed.current = memo
+    onConfirm()
+  }
+  const movedNote =
+    plan.movedFrom === undefined
+      ? null
+      : [movedText(plan.movedFrom, plan.minOut, side.tokenOut.decimals, outUnit), note]
+          .filter(Boolean)
+          .join(' ')
+  const label = plan.needsApproval ? 'Approve and swap' : moved ? 'Swap at the new price' : 'Swap'
   return (
-    <div className="trade-review">
-      <h3 className="trade-h" tabIndex={-1} ref={focus}>
+    <div className="trade-review" ref={box}>
+      <h3 className="trade-h" tabIndex={-1} ref={moved ? undefined : focus}>
         Review the swap
       </h3>
-      {note ? (
-        <p className="trade-note" role="alert">
-          {note}
-        </p>
-      ) : null}
       <p className="trade-say">
-        You send exactly <strong className="num">{sendText}</strong>.
+        You send exactly <strong className="num">{send}</strong>
+        {dollars === null ? '' : ` (about ${usd(dollars)})`}.
       </p>
       <p className="trade-say">
-        You receive at least{' '}
-        <strong className="num">
-          {floorAmount(plan.minOut, side.tokenOut.decimals)}
-          {NB}
-          {outUnit}
-        </strong>
-        , or the swap fails and you lose only the network fee.
+        You receive at least <strong className="num">{minText}</strong>, or the swap fails and you
+        pay only the network fee.
       </p>
       <p className="muted">
         About {amount(quoted.live.amountOut.toString(), side.tokenOut.decimals)}
@@ -112,42 +211,18 @@ export function ReviewView({
       </p>
       {decision.kind === 'warn' ? (
         <p className="trade-warn">
-          Price impact is high ({bpsPercent(impact)}): you get noticeably less than the pool’s
-          price.
+          This swap costs {bpsPercent(impact)} against the pool’s price, its fee included: you get
+          noticeably less than the pool’s price.
         </p>
       ) : null}
-      <dl className="about is-one-col trade-facts">
+      <dl className="trade-figs review-figs">
         <div>
-          <dt>You send</dt>
-          <TokenFact token={side.tokenIn} eth={side.ethIn} dir="in" />
+          <dt>Rate</dt>
+          <dd className="num">{rateText(plan, inUnit, outUnit)}</dd>
         </div>
         <div>
-          <dt>You receive</dt>
-          <TokenFact token={side.tokenOut} eth={side.ethOut} dir="out" />
-        </div>
-        <div>
-          <dt>Pool</dt>
-          <dd>
-            <Explorer kind="address" value={detail.pool.address ?? ''} />
-            <span className="muted">{dexLabel(detail.pool.dex)}</span>
-          </dd>
-        </div>
-        <div>
-          <dt>DEX contract</dt>
-          <dd>
-            <Explorer kind="address" value={router} />
-          </dd>
-        </div>
-        <div>
-          <dt>Recipient</dt>
-          <dd>
-            <span className="addr">{account}</span>
-            <span className="muted">your account</span>
-          </dd>
-        </div>
-        <div>
-          <dt>Price impact</dt>
-          <dd className="num">{bpsPercent(impact)}</dd>
+          <dt>Cost against the pool’s price</dt>
+          <dd className="num">{bpsPercent(impact)}, fee included</dd>
         </div>
         <div>
           <dt>Live pool fee</dt>
@@ -157,186 +232,102 @@ export function ReviewView({
           <dt>Slippage tolerance</dt>
           <dd className="num">{bpsPercent(plan.slippageBps)}</dd>
         </div>
+        <div>
+          <dt>Network fee</dt>
+          <dd className="num" aria-busy={networkFee.kind === 'reading'}>
+            {networkFeeText(networkFee)}
+          </dd>
+        </div>
       </dl>
-      <ol className="trade-steps">
-        {plan.needsApproval ? (
-          <li>Allow the DEX contract to use exactly {sendText}, and no more.</li>
-        ) : null}
-        <li>Swap, in one wallet prompt.</li>
-      </ol>
+      <p className="muted small">
+        {dollars === null ? '' : 'Dollar values use the latest snapshot’s prices. '}
+        {DATA_FEE} The network fee goes to Base, not to Depthwatch, and Depthwatch adds no fee to
+        this swap.
+      </p>
+      <p>{stepsText(plan, send, to)}</p>
       {plan.unlimitedAllowance ? (
         <p className="muted small">
           This wallet already lets the DEX contract use any amount of {side.tokenIn.symbol}, from an
           earlier approval. Depthwatch never asks for that; you can remove it in your wallet.
         </p>
       ) : null}
-      <p>Depthwatch takes no fee.</p>
-      <p className="muted small">
-        Each transaction carries Depthwatch’s public Builder Code ({BUILDER_CODE}), a short tag Base
-        uses to count app activity.
-        {suffixMayBeLost
-          ? ' Your account is a smart contract wallet that does not say it can carry the code, so it may not be recorded for this swap. The swap itself is not affected.'
-          : null}
-      </p>
-      <div className="trade-actions">
-        <Button variant="primary" onClick={onConfirm}>
-          {plan.needsApproval ? `Approve ${sendText}` : 'Swap'}
-        </Button>
-        <Button onClick={onBack}>Back</Button>
-      </div>
-    </div>
-  )
-}
-
-const STAGE_TEXT = {
-  approve: {
-    checking: 'Checking the approval…',
-    sign: 'Confirm the approval in your wallet.',
-    wait: 'Waiting for the approval to be included…',
-  },
-  swap: {
-    checking: 'Getting a fresh price and checking the swap…',
-    sign: 'Confirm the swap in your wallet.',
-    wait: 'Waiting for the swap to be included…',
-  },
-} as const
-
-export function WorkingView({ what, stage }: { what: 'approve' | 'swap'; stage: Stage }) {
-  const focus = useStepFocus(`working:${what}`)
-  return (
-    <div className="trade-working">
-      <h3 className="trade-h" tabIndex={-1} ref={focus}>
-        {what === 'approve' ? 'Step 1: approve' : 'Swapping'}
-      </h3>
-      <p role="status" aria-live="polite">
-        {STAGE_TEXT[what][stage.at]}
-      </p>
-      {stage.at === 'wait' && stage.hash ? <TxLink hash={stage.hash} /> : null}
-    </div>
-  )
-}
-
-export function DoneView({
-  result,
-  plan,
-  onAgain,
-}: {
-  result: Extract<StepResult, { kind: 'done' }>
-  plan: Plan
-  onAgain: () => void
-}) {
-  const focus = useStepFocus(`done:${result.hash}`)
-  const { tokenOut, ethOut } = plan.side
-  const ours = result.codes?.includes(BUILDER_CODE) === true
-  // Included but no payment to the account found: say so rather than "done".
-  return (
-    <div className="trade-done">
-      <h3 className="trade-h" tabIndex={-1} ref={focus}>
-        {result.received === null ? 'Swap included, not confirmed' : 'Swap done'}
-      </h3>
-      <p className="trade-say" role="status">
-        {result.received === null ? (
-          'The transaction is included, but Depthwatch found no payment to your account in it, so it cannot confirm what you received. Check it on Basescan.'
-        ) : (
-          <>
-            You received{' '}
-            <strong className="num">
-              {exactAmount(result.received, tokenOut.decimals)}
-              {NB}
-              {unitOf(tokenOut, ethOut)}
-            </strong>
-            .
-          </>
-        )}
-      </p>
-      <TxLink hash={result.hash} />
-      <Disclosure label="Details">
+      {suffixMayBeLost ? (
+        <p className="muted small">
+          Your account is a smart contract wallet that does not say it can carry Depthwatch’s
+          Builder Code, so the code may not be recorded for this swap. The swap itself is not
+          affected.
+        </p>
+      ) : null}
+      <Disclosure label="Contracts and addresses" phoneOnly className="review-addr">
         <dl className="about is-one-col trade-facts">
           <div>
-            <dt>Transaction</dt>
+            <dt>You send</dt>
             <dd>
-              <span className="addr">{result.hash}</span>
+              {tokenLine(side, 'in')}
+              <AddressLink
+                kind="token"
+                value={side.tokenIn.address}
+                name={`${side.tokenIn.symbol} token`}
+              />
             </dd>
           </div>
           <div>
-            <dt>Builder Code</dt>
+            <dt>You receive</dt>
             <dd>
-              {ours
-                ? `${BUILDER_CODE}, read back from the transaction’s input.`
-                : 'Not found in the transaction’s input. The swap itself is not affected.'}
+              {tokenLine(side, 'out')}
+              <AddressLink
+                kind="token"
+                value={side.tokenOut.address}
+                name={`${side.tokenOut.symbol} token`}
+              />
+            </dd>
+          </div>
+          <div>
+            <dt>Pool</dt>
+            <dd>
+              <span>{dexLabel(detail.pool.dex)} pool</span>
+              <AddressLink
+                kind="address"
+                value={detail.pool.address ?? ''}
+                name={`${dexLabel(detail.pool.dex)} pool`}
+              />
+            </dd>
+          </div>
+          <div>
+            <dt>DEX contract</dt>
+            <dd>
+              <span>{name}</span>
+              <AddressLink kind="address" value={router} name={name} />
+            </dd>
+          </div>
+          <div>
+            <dt>Recipient</dt>
+            <dd>
+              <span>Your account</span>
+              <span className="addr" title={account}>
+                {shortAddress(account)}
+              </span>
             </dd>
           </div>
         </dl>
+        <p className="muted small">
+          Each transaction carries Depthwatch’s public Builder Code ({BUILDER_CODE}), a short tag
+          Base uses to count app activity. It adds no fee.
+        </p>
       </Disclosure>
-      <div className="trade-actions">
-        <Button onClick={onAgain}>Swap again</Button>
+      <div className="review-act" ref={row}>
+        {movedNote ? (
+          <p className="trade-note review-moved" tabIndex={-1} ref={focusNote}>
+            {movedNote}
+          </p>
+        ) : null}
+        <div className="trade-actions">
+          <Button variant="primary" onClick={confirm}>
+            {label}
+          </Button>
+          <Button onClick={onBack}>Back</Button>
+        </div>
       </div>
     </div>
-  )
-}
-
-/** An approval that went through for a swap that was then not made. */
-export interface ApprovalLeft {
-  hash: string
-  /** The approved amount and unit, as the review wrote it. */
-  amount: string
-}
-
-export function FailedView({
-  text,
-  hash,
-  approval,
-  unknown,
-  onBack,
-}: {
-  text: string
-  hash: string | null
-  approval: ApprovalLeft | null
-  /** The wallet took the swap, but its outcome could not be read: not "Not swapped". */
-  unknown: boolean
-  onBack: () => void
-}) {
-  const focus = useStepFocus(`failed:${text}`)
-  return (
-    <div className="trade-failed">
-      <h3 className="trade-h" tabIndex={-1} ref={focus}>
-        {unknown ? 'Swap sent, outcome unknown' : 'Not swapped'}
-      </h3>
-      <p className="trade-note" role="alert">
-        {text}
-      </p>
-      {hash ? <TxLink hash={hash} what={approval ? 'swap' : 'transaction'} /> : null}
-      {approval ? (
-        <>
-          <p>{approvalLeftText(approval.amount)}</p>
-          <TxLink hash={approval.hash} what="approval" />
-        </>
-      ) : null}
-      <div className="trade-actions">
-        <Button onClick={onBack}>Back to the swap</Button>
-      </div>
-    </div>
-  )
-}
-
-/** A transaction the wallet took for the swap panel; `hash` is null until it is known. */
-export interface SentTx {
-  what: 'approval' | 'swap'
-  hash: string | null
-}
-
-/** A transaction a view that has since gone (another account, network or wallet) handed over. */
-export function SentNote({ what, hash }: SentTx) {
-  const one = what === 'approval' ? 'An approval' : 'A swap'
-  return hash ? (
-    <p className="trade-note small" role="status">
-      {one} you signed was sent before this view changed and may still be pending.{' '}
-      <TxLink hash={hash} what={what} />
-    </p>
-  ) : (
-    <p className="trade-note small" role="status">
-      {one} you signed was handed to your wallet before this view changed; check your wallet’s
-      activity before you try again.
-    </p>
   )
 }

@@ -4,21 +4,26 @@
  * the trade switch read off on connecting, the pool's identity on chain (route, router binding,
  * the factory's `getPool`, the tokens), the way back to the wallet list, the live quote with its
  * block, the tokens' names and addresses on the review, decimals from the allowlist, the balance
- * of the side shown, Max, the size cap and where focus goes when a step fails. The sends are
- * tradeSend.test.tsx, tradeSafety.test.tsx and tradeOutcomes.test.tsx. Hermetic: the fake answers
+ * of the side shown, Max, the size cap, where focus goes when a step fails, the first loading line
+ * and no wallet on a phone or a computer. The sends are tradeSend.test.tsx, tradeSafety.test.tsx
+ * and tradeOutcomes.test.tsx; "Stop waiting" is tradeStop.test.tsx. Hermetic: the fake answers
  * every request.
  */
 import { TOKENS } from '@depthwatch/chain/addresses'
 import { minAmountOut } from '@depthwatch/core'
-import { cleanup, fireEvent, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { QueryClient } from '@tanstack/react-query'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Providers } from '../App.js'
 import {
+  client,
   connect,
   detail,
   enter,
   type Fake,
   holdRequest,
   OFF,
+  ON,
   ONE_ETH,
   pageText,
   quote,
@@ -33,9 +38,38 @@ import {
   WETH,
   wallet,
 } from '../testing/tradeHarness.js'
+import TradePanel, { type TradeDeps } from './TradePanel.js'
 import { floorAmount } from './text.js'
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
+
+/** The panel with `deps` of its own (renderPanel's are fixed): discovery; `restHeight` as given. */
+function renderWith(deps: Partial<TradeDeps>, restHeight?: number) {
+  render(
+    <Providers client={client} mock={false} queryClient={new QueryClient()}>
+      <TradePanel
+        detail={detail}
+        venue="uniswap-v3"
+        flagsAtLoad={ON}
+        deps={{ fetchLiveFlags: async () => ON, pollMs: 1, quoteDelayMs: 0, ...deps }}
+        restHeight={restHeight}
+      />
+    </Providers>,
+  )
+}
+
+/** A browser whose pointer is coarse (a touch screen) and no wider than a phone. */
+function touchScreen() {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query.includes('pointer: coarse') || query.includes('max-width'),
+    media: query,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }))
+}
 
 describe('connect and network', () => {
   it('connects through the discovered wallet and checks the pool before quoting', async () => {
@@ -66,14 +100,14 @@ describe('connect and network', () => {
     await screen.findByRole('heading', { name: 'Your swap' })
   })
 
-  it('says a cancelled connection sent nothing', async () => {
+  it('says a cancelled connection shared nothing', async () => {
     const fake = wallet()
     fake.state.reject.add('eth_requestAccounts')
     renderPanel(fake)
     fireEvent.click(await screen.findByRole('button', { name: 'Fake Wallet' }))
     expect(await screen.findByRole('alert')).toHaveProperty(
       'textContent',
-      'Cancelled; nothing was sent.',
+      'You cancelled the connection in your wallet. Nothing was shared.',
     )
   })
 
@@ -87,7 +121,7 @@ describe('connect and network', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Switch to Base' }))
     expect(await screen.findByRole('alert')).toHaveProperty(
       'textContent',
-      'Cancelled; nothing was sent.',
+      'You cancelled the switch to Base in your wallet.',
     )
     fake.state.reject.clear()
     fireEvent.click(screen.getByRole('button', { name: 'Switch to Base' }))
@@ -217,9 +251,12 @@ describe('quote and review', () => {
     await connect()
     await enter('100', 'USDC')
     await review()
+    // Below 840 px "Contracts and addresses" starts closed (from 840 px it is open, with no
+    // trigger); jsdom applies no media query, so it is opened here.
+    fireEvent.click(screen.getByRole('button', { name: 'Contracts and addresses' }))
     const text = pageText()
-    expect(text).toContain('You sendUSDC USD Coin, on Base')
-    expect(text).toContain('You receiveETH, paid out from WETH Wrapped Ether, on Base')
+    expect(text).toContain('You sendUSDC USD Coin0x8335…2913')
+    expect(text).toContain('You receiveETH, paid out from WETH Wrapped Ether0x4200…0006')
     const tokenLinks = screen
       .getAllByRole('link')
       .map((a) => a.getAttribute('href'))
@@ -228,7 +265,18 @@ describe('quote and review', () => {
       `https://basescan.org/token/${USDC}`,
       `https://basescan.org/token/${WETH}`,
     ])
-    expect(screen.getByRole('link', { name: USDC })).toBeTruthy()
+    // Each address is named by what it is, its shortened form included (label in name).
+    expect(screen.getByRole('link', { name: 'USDC token 0x8335…2913 on Basescan' })).toHaveProperty(
+      'title',
+      USDC,
+    )
+    const router = screen.getByRole('link', {
+      name: 'Uniswap SwapRouter02 0x2626…e481 on Basescan',
+    })
+    expect(router.getAttribute('href')).toBe(`https://basescan.org/address/${UNISWAP.router}`)
+    expect(
+      screen.getByRole('link', { name: 'Uniswap v3 pool 0xd0b5…f224 on Basescan' }),
+    ).toBeTruthy()
   })
 
   it('reads decimals and symbols from the allowlist, not from the page’s data', async () => {
@@ -275,7 +323,7 @@ describe('quote and review', () => {
     renderPanel(wallet())
     await connect()
     fireEvent.change(screen.getByLabelText(/^You send/), { target: { value: '0.5' } })
-    expect(await screen.findByText(/Swaps are limited to \$1K each for now/)).toBeTruthy()
+    expect(await screen.findByText(/Swaps are limited to \$1,000 each for now/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Review swap' })).toHaveProperty('disabled', true)
   })
 
@@ -289,7 +337,50 @@ describe('quote and review', () => {
     const button = screen.getByRole('button', { name: 'Review swap' })
     button.focus()
     fireEvent.click(button)
-    expect(await screen.findByText(/would move the price too far/)).toBeTruthy()
+    expect(await screen.findByText(/would cost .* against the pool’s price/)).toBeTruthy()
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Your swap' }))
+  })
+})
+
+describe('opening and wallets', () => {
+  it('shows one loading line, with focus, as tall as the page kept it, until the first look ends', async () => {
+    let found: (choices: never[]) => void = () => undefined
+    renderWith({ discover: () => new Promise((resolve) => (found = resolve)) }, 224)
+    const line = await screen.findByText('Loading the swap panel…')
+    expect(document.activeElement).toBe(line)
+    expect(screen.queryByRole('heading')).toBeNull()
+    // The row's resting height, which the page's own loading line kept: the page holds still.
+    expect(line.style.minHeight).toBe('224px')
+    found([])
+    await screen.findByRole('heading', { name: 'Connect a wallet' })
+    expect(document.querySelector('.trade [style*="min-height"]')).toBeNull()
+    // Looking again says so under the heading: the panel is already there.
+    fireEvent.click(screen.getByRole('button', { name: 'Look again' }))
+    expect(await screen.findByText('Looking for wallets in this browser…')).toBeTruthy()
+  })
+
+  it('offers a wallet extension on a computer with no wallet', async () => {
+    renderWith({ discover: async () => [] })
+    expect(await screen.findByText(/Install a wallet extension and reload this page/)).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Open in Coinbase Wallet' })).toBeNull()
+  })
+
+  it('offers Coinbase Wallet’s browser and the page’s link on a phone with no wallet', async () => {
+    touchScreen()
+    renderWith({ discover: async () => [] })
+    const open = await screen.findByRole('link', { name: 'Open in Coinbase Wallet' })
+    const link = new URL(open.getAttribute('href') ?? '')
+    expect(`${link.origin}${link.pathname}`).toBe('https://go.cb-w.com/dapp')
+    expect(link.searchParams.get('cb_url')).toBe(window.location.href)
+    expect(screen.getByRole('button', { name: 'Copy page link' })).toBeTruthy()
+    expect(pageText()).not.toMatch(/extension|Base App/)
+  })
+
+  it('gives "Use another wallet" a 44 px touch area', async () => {
+    renderPanel(wallet())
+    await connect()
+    expect(screen.getByRole('button', { name: 'Use another wallet' }).className).toContain(
+      'touch-hit',
+    )
   })
 })

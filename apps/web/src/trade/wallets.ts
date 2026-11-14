@@ -1,8 +1,13 @@
 /**
  * Wallet discovery: EIP-6963 (`eip6963:requestProvider` / `eip6963:announceProvider`), which
  * extension wallets and the in-app browsers of wallet apps answer, with `window.ethereum` as the
- * fallback when nothing announces itself. Nothing here runs before the reader opens the swap
- * panel, and nothing asks the wallet for anything: connecting is `eth_requestAccounts`, later.
+ * fallback when nothing announces itself. A discovery only listens for the wallets the browser
+ * announces: it asks no wallet for anything and opens nothing; connecting is
+ * `eth_requestAccounts`, later, when the reader picks a wallet. The pool page may start one
+ * discovery before the panel opens, on the reader's intent (hovering, pressing or focusing a way
+ * to the swap, or the trade row coming within one viewport of the screen, not with Save-Data on;
+ * none while a panel is open), and the panel takes it when it opens (`pages/pool/tradeIntent.ts`);
+ * otherwise the panel starts its own.
  */
 import type { Address } from '@depthwatch/core'
 
@@ -99,4 +104,16 @@ export function discoverWallets(
       resolve(choices)
     }, waitMs)
   })
+}
+
+/**
+ * Coinbase Wallet's link that opens `pageUrl` in its in-app browser, for a phone without a wallet
+ * in the current browser: `https://go.cb-w.com/dapp?cb_url=` and the page, URL-encoded. Coinbase's
+ * developer documentation no longer has a page for this link (its old deep-link page redirects to
+ * the wallet SDK's overview); the link was seen to answer as Coinbase Wallet's "Open browser in
+ * CBW" page, which hands `cb_url` to the app, on 13 November 2026. Only an http(s) page is linked.
+ */
+export function coinbaseWalletLink(pageUrl: string): string | null {
+  if (!/^https?:\/\//.test(pageUrl)) return null
+  return `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(pageUrl)}`
 }

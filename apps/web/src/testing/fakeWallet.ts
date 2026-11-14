@@ -3,7 +3,8 @@
  * `custom()` transport. It answers the reads the panel makes (pool identity, quoter, `slot0`, the
  * pool's live `fee()`, balances, allowances, blocks) and `eth_estimateGas`, records every
  * `eth_call` (with its block), estimate, `eth_sendTransaction` (with its gas) and
- * `wallet_sendCalls`, and applies an approval to its allowances. `wallet_sendCalls` behaves as an
+ * `wallet_sendCalls`, applies an approval to its allowances and spends a token input's allowance
+ * on a swap (ERC-20 `transferFrom`; the largest uint256 is never spent). `wallet_sendCalls` behaves as an
  * ERC-4337 smart wallet: the bundle transaction always succeeds, and the user operation's own
  * outcome is in `wallet_getCallsStatus` (200, or 500 with a reverted receipt). Calldata is decoded and encoded
  * with viem against the ABIs of `@depthwatch/chain/addresses`, so a wrong selector or struct fails
@@ -25,6 +26,7 @@ import {
   encodeAbiParameters,
   encodeFunctionResult,
   type Hex,
+  maxUint256,
   pad,
   toHex,
 } from 'viem'
@@ -235,6 +237,11 @@ export function createFakeWallet(options: FakeWalletOptions) {
     if (status === '0x1' && route) {
       const swap = decodeSwap(route, tx.data)
       if (swap) {
+        // A token in is taken with `transferFrom`, which spends the allowance (ETH in is value).
+        const key = `${swap.tokenIn}:${tx.from}:${tx.to}`
+        const allowance = state.allowances.get(key)
+        if (tx.value === 0n && allowance !== undefined && allowance !== maxUint256)
+          state.allowances.set(key, allowance > swap.amountIn ? allowance - swap.amountIn : 0n)
         const out = quoteFor(swap.amountIn, swap.tokenIn)
         const log = (address: Address, topics: Hex[]) =>
           logs.push({

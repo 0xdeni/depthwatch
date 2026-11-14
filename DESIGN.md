@@ -552,7 +552,10 @@ or focusing either Swap control, or the row coming within one viewport of the sc
 Save-Data on), loads it and starts one EIP-6963 discovery, which only listens for the wallets the
 browser announces and goes to the panel when it opens; while a panel is open warming starts none,
 so each later look discovers afresh. The panel finds wallets by EIP-6963
-(`window.ethereum` when none announces itself), asks for Base (0x2105) when the wallet is elsewhere,
+(`window.ethereum` when none announces itself), showing one loading line until the first look ends;
+with none on a touch screen it offers Coinbase Wallet's in-app browser (`go.cb-w.com/dapp?cb_url=`
+and the page) and the page's link, and on a computer a wallet extension. It asks for Base (0x2105)
+when the wallet is elsewhere,
 and reads everything through the wallet's own provider: before any quote it checks the pool on chain
 (`pool.factory()` names the route, the router's `factory()` is that factory, the factory's `getPool`
 is this pool, the tokens are the page's); quotes are `eth_call`s to the route's quoter at one block
@@ -562,13 +565,30 @@ that block pays (it can change by the block the swap lands in), shown as the liv
 Slipstream it is the factory's `getSwapFee(pool)`, which can be far from the snapshot's; a quote
 whose fee cannot be read gives no price); a quote that stopped at the price limit (part of the
 input unused) is refused whatever the quoter. Amounts, minimum, impact, size cap and deviations are
-core's (docs/METRICS.md, "Swap checks"). The review names each token by symbol, name and address on
-Base, linked to Basescan. Approval is exact and skipped when the allowance covers the input; the
+core's (docs/METRICS.md, "Swap checks"). The review leads with what is sent exactly and received at
+least, then the rate, the cost against the pool's price (fee included) with the live fee, the
+slippage, the network fee (the wallet's `eth_estimateGas` of the swap as it would be signed times
+its `eth_gasPrice`, a few words on one line in every state, with Base's data fee said under the
+figures to come on top; left to the wallet before an approval, for a smart wallet or when it cannot
+be read) and the wallet requests to expect; under "Contracts and addresses" (closed below 840 px)
+it names each token by symbol and name, the pool, the DEX contract and the recipient, each address
+shortened, named for screen readers and linked to Basescan; its action row stays on screen while
+the review is in view, and a control the row would cover is scrolled above it when it takes
+focus. Approval is exact and skipped when the allowance covers the input; the
 panel reads `data/flags.json` again with `cache: 'no-store'` when it connects and before each
 signature request, and before each one it also re-quotes and simulates the exact transaction from
 the account. While the fresh quote still pays at least the minimum the reader reviewed, the swap is
 signed at the higher of that minimum and the fresh quote's own (`recheckedMinOut` in
 `trade/flow.ts`), never below the reviewed one; a fresh quote below it goes back to the review.
+There a note at the button says that the price moved, with the new and the reviewed minimum. Each
+step says what the wallet should ask (the exact amount, the contract's name and address, the swap's
+5-minute deadline) and, when the wallet shows nothing for 20 s, offers "Stop waiting", which ends
+the run: a request still confirmed in the wallet is sent and takes the place of the "stopped
+waiting" note, where it stays; an approval sent that way is followed by no swap and is never
+credited to a later swap. The receipt says what was sent and received against the reviewed minimum
+and, for an approval sent for this swap, what the DEX contract may still take, read through the
+wallet after the swap: "used up" only when nothing is left, since a wallet can let the reader raise
+an approval's amount. The exact figures are under Details.
 A started approve-then-swap asks the wallet for
 nothing more once the panel has moved on (another account, network or wallet, or another page). ETH
 in is `value` with WETH as `tokenIn` (on SwapRouter02, whose swap refunds nothing, followed by

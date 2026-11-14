@@ -1,10 +1,16 @@
 /**
  * Wallet discovery: EIP-6963 announcements answer `eip6963:requestProvider`, each wallet once, in
  * order, with a malformed one or a remote icon dropped; `window.ethereum` stands in only when
- * nothing announces itself.
+ * nothing announces itself. Without a wallet, a phone is offered Coinbase Wallet's link to this
+ * page.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { choiceFromAnnouncement, discoverWallets, type Eip1193Provider } from './wallets.js'
+import {
+  choiceFromAnnouncement,
+  coinbaseWalletLink,
+  discoverWallets,
+  type Eip1193Provider,
+} from './wallets.js'
 
 const provider = (): Eip1193Provider => ({ request: async () => null })
 
@@ -69,5 +75,19 @@ describe('choiceFromAnnouncement', () => {
     ).toHaveLength(48)
     expect(choiceFromAnnouncement({ info: info('x', '   '), provider: provider() })).toBeNull()
     expect(choiceFromAnnouncement(null)).toBeNull()
+  })
+})
+
+describe('coinbaseWalletLink', () => {
+  it('opens the page, URL-encoded, in Coinbase Wallet’s in-app browser', () => {
+    const page = 'https://depthwatch.pages.dev/#/pools/uniswap-v3:0xd0b5?x=1&y=2'
+    const link = coinbaseWalletLink(page)
+    expect(link).toBe(`https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(page)}`)
+    expect(new URL(link!).searchParams.get('cb_url')).toBe(page)
+  })
+
+  it('links nothing but an http(s) page', () => {
+    for (const page of ['javascript:alert(1)', 'data:text/html,x', 'file:///etc/passwd', ''])
+      expect(coinbaseWalletLink(page), page).toBeNull()
   })
 })

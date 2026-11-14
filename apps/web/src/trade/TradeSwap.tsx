@@ -1,7 +1,10 @@
 /**
  * The swap in a connected, checked pool: direction, ETH or WETH, amount (balance and Max, which
  * keeps 0.0005 ETH for network fees), slippage, the live quote with core's checks, then review,
- * approval (only when the allowance is short, for exactly the amount), swap and outcome. A started
+ * approval (only when the allowance is short, for exactly the amount), swap and outcome. The form
+ * speaks once typing pauses: the amount's problem and the new quote come after `quoteDelayMs` of
+ * stillness, and the last quote of the same side stays, dimmed, until the next one is in; back from
+ * the review, its quote is the last one, not this one, until a new one is in. A started
  * approve-then-swap asks nothing more of the wallet once this view is gone (unmounted, or the
  * panel moved to another account or network: `env.active`); each transaction the wallet takes is
  * reported to the panel (`onSent`), which keeps it in view after this one has gone.
@@ -14,12 +17,8 @@ import {
 } from '@depthwatch/core'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PoolDetail } from '../api/types.js'
-import { Button } from '../components/ui/Button.js'
-import { Checkbox } from '../components/ui/Inputs.js'
-import { SegmentedControl } from '../components/ui/SegmentedControl.js'
 import { NB } from '../lib/format.js'
 import { useDebounced } from '../lib/useDebounced.js'
-import { AmountField } from './AmountField.js'
 import {
   approveStep,
   isUserRejection,
@@ -31,8 +30,9 @@ import {
   swapStep,
   type TradeEnv,
 } from './flow.js'
-import { type Preview, previewQuote, QuotePreview } from './QuotePreview.js'
+import { previewQuote } from './QuotePreview.js'
 import { TradeStop } from './reads.js'
+import { type KeyedQuote, SwapForm } from './SwapForm.js'
 import {
   type ApprovalLeft,
   DoneView,
@@ -99,7 +99,10 @@ export function TradeSwap({
   const [amountText, setAmountText] = useState('')
   const [slippageBps, setSlippageBps] = useState(startBps.ok ? startBps.bps : maxBps)
   const [phase, setPhase] = useState<Phase>({ p: 'form', note: null })
-  const [preview, setPreview] = useState<Preview>({ q: 'idle', key: '' })
+  /** The last quote's outcome and the inputs it was for. */
+  const [last, setLast] = useState<KeyedQuote | null>(null)
+  /** A quote is out for these inputs: until it is in, the last one is not theirs. */
+  const [waiting, setWaiting] = useState(false)
   const [balanceTick, setBalanceTick] = useState(0)
   const quoteRun = useRef(0)
   const mounted = useRef(false)
@@ -121,10 +124,9 @@ export function TradeSwap({
     }
   }, [sellFirst, useEth, token0, token1, weth])
   const balanceIn = useBalanceIn(env, side, balanceTick)
-  const inUnit = unitOf(side.tokenIn, side.ethIn)
-  const outUnit = unitOf(side.tokenOut, side.ethOut)
   const parsed = parseAmount(amountText, side.tokenIn.decimals)
-  const key = JSON.stringify([amountText, sellFirst, useEth, slippageBps])
+  const sideKey = JSON.stringify([sellFirst, useEth])
+  const key = JSON.stringify([amountText, sideKey, slippageBps])
   const settledKey = useDebounced(key, quoteDelayMs)
 
   // The live quote, once the inputs have been still for `quoteDelayMs`.
@@ -133,22 +135,34 @@ export function TradeSwap({
     if (!formOpen || settledKey !== key) return
     const id = ++quoteRun.current
     if (parsed === null || parsed === 0n) {
-      setPreview({ q: 'idle', key })
+      setLast(null)
+      setWaiting(false)
       return
     }
-    setPreview({ q: 'loading', key })
+    setWaiting(true)
     void previewQuote(env, side, parsed, slippageBps).then((next) => {
-      if (quoteRun.current === id) setPreview({ ...next, key })
+      if (quoteRun.current !== id) return
+      setLast({ ...next, key, sideKey })
+      setWaiting(false)
     })
-  }, [formOpen, settledKey, key, parsed, env, side, slippageBps])
+  }, [formOpen, settledKey, key, sideKey, parsed, env, side, slippageBps])
 
   const overBalance = parsed !== null && balanceIn !== null && parsed > balanceIn
-  const fresh = preview.key === key ? preview : null
+  // A quote of the other direction, or of WETH where ETH is now chosen, is never shown in this
+  // side's units.
+  const shown = last?.sideKey === sideKey ? last : null
+  const fresh = !waiting && shown?.key === key ? shown : null
   const canReview =
     phase.p === 'form' &&
     fresh?.q === 'ok' &&
     fresh.quoted.decision.kind !== 'refuse' &&
     !overBalance
+
+  /** Back to the form: the quote it had is from before, so it waits for a new one. */
+  const toForm = (note: string | null) => {
+    setWaiting(true)
+    setPhase({ p: 'form', note })
+  }
 
   const review = async () => {
     if (!canReview || fresh?.q !== 'ok') return
@@ -158,18 +172,14 @@ export function TradeSwap({
       if (result.kind === 'plan')
         setPhase({ p: 'review', plan: result.plan, note: null, approval: null })
       else if (result.kind === 'refused' && result.decision.kind === 'refuse')
-        setPhase({ p: 'form', note: refusalText(result.decision) })
-      else
-        setPhase({
-          p: 'form',
-          note: stopText(result.kind === 'stopped' ? result.reason : 'refused'),
-        })
+        toForm(refusalText(result.decision))
+      else toForm(stopText(result.kind === 'stopped' ? result.reason : 'refused'))
     } catch (error) {
-      const note =
+      toForm(
         error instanceof TradeStop
           ? stopText(error.reason)
-          : `The swap could not be reviewed: ${errorMessage(error)}`
-      setPhase({ p: 'form', note })
+          : `The swap could not be reviewed: ${errorMessage(error)}`,
+      )
     }
   }
 
@@ -210,7 +220,7 @@ export function TradeSwap({
         return
       case 'eth-out-unavailable':
         setUseEth(false)
-        setPhase({ p: 'form', note: wethOutText(approval) })
+        toForm(wethOutText(approval))
         return
       case 'stopped':
         return failed(
@@ -283,7 +293,7 @@ export function TradeSwap({
     }
   }
 
-  const backToForm = () => setPhase({ p: 'form', note: null })
+  const backToForm = () => toForm(null)
   // The note is in the key: a review that fails puts focus back on the heading, as the button that
   // had it was disabled while the review ran.
   const focus = useStepFocus(
@@ -317,83 +327,35 @@ export function TradeSwap({
       />
     )
 
-  const symbol = (token: typeof token0) => unitOf(token, useEth && token.address === weth)
-  const invalid = amountText.trim() !== '' && parsed === null
   return (
-    <form
-      className="trade-form"
-      onSubmit={(event) => {
-        event.preventDefault()
-        void review()
+    <SwapForm
+      env={env}
+      detail={detail}
+      side={side}
+      presets={presets}
+      sellFirst={sellFirst}
+      onSellFirst={(first) => {
+        setSellFirst(first)
+        setAmountText('')
+        setLast(null)
       }}
-    >
-      <h3 className="trade-h" tabIndex={-1} ref={focus}>
-        Your swap
-      </h3>
-      <SegmentedControl
-        label="What to sell"
-        options={[
-          { value: '0', label: `Sell ${symbol(token0)}` },
-          { value: '1', label: `Sell ${symbol(token1)}` },
-        ]}
-        value={sellFirst ? '0' : '1'}
-        onChange={(value) => {
-          setSellFirst(value === '0')
-          setAmountText('')
-        }}
-      />
-      {hasWeth ? (
-        <Checkbox checked={useEth} onChange={(checked) => setUseEth(checked)}>
-          Use ETH instead of WETH
-        </Checkbox>
-      ) : null}
-      <AmountField
-        unit={inUnit}
-        decimals={side.tokenIn.decimals}
-        text={amountText}
-        onText={setAmountText}
-        balance={balanceIn}
-        ethIn={side.ethIn}
-        invalid={invalid}
-        overBalance={overBalance}
-      />
-      <p className="trade-label" aria-hidden="true">
-        Slippage tolerance
-      </p>
-      <SegmentedControl
-        label="Slippage tolerance"
-        options={presets.map((bps) => ({
-          value: String(bps),
-          label: `${bps / 100} %`,
-          ariaLabel: `Slippage tolerance ${bps / 100} percent`,
-        }))}
-        value={String(slippageBps)}
-        onChange={(value) => setSlippageBps(Number(value))}
-      />
-      <QuotePreview
-        preview={
-          parsed === null || parsed === 0n ? { q: 'idle', key } : (fresh ?? { q: 'loading', key })
-        }
-        detail={detail}
-        side={side}
-        outUnit={outUnit}
-        slippageBps={slippageBps}
-      />
-      {phase.p === 'form' && phase.note ? (
-        <p className="trade-note" role="alert">
-          {phase.note}
-        </p>
-      ) : null}
-      <div className="trade-actions">
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={!canReview}
-          loading={phase.p === 'reviewing'}
-        >
-          Review swap
-        </Button>
-      </div>
-    </form>
+      useEth={hasWeth ? useEth : null}
+      onUseEth={setUseEth}
+      amountText={amountText}
+      onAmountText={setAmountText}
+      slippageBps={slippageBps}
+      onSlippage={setSlippageBps}
+      balance={balanceIn}
+      parsed={parsed}
+      settled={settledKey === key}
+      last={shown}
+      fresh={fresh}
+      overBalance={overBalance}
+      canReview={canReview}
+      note={phase.p === 'form' ? phase.note : null}
+      reviewing={phase.p === 'reviewing'}
+      heading={focus}
+      onReview={() => void review()}
+    />
   )
 }

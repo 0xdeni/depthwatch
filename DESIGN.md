@@ -570,7 +570,24 @@ that block pays (it can change by the block the swap lands in), shown as the liv
 Slipstream it is the factory's `getSwapFee(pool)`, which can be far from the snapshot's; a quote
 whose fee cannot be read gives no price); a quote that stopped at the price limit (part of the
 input unused) is refused whatever the quoter. Amounts, minimum, impact, size cap and deviations are
-core's (docs/METRICS.md, "Swap checks"). The review leads with what is sent exactly and received at
+core's (docs/METRICS.md, "Swap checks"). The form's live quote is one card of one height whatever
+it shows (before an amount, loading, a quote, the last quote with its figures dimmed while the next
+loads, a refusal or an error); it shows only a quote of the side chosen (direction, ETH or WETH),
+and back from the review, or after a refused review or a swap, its quote is the last one, dimmed,
+with Review off, until a new one is in. Core's price impact reads as the total cost against the
+pool's price, pool fee included (the network fee is extra), percent first, then dollars at the
+snapshot's USD prices and bps, beside its two parts, the live pool fee and the rest, the price move
+(the difference, from whole bps rounded up, so it can read up to 0.01 % high); core's warning
+above 1 % says whether the fee or the amount makes the cost high. Only the amount sent has a dollar
+value: the amount received at the other token's snapshot price would differ from it by more than
+the cost whenever the pool's price has moved since the snapshot. A screen reader hears a quote once
+it is in, never a keystroke's "Updating". The amount field shows the swap limit, the balance (6
+significant digits, rounded down), the amount's value at the snapshot's prices and, once typing
+pauses, why a text is not an amount, by cause, in a polite status the field points to; Max, inside
+the field, keeps 0.0005 ETH for network fees, and a swap above the limit offers an amount within it
+on both sides, less 1 %: the amount sent at its snapshot price and what it buys at the quote's pool
+price (which no amount beats) at the other token's, never above Max or the amount refused.
+The review leads with what is sent exactly and received at
 least, then the rate, the cost against the pool's price (fee included) with the live fee, the
 slippage, the network fee (the wallet's `eth_estimateGas` of the swap as it would be signed times
 its `eth_gasPrice`, a few words on one line in every state, with Base's data fee said under the

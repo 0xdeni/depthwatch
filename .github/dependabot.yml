@@ -1,12 +1,21 @@
 version: 2
 updates:
-  # The pnpm workspace: every package.json and the shared pnpm-lock.yaml.
+  # The pnpm workspace: every package.json and the shared pnpm-lock.yaml. Minor and patch updates
+  # arrive together in one pull request a week; a major update keeps a pull request of its own.
+  # Security updates are not grouped.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
-  # The SHA-pinned actions in .github/workflows.
+    groups:
+      npm-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+  # The SHA-pinned actions in .github/workflows, all in one pull request a week.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]

@@ -4,7 +4,7 @@
  * Screen contents are pinned by each page's own tests.
  */
 import { QueryClient } from '@tanstack/react-query'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import { App, AppRoutes, createQueryClient, Providers, shouldRetry } from './App.js'
@@ -33,11 +33,12 @@ function renderAt(path: string) {
   )
 }
 
+/** The current nav item's name (Scorecards joins the nav once the mock's mandates are in). */
 function currentNav(): string[] {
   return within(screen.getByRole('navigation', { name: 'Primary' }))
     .getAllByRole('link')
     .filter((a) => a.getAttribute('aria-current') === 'page')
-    .map((a) => a.textContent ?? '')
+    .map((a) => a.getAttribute('aria-label') ?? a.textContent ?? '')
 }
 
 const ROUTES: ReadonlyArray<readonly [string, string | null]> = [
@@ -48,7 +49,7 @@ const ROUTES: ReadonlyArray<readonly [string, string | null]> = [
   [`/tokens/${TOKEN}`, 'Pools'],
   ['/stocks', 'Stocks'],
   [`/stocks/${STOCK}`, 'Stocks'],
-  ['/mm', 'Scorecards'],
+  ['/mm', 'Scorecards (Scores)'],
   ['/methodology', 'Methodology'],
   ['/nowhere', null],
 ]
@@ -63,7 +64,7 @@ describe('routes (ia-v3 §2)', () => {
       expect(within(main).getAllByRole('heading', { level: 1 })).toHaveLength(1)
       expect(screen.getByRole('banner')).toBeTruthy()
       expect(screen.getByRole('contentinfo')).toBeTruthy()
-      expect(currentNav()).toEqual(nav ? [nav] : [])
+      await waitFor(() => expect(currentNav()).toEqual(nav ? [nav] : []))
     })
   }
 
@@ -74,7 +75,7 @@ describe('routes (ia-v3 §2)', () => {
     if (!id) throw new Error('the mock world has no mandate')
     renderAt(`/mm/${encodeURIComponent(id)}`)
     expect(await within(screen.getByRole('main')).findByRole('heading', { level: 1 })).toBeTruthy()
-    expect(currentNav()).toEqual(['Scorecards'])
+    await waitFor(() => expect(currentNav()).toEqual(['Scorecards (Scores)']))
   })
 
   it('says what was not found for an unknown path', async () => {

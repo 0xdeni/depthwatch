@@ -8,12 +8,13 @@
  * Both read the whole feed (every page of it) and the answer counts the API's `meaningful`, so
  * neither stops at a page. `view`, `sort`, `dir` and `rows` live in the URL, replaced, not pushed.
  */
+import { GAP_FEED_MIN_VOLUME_USD } from '@depthwatch/core'
 import type { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Band } from '../components/ui/Band.js'
 import { Overlap } from '../components/ui/Block.js'
 import { SegmentedControl } from '../components/ui/SegmentedControl.js'
-import { EmptyState, SectionError, Skeleton, useDelayedPending } from '../components/ui/States.js'
+import { EmptyState, SectionError, useDelayedPending } from '../components/ui/States.js'
 import { NB, usd } from '../lib/format.js'
 import { useGapFeed } from '../lib/useGapFeed.js'
 import { GapRows } from './lists/GapRows.js'
@@ -108,18 +109,9 @@ export function Gaps() {
         <div className="lists-gaps-lead">
           <p className="lead" data-in>
             A gap is a pool that trades far more each day than the liquidity near its price.{' '}
-            {gaps.data ? (
-              <>
-                Pools with at least {usd(gaps.data.minVolumeUsd)} of 24{NB}h volume.
-              </>
-            ) : (
-              <Skeleton
-                height="0.9em"
-                width="18ch"
-                className="lists-skel-inline"
-                style={waiting ? { opacity: 0 } : undefined}
-              />
-            )}
+            {/* The feed's floor is core's until the data names it, so the line never reflows. */}
+            Pools with at least {usd(gaps.data?.minVolumeUsd ?? GAP_FEED_MIN_VOLUME_USD)} of 24
+            {NB}h volume.
           </p>
           <div className="lists-gaps-ctl" data-in>
             <Link className="plink touch-hit" to="/methodology#gaps">

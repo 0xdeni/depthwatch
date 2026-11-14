@@ -145,6 +145,13 @@ describe('Methodology: sections', () => {
     }
   })
 
+  it('links the scorecards section to the scorecards page, which the nav lists only with mandates', () => {
+    renderAt('/methodology')
+    // With no mandate the nav and Home leave the page out: this link keeps it reachable.
+    const link = within(section('scorecards')).getByRole('link', { name: 'scorecards page' })
+    expect(link.getAttribute('href')).toBe('/mm')
+  })
+
   it('keeps each formula behind Show formula, collapsed by default (L2)', () => {
     renderAt('/methodology')
     for (const id of ANCHORS) {

@@ -37,7 +37,8 @@ NN/g measured that about 57 % of viewing time falls above the fold, and 74 % wit
 - **Primary navigation:**
   - The logo goes to Home.
   - Then **Pools**, **Stocks**, **Gaps**, **Scorecards** and **Methodology**, in that order (`NAV_ITEMS`; Stocks added for the tokenized stocks, [stocks-api.md §3](stocks-api.md#3-dashboard-appsweb)). Pools stays current on pool and token pages, Stocks on `/stocks/:token`.
-  - On phones: a 44 px tab strip under a 52 px top bar (`PH2`); below about 425 px the five tabs scroll sideways, the trailing edge fading. No hamburger menu. The installed app's dock shows five tabs, Scorecards and Methodology as "Scores" and "Method".
+  - **v4 amended:** Scorecards is listed only once a mandate is registered (`useNavItems`). Its page stays at `/mm`, and Methodology's scorecards section links to it. Until the list of mandates answers, a static build lists the tab as the bundle it was built with says and a server lists it, so the tabs do not move once the data is in.
+  - On phones: a 44 px tab strip under a 52 px top bar (`PH2`). No hamburger menu. **v4 amended:** below about 425 px the strip shows the short labels "Scores" and "Method", each link's accessible name holding both its full and its short words ("Scorecards (Scores)", "Methodology"), and the tabs scroll sideways with whichever edge has tabs past it fading. The installed app's dock shows one tab per nav item, Scorecards and Methodology as "Scores" and "Method".
 - **Entity links (the graph):**
 
   ```

@@ -387,6 +387,7 @@ describe('/mm/:id not found', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'scorecard not found' }),
     ).toBeTruthy()
+    expect(document.title).toBe('Scorecard not found – Depthwatch')
     expect(screen.getByText('no-such-mandate')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Browse scorecards' }).getAttribute('href')).toBe('/mm')
     expect(screen.getByRole('link', { name: 'How scorecards work' }).getAttribute('href')).toBe(

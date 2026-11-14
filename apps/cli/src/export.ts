@@ -9,6 +9,8 @@
  *   in-memory database, then its bundle (`source: 'demo'`, the synthetic world's clock).
  * - `--note <text>` adds the bundle's `note`, which the static site shows as "About this snapshot"
  *   for a live bundle. Without it the bundle has no `note` key at all.
+ * - `--updates several-times-a-day` adds the bundle's `updates`, the publisher's schedule, which
+ *   a live bundle's site states beside the data's age. Without it the copy claims no schedule.
  * - `depthwatch export --bundle <file> --out <file>`: an exported bundle written again with only
  *   its `features` replaced, no database read (the Trade switch and Trade preview workflows). A
  *   bundle exported before the stock routes keeps no `stocks` or `stockDetails` key.
@@ -58,6 +60,8 @@ export interface BuildStaticBundleOptions {
   source: StaticBundle['source']
   /** The bundle's `note`; undefined leaves the key out. */
   note?: string
+  /** The bundle's `updates`; undefined leaves the key out. */
+  updates?: StaticBundle['updates']
   /** The bundle's `features.trade`; undefined writes the switch off (`tradeOff()`). */
   trade?: TradeFlags
 }
@@ -196,6 +200,7 @@ export async function buildStaticBundle(
       generatedAt: opts.now,
       source: opts.source,
       ...(opts.note === undefined ? {} : { note: opts.note }),
+      ...(opts.updates === undefined ? {} : { updates: opts.updates }),
       features: { trade: opts.trade ?? tradeOff() },
       health: await getJson<HealthResponse>(app, '/api/health'),
       stats: await getJson<StatsResponse>(app, '/api/stats'),
@@ -319,7 +324,14 @@ export async function exportCommand(opts: ExportOptions): Promise<ExportResult> 
     const source: StaticBundle['source'] = config.exportDemo ? 'demo' : 'live'
     const bundle = await log.timed(
       'export',
-      () => buildStaticBundle(db, { now, source, note: config.exportNote, trade }),
+      () =>
+        buildStaticBundle(db, {
+          now,
+          source,
+          note: config.exportNote,
+          updates: config.exportUpdates,
+          trade,
+        }),
       (b) => ({ pools: b.pools.length, scorecards: b.scorecards.length, gaps: b.gaps.length }),
     )
     const bytes = writeExport(path, bundle, trade)

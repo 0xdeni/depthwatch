@@ -6,11 +6,14 @@
     <meta name="color-scheme" content="light dark" />
     <meta
       name="description"
-      content="Depthwatch: depth, spread, health and gaps for Uniswap, Aerodrome and Aero pools on Base mainnet."
+      content="What it takes to move the price in the Uniswap, Aerodrome and Aero pools Depthwatch tracks on Base: depth, trading cost and health, read from Base mainnet. Open source, no token."
     />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0b0d" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <!-- Self-hosted fonts (docs/design/visual-v4.md §3.3): preload the sans face only. -->
     <link
       rel="preload"
@@ -29,10 +32,46 @@
         if (q.get('nofonts') === '1') document.documentElement.setAttribute('data-nofonts', '')
       } catch {}
     </script>
-    <title>Depthwatch</title>
+    <title>Depthwatch – liquidity depth of Base pools</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- The app bar as markup, painted before any script runs; the app replaces it
+           (components/shell/AppBar.tsx). The static build puts its data line in the slot and
+           drops the Scorecards tab when its bundle has no mandate (plugins/siteMeta.ts). -->
+      <div class="appbar" aria-hidden="true">
+        <!--data-line-->
+        <div class="wrap appbar-inner">
+          <span class="brand">
+            <svg
+              class="mark"
+              viewBox="0 0 16 16"
+              width="22"
+              height="22"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <rect class="m-spine" x="7" y="1" width="2" height="14" rx=".5" />
+              <path class="m-sell" d="M4 3h2v2H4zM2 7h4v2H2zM0 11h6v2H0z" />
+              <path class="m-buy" d="M10 3h2v2h-2zM10 7h4v2h-4zM10 11h6v2h-6z" />
+            </svg>
+            <span class="wordmark">Depthwatch</span>
+          </span>
+          <div class="nav">
+            <span class="nav-tab">Pools</span>
+            <span class="nav-tab">Stocks</span>
+            <span class="nav-tab">Gaps</span>
+            <span class="nav-tab" data-tab="mm">
+              <span class="nav-long">Scorecards</span><span class="nav-short">Scores</span>
+            </span>
+            <span class="nav-tab">
+              <span class="nav-long">Methodology</span><span class="nav-short">Method</span>
+            </span>
+          </div>
+          <span class="fresh is-connecting">Connecting…</span>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

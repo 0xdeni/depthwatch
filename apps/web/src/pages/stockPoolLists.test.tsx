@@ -1,13 +1,14 @@
 /**
  * Once the pipeline seeds and tracks the stock pools (docs/design/stocks.md §7 G), the generic
  * lists show them like any pool: Home's previews, Pools, Gaps and a token page carry no stock
- * marker of their own (stocks-api.md §3), so the site-wide footer line is what covers them. Each
- * list is rendered here with a stock pool in it, as the API answers it after phase G (the mock
- * keeps its stock pools out of these lists, so they are added here), and the eligibility line
- * must be in that page's footer, after the promise, outside <main>. (The lists' depth words, "the
- * buy side", are no offer to buy: the swap panel's gate refusing a stock pool is pinned in
- * pool/tradeSection.test.tsx.) A stock's token page labels its price as the valuation price, the
- * one stock surface outside the stock pages that shows Depthwatch's price of a stock.
+ * marker of their own (stocks-api.md §3). Each list is rendered here with a stock pool in it, as
+ * the API answers it after phase G (the mock keeps its stock pools out of these lists, so they are
+ * added here). The eligibility line stays on the pages about a stock: the Stocks pages, a stock
+ * pool's own page and a stock's token page, whose footer carries it; the lists' footers do not
+ * repeat it. (The lists' depth words, "the buy side", are no offer to buy: the swap panel's gate
+ * refusing a stock pool is pinned in pool/tradeSection.test.tsx.) A stock's token page labels its
+ * price as the valuation price, the one stock surface outside the stock pages that shows
+ * Depthwatch's price of a stock.
  */
 import { QueryClient } from '@tanstack/react-query'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
@@ -83,25 +84,40 @@ const stockPoolLinks = () =>
     (a) => a.getAttribute('href') === poolHref(STOCK_POOL),
   )
 
+/** The footer's paragraphs, the promise first. */
+function footerParagraphs(): Array<string | null> {
+  const footer = screen.getByRole('contentinfo')
+  // The footer is the page's own, outside <main>, so a list that fails to draw keeps it.
+  expect(document.querySelector('main')?.contains(footer)).toBe(false)
+  return [...footer.querySelectorAll('p')].map((p) => p.textContent)
+}
+
 describe('a stock pool in the generic lists', () => {
   it.each([
     ['Home', () => '/'],
     ['Pools', () => '/pools'],
     ['Gaps', () => '/gaps'],
-    ['the stock’s token page', () => `/tokens/${NVDA}`],
     ['the quote’s token page', (quote: string) => `/tokens/${quote}`],
-  ])('%s shows it with the eligibility line in the footer', async (_name, path) => {
+  ])('%s shows it like any pool, its footer without the stock line', async (_name, path) => {
     const { client, quote } = await listingStockPools()
     renderAt(path(quote), client)
     await waitFor(() => expect(stockPoolLinks().length).toBeGreaterThan(0), { timeout: 4_000 })
-    const footer = screen.getByRole('contentinfo')
-    const paragraphs = [...footer.querySelectorAll('p')].map((p) => p.textContent)
-    expect(paragraphs).toContain(FOOTER_STOCKS)
+    const paragraphs = footerParagraphs()
+    expect(paragraphs).not.toContain(FOOTER_STOCKS)
+    expect(paragraphs[0]).toMatch(/^Open source/)
+  })
+
+  it('the stock’s token page shows it, with the stock line in the footer after the promise', async () => {
+    const { client } = await listingStockPools()
+    renderAt(`/tokens/${NVDA}`, client)
+    await waitFor(() => expect(stockPoolLinks().length).toBeGreaterThan(0), { timeout: 4_000 })
+    // The page shows Depthwatch's valuation price of the stock and has no line of its own.
+    await waitFor(() => expect(footerParagraphs()).toContain(FOOTER_STOCKS))
+    const paragraphs = footerParagraphs()
     expect(paragraphs.indexOf(FOOTER_STOCKS)).toBeGreaterThan(
       paragraphs.findIndex((t) => t?.startsWith('Open source')),
     )
-    // The footer is the page's own, outside <main>, so a list that fails to draw keeps it.
-    expect(document.querySelector('main')?.contains(footer)).toBe(false)
+    expect(document.querySelector('main')?.textContent).not.toContain(FOOTER_STOCKS)
   })
 })
 

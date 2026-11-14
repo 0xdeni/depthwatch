@@ -54,15 +54,16 @@ pnpm check:all        # check + build + build:static: every step CI runs
 
 CI (`.github/workflows/ci.yml`, on Node 22.13 and 24) runs install, lint, typecheck, test, build
 and build:static in that order and all must pass (`pnpm check:all` runs them locally); a
-`pnpm audit --prod` step reports advisories without failing the job. One package at a time:
+`pnpm audit --prod` step then fails the job on a high or critical advisory in a production
+dependency and leaves a warning for a moderate or low one. One package at a time:
 `npx vitest run packages/core`, `npx tsc --noEmit -p packages/core/tsconfig.json`,
 `npx biome check --write packages/core`. `DEPTHWATCH_PORT` (or `--port`, else a platform's `PORT`)
 moves the server; live commands (`discover`, `snapshot`, `volume`, `positions`, `run`, `start`,
 `mm sample`) need `DEPTHWATCH_RPC_URL` and are never needed for tests; `DEPTHWATCH_LOGS_RPC_URL`
 (or `--logs-rpc-url`, default: the main URL) moves every `eth_getLogs`, and nothing else, to a
-second endpoint. The Refresh site workflow (`.github/workflows/refresh-site.yml`) publishes the
-static copy at <https://depthwatch.pages.dev> about every three hours from `main`
-([docs/DEPLOY.md](docs/DEPLOY.md#a-free-static-copy)).
+second endpoint. The Refresh site workflow (`.github/workflows/refresh-site.yml`) checks every hour
+and, when the last refresh from `main` is at least 2.5 hours old, publishes a new static copy at
+<https://depthwatch.pages.dev> ([docs/DEPLOY.md](docs/DEPLOY.md#a-free-static-copy)).
 
 ## Conventions that bite
 

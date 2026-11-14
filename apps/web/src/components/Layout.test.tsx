@@ -9,6 +9,7 @@ import { FIRST_VIEW_KEY } from '../lib/firstView.js'
 import { DRAW_FAILED, RootErrorBoundary } from './ErrorBoundary.js'
 import { isInAppHref, routeIntentOf } from './Layout.js'
 import { DOCK_QUERY } from './shell/Dock.js'
+import { navName } from './shell/Nav.js'
 
 const NOW = 1_760_000_000
 const NB = ' '
@@ -16,7 +17,10 @@ const NB = ' '
 beforeEach(() => {
   window.scrollTo = vi.fn() as unknown as typeof window.scrollTo
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllEnvs()
+})
 
 function renderAt(
   path: string,
@@ -40,11 +44,17 @@ function renderAt(
 }
 
 const nav = () => screen.getByRole('navigation', { name: 'Primary' })
+/** A link's accessible name: its aria-label where it has short and long words, else its text. */
+const nameOf = (a: HTMLElement) => a.getAttribute('aria-label') ?? a.textContent
 const current = () =>
   within(nav())
     .getAllByRole('link')
     .filter((a) => a.getAttribute('aria-current') === 'page')
-    .map((a) => a.textContent)
+    .map(nameOf)
+/** The mock world without a registered mandate. */
+function noMandates(): ApiClient {
+  return { ...createMockClient({ now: NOW }), scorecards: async () => ({ items: [] }) }
+}
 
 describe('shell landmarks and wayfinding', () => {
   it('starts with a skip link that moves focus to <main>', () => {
@@ -58,17 +68,18 @@ describe('shell landmarks and wayfinding', () => {
     expect(main.getAttribute('tabindex')).toBe('-1')
   })
 
-  it('links the wordmark home and lists Pools, Stocks, Gaps, Scorecards and Methodology in one nav', () => {
+  it('links the wordmark home and lists Pools, Stocks, Gaps, Scorecards and Methodology in one nav', async () => {
     renderAt('/gaps')
     expect(screen.getAllByRole('navigation', { name: 'Primary' })).toHaveLength(1)
     const home = screen.getAllByRole('link', { name: 'Depthwatch home' })
     expect(home.map((a) => a.getAttribute('href'))).toEqual(['/', '/'])
+    await within(nav()).findByRole('link', { name: 'Scorecards (Scores)' })
     const links = within(nav()).getAllByRole('link')
-    expect(links.map((a) => a.textContent)).toEqual([
+    expect(links.map(nameOf)).toEqual([
       'Pools',
       'Stocks',
       'Gaps',
-      'Scorecards',
+      'Scorecards (Scores)',
       'Methodology',
     ])
     expect(links.map((a) => a.getAttribute('href'))).toEqual([
@@ -80,6 +91,65 @@ describe('shell landmarks and wayfinding', () => {
     ])
     expect(current()).toEqual(['Gaps'])
     expect(nav().querySelector('.nav-ind')?.getAttribute('aria-hidden')).toBe('true')
+    // The strip's short words (shell.css shows them below 425 px); the name stays whole.
+    const method = within(nav()).getByRole('link', { name: 'Methodology' })
+    expect(method.querySelector('.nav-long')?.textContent).toBe('Methodology')
+    expect(method.querySelector('.nav-short')?.textContent).toBe('Method')
+    expect(within(nav()).getByRole('link', { name: 'Pools' }).hasAttribute('aria-label')).toBe(
+      false,
+    )
+  })
+
+  it('names each tab with the words it shows at every width (label in name)', async () => {
+    renderAt('/gaps')
+    await within(nav()).findByRole('link', { name: 'Scorecards (Scores)' })
+    for (const a of within(nav()).getAllByRole('link')) {
+      const name = nameOf(a)?.toLowerCase() ?? ''
+      const shown = [...a.querySelectorAll('.nav-long, .nav-short')].map((s) => s.textContent)
+      for (const words of shown.length ? shown : [a.textContent])
+        expect(name, `${name} holds ${words}`).toContain(words?.toLowerCase())
+    }
+    expect(navName({ to: '/mm', label: 'Scorecards', short: 'Scores' })).toBe('Scorecards (Scores)')
+    expect(navName({ to: '/methodology', label: 'Methodology', short: 'Method' })).toBe(
+      'Methodology',
+    )
+    expect(navName({ to: '/pools', label: 'Pools' })).toBeUndefined()
+  })
+
+  it('keeps Scorecards in the nav and its Home block while a server’s list of mandates loads', async () => {
+    const client: ApiClient = {
+      ...createMockClient({ now: NOW }),
+      scorecards: () => new Promise(() => {}),
+    }
+    renderAt('/', { client })
+    expect(within(nav()).getAllByRole('link').map(nameOf)).toContain('Scorecards (Scores)')
+    await screen.findByRole('heading', { level: 1 })
+    expect(document.getElementById('home-mm')).not.toBeNull()
+  })
+
+  it('leaves Scorecards out while a static bundle built without a mandate loads', () => {
+    vi.stubEnv('DW_SHIPPED_MANDATES', '0')
+    const client: ApiClient = {
+      ...createMockClient({ now: NOW }),
+      scorecards: () => new Promise(() => {}),
+    }
+    renderAt('/', { client })
+    expect(within(nav()).getAllByRole('link').map(nameOf)).not.toContain('Scorecards (Scores)')
+    expect(document.getElementById('home-mm')).toBeNull()
+  })
+
+  it('leaves Scorecards out of the nav while no mandate is registered; its page stays', async () => {
+    renderAt('/mm', { client: noMandates() })
+    expect(await screen.findByRole('heading', { level: 1, name: 'scorecards' })).toBeTruthy()
+    await waitFor(() =>
+      expect(within(nav()).getAllByRole('link').map(nameOf)).toEqual([
+        'Pools',
+        'Stocks',
+        'Gaps',
+        'Methodology',
+      ]),
+    )
+    expect(current()).toEqual([])
   })
 
   it('keeps Pools current on pool and token pages and marks nothing on Home', () => {
@@ -112,8 +182,10 @@ describe('route changes', () => {
     await waitFor(() => expect(current()).toEqual(['Gaps']))
     expect(document.activeElement).not.toBe(main)
     expect(window.scrollTo).toHaveBeenLastCalledWith(0, 0)
-    fireEvent.click(within(nav()).getByRole('link', { name: 'Scorecards' }), { detail: 0 })
-    await waitFor(() => expect(current()).toEqual(['Scorecards']))
+    fireEvent.click(await within(nav()).findByRole('link', { name: 'Scorecards (Scores)' }), {
+      detail: 0,
+    })
+    await waitFor(() => expect(current()).toEqual(['Scorecards (Scores)']))
     expect(document.activeElement).toBe(screen.getByRole('main'))
   })
 
@@ -203,12 +275,15 @@ describe('a page that fails to draw (§5.12 ST3)', () => {
 })
 
 describe('freshness (§5.1, ia-v3 §3.2)', () => {
-  it('shows the circle and the block, says "updated 2 min ago" in its name and opens the details', async () => {
+  it('shows the circle and the block, named by its words and "updated 2 min ago", and opens the details', async () => {
     renderAt('/methodology', { demo: true, dataNow: NOW + 120 })
     const button = await screen.findByRole('button', {
-      name: `Data freshness: updated 2${NB}min ago`,
+      name: new RegExp(`^Block \\d{1,3}(,\\d{3})+, updated 2${NB}min ago$`),
     })
     expect(button.textContent).toMatch(/^Block \d{1,3}(,\d{3})+$/)
+    // Its name starts with what it shows (WCAG 2.5.3).
+    expect(button.getAttribute('aria-label')?.startsWith(`${button.textContent},`)).toBe(true)
+    expect(button.querySelector('.fresh-dot')?.className).toBe('fresh-dot')
     expect(button.querySelector('.eyebrow')?.textContent).toBe(button.textContent)
     expect(button.querySelector('.fresh-dot')?.getAttribute('aria-hidden')).toBe('true')
     expect(button.getAttribute('title')).toMatch(
@@ -233,7 +308,7 @@ describe('freshness (§5.1, ia-v3 §3.2)', () => {
     const base = createMockClient({ now: NOW })
     const health = vi.fn(() => Promise.reject(new Error('down')))
     renderAt('/methodology', { client: { ...base, health } })
-    const button = await screen.findByRole('button', { name: 'Data freshness: offline' })
+    const button = await screen.findByRole('button', { name: 'Offline: data freshness' })
     expect(button.textContent).toBe('Offline')
     fireEvent.click(button, { detail: 0 })
     const pop = screen.getByRole('dialog', { name: 'Data freshness' })
@@ -337,7 +412,7 @@ describe('the dock (§5.1, PH3)', () => {
     Reflect.deleteProperty(window, 'matchMedia')
   })
 
-  it('stays out of a browser tab and replaces the tab strip in an installed app', () => {
+  it('stays out of a browser tab and replaces the tab strip in an installed app', async () => {
     renderAt('/gaps')
     expect(document.querySelector('.dock')).toBeNull()
     cleanup()
@@ -352,10 +427,12 @@ describe('the dock (§5.1, PH3)', () => {
     renderAt('/gaps')
     const dock = document.querySelector('nav.dock') as HTMLElement
     expect(dock.getAttribute('aria-label')).toBe('Primary')
+    await within(dock).findByRole('link', { name: 'Scorecards (Scores)' })
     const tabs = within(dock).getAllByRole('link')
     // Five tabs share 288 px at 320 px (57.6 px each): Scorecards and Methodology go short, and
-    // their links keep the full name.
+    // each link's name holds both its full and its short words.
     expect(tabs.map((a) => a.textContent)).toEqual(['Pools', 'Stocks', 'Gaps', 'Scores', 'Method'])
+    for (const a of tabs) expect(nameOf(a)?.toLowerCase()).toContain(a.textContent?.toLowerCase())
     expect(tabs.map((a) => a.getAttribute('aria-current'))).toEqual([
       null,
       null,
@@ -364,6 +441,14 @@ describe('the dock (§5.1, PH3)', () => {
       null,
     ])
     expect(within(dock).getByRole('link', { name: 'Methodology' })).toBeTruthy()
-    expect(within(dock).getByRole('link', { name: 'Scorecards' })).toBeTruthy()
+    expect(within(dock).getByRole('link', { name: 'Scorecards (Scores)' })).toBeTruthy()
+    cleanup()
+    // Four tabs once the list says no mandate is registered.
+    renderAt('/gaps', { client: noMandates() })
+    const dockLinks = () =>
+      within(document.querySelector('nav.dock') as HTMLElement).getAllByRole('link')
+    await waitFor(() =>
+      expect(dockLinks().map((a) => a.textContent)).toEqual(['Pools', 'Stocks', 'Gaps', 'Method']),
+    )
   })
 })

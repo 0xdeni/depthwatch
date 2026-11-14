@@ -3,6 +3,7 @@
  */
 import { keepPreviousData, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
+import { shippedMandates } from '../lib/shipped.js'
 import { useApi, useIsMock, useIsStatic } from './context.js'
 import type {
   GapsQuery,
@@ -131,6 +132,17 @@ export function useScorecards(query: ScorecardsQuery = {}) {
   })
 }
 
+/**
+ * Whether the site lists the scorecards (the nav's tab, Home's block): once the list of mandates
+ * holds one. Until it answers, a static build goes by the bundle it was built with
+ * (`lib/shipped.ts`), as the header in index.html does, and a server by having them, so a site
+ * with mandates never moves its tabs.
+ */
+export function useMandatesListed(): boolean {
+  const list = useScorecards()
+  return list.data ? list.data.items.length > 0 : (shippedMandates() ?? true)
+}
+
 /** `GET /api/mm/:id`. */
 export function useScorecard(id: string) {
   const api = useApi()
@@ -152,10 +164,10 @@ export function useScorecardSamples(id: string, window: SampleWindow) {
   })
 }
 
-/** `GET /api/stocks`: every stock of the stock list, deepest first. */
-export function useStocks() {
+/** `GET /api/stocks`: every stock of the stock list, deepest first (read only when `enabled`). */
+export function useStocks(enabled = true) {
   const api = useApi()
-  return useQuery({ queryKey: ['stocks'], queryFn: () => api.stocks() })
+  return useQuery({ queryKey: ['stocks'], queryFn: () => api.stocks(), enabled })
 }
 
 /** `GET /api/stocks/:token`, keyed by the lowercase address. */

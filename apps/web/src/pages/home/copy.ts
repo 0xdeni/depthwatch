@@ -106,17 +106,6 @@ export function mandatesTakeaway(items: readonly Pick<ScorecardSummaryDto, 'stat
   return { before: `${ok} of ${n} ${noun} ${verb} within ${their} `, after: ' right now.' }
 }
 
-/** The scorecards preview with no mandate: a published snapshot says so of itself. */
-export function noMandates(snapshot: boolean): string {
-  return snapshot
-    ? 'No market-maker mandates are registered in this snapshot.'
-    : 'No market-maker mandates are registered yet.'
-}
-
-/** What a scorecard is, under the empty state (§5.12). */
-export const SCORECARD_LINE =
-  'A scorecard checks the depth a market maker promised against what is onchain at every snapshot.'
-
 /** The definition behind the dotted "KPIs" in the scorecards takeaway (D8). */
 export const KPIS_DEFINITION =
   'The depth a market maker promised to keep on each side, checked at every snapshot.'

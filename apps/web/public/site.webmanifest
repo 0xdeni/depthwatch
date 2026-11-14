@@ -1,0 +1,14 @@
+{
+  "name": "Depthwatch",
+  "short_name": "Depthwatch",
+  "description": "Liquidity depth of the Uniswap, Aerodrome and Aero pools Depthwatch tracks on Base.",
+  "start_url": "./",
+  "display": "browser",
+  "theme_color": "#ffffff",
+  "background_color": "#ffffff",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "favicon-48.png", "sizes": "48x48", "type": "image/png" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

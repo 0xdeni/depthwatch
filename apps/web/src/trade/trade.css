@@ -1,6 +1,7 @@
 /* The swap panel (trade/TradePanel.tsx), loaded with its lazy chunk: a row of the Pool page's
    sections sheet. v4 tokens only (docs/design/visual-v4.md §3): the field is the search field's
-   shape off the band, notes carry a 3 px rule, and the one filled button is the step's action. */
+   shape off the band with the controls' outline, notes carry a 3 px rule, a warning is a tinted
+   callout with the square status shape, and the one filled button is the step's action. */
 
 .trade {
   display: grid;
@@ -37,7 +38,8 @@
   text-wrap: pretty;
 }
 
-/* Notes: a sentence with a 3 px rule; warnings take the warn colour. */
+/* Notes: a sentence with a 3 px rule. A warning is a callout: a Tan-tinted panel led by the square
+   status shape (§5.5), its words in ink; never a coloured rule. */
 .trade-note,
 .trade-warn {
   padding-left: var(--s3);
@@ -47,7 +49,25 @@
   max-width: 60ch;
 }
 .trade-warn {
-  box-shadow: inset 3px 0 0 var(--warn);
+  display: flex;
+  gap: var(--s2);
+  align-items: baseline;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-item);
+  background: rgb(184 165 129 / 0.24); /* Tan */
+  box-shadow: none;
+  color: var(--text-1);
+}
+/* The square: Tan with an ink edge, so it holds 3:1 on the tint. */
+.trade-warn::before {
+  content: "";
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--warn);
+  box-shadow: 0 0 0 1px var(--text-1);
+  translate: 0 -1px;
 }
 
 .trade-wallets {
@@ -65,21 +85,30 @@
   flex: none;
 }
 
-/* The amount field: 48 px, radius 12, the unit inside at the right. */
+/* The amount field: 48 px, radius 12, a 1.5 px --ctl-edge outline (4.4:1 light, 3.2:1 dark), the
+   unit and Max inside at the right. Under it the balance, then one reserved line for the value or
+   the amount's problem, so a message never moves what follows. */
 .trade-field {
   display: grid;
   gap: var(--s2);
   width: 100%;
   max-width: 420px;
 }
+.trade-field-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s1) var(--s3);
+}
 .trade-label {
   font-size: var(--t-small);
   font-weight: 650;
   color: var(--text-2);
 }
-/* The slippage control's visible label sits closer to its control than the form's 16 px rhythm. */
-.trade-form > .trade-label {
-  margin-bottom: calc(-1 * var(--s2));
+.trade-cap {
+  font-size: var(--t-small);
+  color: var(--text-2);
 }
 .trade-input {
   position: relative;
@@ -95,7 +124,13 @@
   font-size: var(--t-lead);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  box-shadow: inset 0 0 0 1.5px var(--line-2);
+  box-shadow: inset 0 0 0 1.5px var(--ctl-edge);
+}
+.trade-input.has-max input {
+  padding-right: 132px;
+}
+.trade-input input::placeholder {
+  color: var(--text-2);
 }
 .trade-input input[aria-invalid="true"] {
   box-shadow: inset 0 0 0 1.5px var(--bad);
@@ -114,12 +149,93 @@
   color: var(--text-2);
   pointer-events: none;
 }
+.trade-input.has-max .trade-unit {
+  right: 68px;
+}
+/* Max: a 32 px chip inside the field; on a coarse pointer a centred layer makes it 44 × 44. */
+.trade-max {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  translate: 0 -50%;
+  min-width: 52px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--r-item);
+  background: var(--surface-2);
+  color: var(--text-1);
+  font-size: var(--t-ui);
+  font-weight: 750;
+}
+@media (pointer: coarse) {
+  .trade-max::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(44px, 100%);
+    height: 44px;
+    translate: -50% -50%;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .trade-max:hover {
+    background: var(--line);
+  }
+}
+.trade-field-msg,
+.trade-bal {
+  min-height: 1.45em;
+  line-height: 1.45;
+}
+/* Where the field is narrow, the balance and Max's note take two lines: both are kept while the
+   balance is read, and on either side, so its reading moves nothing under it. */
+@media (max-width: 30em) {
+  .trade-bal {
+    min-height: calc(2 * 1.45em);
+  }
+}
+.trade-field-err:not(:empty) {
+  color: var(--text-1);
+  font-weight: 650;
+}
 
-/* The live quote and its figures. */
-.trade-quote {
+/* The ETH box, then what it does on this side, ticked or not, in --text-2 under its label's words
+   (its description, outside the label). */
+.trade-eth {
   display: grid;
-  gap: var(--s3);
+  gap: 2px;
+}
+.trade-check-note {
+  padding-left: calc(18px + var(--s2));
+  color: var(--text-2);
+}
+
+/* Slippage: its label close to the control, and a reserved two-line note on the chosen preset. */
+.trade-slip {
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
   width: 100%;
+  max-width: 420px;
+}
+.trade-slip-note {
+  min-height: calc(2 * 1.45em);
+  line-height: 1.45;
+  max-width: 52ch;
+}
+
+/* The live quote: one card of one height in every state (QuotePreview). Every line is always
+   drawn, a dash for a value not known; the message line keeps room for a two-line callout. While a
+   new quote loads the last one's figures (--text-1) dim to 0.6 after 150 ms (§5.12), still 5:1 on
+   the panel; its --text-2 lines keep their colour, which dimmed would fall under 4.5:1. Nothing
+   moves. */
+.trade-quote {
+  position: relative;
+  display: grid;
+  gap: var(--s4);
+  width: 100%;
+  max-width: 560px;
   padding: var(--s4);
   border-radius: var(--r-ctl);
   background: var(--panel);
@@ -127,11 +243,46 @@
   font-size: var(--t-data);
   line-height: 1.45;
 }
+.tq-dim {
+  transition: opacity 150ms ease;
+}
+.trade-quote.is-updating .tq-dim {
+  opacity: 0.6;
+  transition-delay: 150ms;
+}
+.tq-main > p {
+  margin: 0;
+}
+.tq-lead {
+  font-size: var(--t-small);
+  font-weight: 650;
+  color: var(--text-2);
+}
+.tq-out {
+  line-height: 1.2;
+}
+.tq-fig {
+  font-size: var(--t-figure);
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+.tq-min {
+  margin-top: var(--s1);
+}
+.tq-min strong {
+  font-weight: 750;
+}
+
+/* The figures: two columns on phones, the total cost across both; from 840 px three, the total
+   cost in the first, beside its parts. */
 .trade-figs {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  gap: var(--s3) var(--s5);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3) var(--s4);
   margin: 0;
+  padding-top: var(--s3);
+  box-shadow: inset 0 1px 0 var(--line);
 }
 .trade-figs dt {
   font-size: var(--t-small);
@@ -140,6 +291,83 @@
 .trade-figs dd {
   margin: 0;
   font-weight: 650;
+}
+.tq-total {
+  grid-column: 1 / -1;
+}
+.tq-total dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--s2);
+}
+.tq-total .num {
+  font-size: var(--t-lead);
+  font-weight: 750;
+}
+.tq-sub {
+  font-size: var(--t-small);
+  font-weight: 500;
+  color: var(--text-2);
+}
+@media (min-width: 52.5em) {
+  .trade-figs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .tq-total {
+    grid-column: auto;
+    grid-row: span 2;
+  }
+}
+
+/* The message line: core's warning, a refusal or an error, else what the total cost is. */
+.tq-msg {
+  display: grid;
+  align-content: start;
+  gap: var(--s2);
+  min-height: calc(3 * 1.45 * var(--t-small) + 2 * var(--s2));
+  font-size: var(--t-small);
+}
+.tq-msg .trade-warn {
+  font-size: var(--t-small);
+  font-weight: 650;
+}
+.tq-msg > p {
+  margin: 0;
+}
+/* From 840 px the card is wide enough for any message but the longest refusals in two lines. */
+@media (min-width: 52.5em) {
+  .tq-msg {
+    min-height: calc(2 * 1.45 * var(--t-small) + 2 * var(--s2));
+  }
+}
+/* An empty status stays in the accessibility tree, out of the flow. */
+.tq-msg {
+  position: relative;
+}
+.tq-live:empty {
+  position: absolute;
+}
+.tq-msg .trade-note {
+  padding: 0;
+  box-shadow: none;
+  font-size: var(--t-small);
+  font-weight: 650;
+}
+/* "Use … instead", at the end of the refusal; a 44 px hit layer on touch. */
+.tq-fit {
+  position: relative;
+}
+@media (pointer: coarse) {
+  .tq-fit::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(44px, 100%);
+    height: 44px;
+    translate: -50% -50%;
+  }
 }
 .trade-facts {
   width: 100%;

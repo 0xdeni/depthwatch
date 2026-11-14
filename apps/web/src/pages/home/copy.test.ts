@@ -13,7 +13,6 @@ import {
   homeLead,
   homeSay,
   mandatesTakeaway,
-  noMandates,
   volumeLabel,
 } from './copy.js'
 import { gradeCounts, NEST_PX, nestSides } from './HomeFacts.js'
@@ -64,11 +63,6 @@ describe('Home copy', () => {
   it('carries the comparison in the volume label only when the turnover is known', () => {
     expect(volumeLabel(3.83)).toBe(`traded in 24${NB}h, 3.8× the depth within 2${NB}% of the price`)
     expect(volumeLabel(null)).toBe(`traded in 24${NB}h`)
-  })
-
-  it('says "in this snapshot" only of a published snapshot', () => {
-    expect(noMandates(true)).toBe('No market-maker mandates are registered in this snapshot.')
-    expect(noMandates(false)).toBe('No market-maker mandates are registered yet.')
   })
 })
 

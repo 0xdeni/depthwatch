@@ -1,6 +1,7 @@
-/* App shell (docs/design/visual-v4.md §5.1): skip link, the snapshot or demo line, the app bar
-   with the one <nav> (inline from 840 px, a 44 px tab strip below), the circle freshness dot,
-   the standalone-only dock and the ink footer. */
+/* App shell (docs/design/visual-v4.md §5.1): skip link, the banner (the snapshot or demo line,
+   then the app bar with the one <nav>: inline from 840 px, a 44 px tab strip below), the circle
+   freshness dot and the standalone-only dock; the ink footer is in footer.css. index.html draws
+   the same banner from markup before any script runs, with these classes. */
 
 .skip {
   position: fixed;
@@ -22,7 +23,7 @@
   translate: none;
 }
 
-/* ---------- Snapshot and demo line: 32 px, one line, never wraps ---------- */
+/* ---------- Snapshot and demo line: 32 px, one line, never wraps, at the top of the banner ---------- */
 .demo-line {
   min-height: var(--line-h);
   background: var(--note-bg);
@@ -61,10 +62,22 @@
     display: none;
   }
 }
-/* Below 360 px the trigger reads "About" and the snapshot sentence drops its year. */
+/* Below 360 px the trigger reads "About" and the snapshot sentence drops its day. */
 @media (max-width: 22.49em) {
   .demo-more,
-  .snap-year {
+  .snap-day {
+    display: none;
+  }
+}
+/* With the publisher's schedule the sentence has no day: below 440 px the clock time gives way
+   to the schedule, and below 375 px the schedule to the clock time. */
+@media (min-width: 23.4375em) and (max-width: 27.49em) {
+  .snap-clock {
+    display: none;
+  }
+}
+@media (max-width: 23.43em) {
+  .snap-often {
     display: none;
   }
 }
@@ -90,6 +103,11 @@
   top: 0;
   z-index: 40;
   background: var(--canvas);
+}
+/* With the data line on top, the banner sticks one line higher: the line scrolls away, the bar
+   stays. */
+.appbar:has(> .demo-line) {
+  top: calc(-1 * var(--line-h));
 }
 .appbar::after {
   content: "";
@@ -137,14 +155,19 @@
   stroke-width: 0.5;
 }
 
-/* Nav: 15 px / 650, 28 px apart; the current item text-1 over a 4 px indicator. */
+/* Nav: 15 px / 650, 28 px apart; the current item text-1 over a 4 px indicator. The short labels
+   show on the narrowest strip only (below). `.nav-tab` is a tab of index.html's markup copy. */
+.nav-short {
+  display: none;
+}
 .nav {
   position: relative;
   display: flex;
   gap: 28px;
   align-self: stretch;
 }
-.nav a {
+.nav a,
+.nav .nav-tab {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -206,6 +229,13 @@
   background: var(--ok);
   flex: none;
 }
+/* A published snapshot is not live: a grey circle, Tan once it is more than 8 hours old. */
+.fresh-dot.is-snapshot {
+  background: var(--text-2);
+}
+.fresh-dot.is-stale {
+  background: var(--warn);
+}
 .fresh-off {
   width: 10px;
   height: 10px;
@@ -257,7 +287,8 @@
   .nav::-webkit-scrollbar {
     display: none;
   }
-  .nav a {
+  .nav a,
+  .nav .nav-tab {
     flex: 1 0 auto;
     justify-content: center;
     min-height: 44px;
@@ -282,10 +313,33 @@
     display: none;
   }
 }
-/* Below about 425 px (five tabs and two gutters) the strip scrolls; its trailing edge fades. */
-@media (max-width: 26.56em) {
-  .nav {
+/* Where the strip scrolls, each edge with tabs past it fades over the gutter (Nav.tsx sets the
+   classes). */
+@media (max-width: 52.49em) {
+  .nav.is-over-end {
     mask-image: linear-gradient(to right, #000 calc(100% - var(--gutter)), transparent);
+  }
+  .nav.is-over-start {
+    mask-image: linear-gradient(to left, #000 calc(100% - var(--gutter)), transparent);
+  }
+  .nav.is-over-start.is-over-end {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 var(--gutter),
+      #000 calc(100% - var(--gutter)),
+      transparent
+    );
+  }
+}
+/* Below about 425 px Scorecards and Methodology take their short labels ("Scores", "Method"), so
+   no tab is cut; the links keep their full names. */
+@media (max-width: 26.56em) {
+  .nav .nav-long {
+    display: none;
+  }
+  .nav .nav-short {
+    display: inline;
   }
 }
 /* PH3: a bottom bar only in an installed app; a browser tab keeps the top strip. */
@@ -293,13 +347,15 @@
   .appbar .nav {
     display: none;
   }
-  /* The dock: Gray 100, five 48 px tabs, sticky at the bottom of the app column. */
+  /* The dock: Gray 100, one 48 px tab per item (four or five), sticky at the bottom of the app
+     column. */
   .dock {
     position: sticky;
     bottom: 0;
     z-index: 45;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
     gap: 4px;
     padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
     background: var(--g100);
@@ -342,66 +398,4 @@ main:is(:has(.skel-stack), :root:active-view-transition *) {
    <main> paints until its timeline starts, or the wait ends. */
 :root[data-first-view="wait"] main {
   opacity: 0;
-}
-
-/* ---------- Footer: the ink block in both themes ---------- */
-.foot {
-  margin-top: var(--s8);
-  background: var(--ink);
-  color: var(--on-ink);
-  box-shadow: inset 0 1px 0 var(--ink-edge);
-}
-.foot-inner {
-  display: grid;
-  gap: var(--s4) var(--s7);
-  align-items: center;
-  padding-block: var(--s7) calc(var(--s7) + env(safe-area-inset-bottom));
-}
-.foot .brand {
-  color: var(--on-ink);
-  font-size: var(--t-mark-lg);
-}
-.foot .mark {
-  width: 28px;
-  height: 28px;
-}
-.foot-text {
-  display: grid;
-  gap: var(--s3);
-}
-.foot-say {
-  max-width: 52ch;
-  color: var(--on-ink-2);
-  font-size: var(--t-data);
-}
-.foot-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 28px;
-  align-items: center;
-  font-size: var(--t-data);
-  font-weight: 650;
-}
-.foot-links a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  text-underline-offset: 4px;
-}
-@media (min-width: 64em) {
-  .foot-inner {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-}
-@media (max-width: 52.49em) {
-  .foot {
-    margin-top: var(--s7);
-  }
-  .foot-inner {
-    gap: var(--s3);
-    padding-block: var(--s6) calc(var(--s6) + env(safe-area-inset-bottom));
-  }
-  .foot-links {
-    gap: 4px 20px;
-  }
 }

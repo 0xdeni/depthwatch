@@ -33,8 +33,8 @@ pnpm build:static  # export the demo bundle, then the static site build
 ```
 
 `pnpm check` runs the first three and `pnpm check:all` all five. CI also runs `pnpm audit --prod`,
-which reports advisories in production dependencies without failing. To work on one package
-without waiting for the rest:
+which fails on a high or critical advisory in a production dependency and leaves a warning for a
+moderate or low one. To work on one package without waiting for the rest:
 
 ```sh
 npx biome check --write packages/core

@@ -263,13 +263,15 @@ file copied as root yourself, or `start` exits with `database is not writable`.
 ## A free static copy
 
 Without a server, `.github/workflows/refresh-site.yml` publishes a static copy of the dashboard to
-Cloudflare Pages about every three hours, at no cost: a GitHub runner restores the database from
-the Actions cache, runs `discover --seed`, `snapshot`, `volume`, `score` and `prune`, saves the
-database back, exports the bundle and uploads the static build. The copy has every page and the
-agent documents, but no API (`/api/…` routes answer 404, and there is no scorecard registration)
-and no data newer than its last run; each page says when it was read. It suits a public site
-while no server runs. This repository's copy has been at <https://depthwatch.pages.dev> since
-29 October 2026; the workflow is scheduled at minute 23 of every third hour (UTC).
+Cloudflare Pages at no cost, each time the last one is at least 2.5 hours old (When it runs,
+below): a GitHub runner restores the database from the Actions cache, runs `discover --seed`,
+`snapshot`, `volume`, `score` and `prune`, saves the database back, exports the bundle and uploads
+the static build. The copy has every page and the agent documents, but no API (`/api/…` routes
+answer 404 with the site's not-found page, and there is no scorecard registration) and no data
+newer than its last run; each page says when it was read and, because the workflow exports with
+`--updates several-times-a-day`, that the site is updated several times a day (its freshness dot
+turns Tan once the data is more than 8 hours old). It suits a public site while no server runs.
+This repository's copy has been at <https://depthwatch.pages.dev> since 29 October 2026.
 1. **Cloudflare.** Create a free account. Note the Account ID (Workers & Pages, right-hand
    column) and create an API token: My Profile, API Tokens, Create Token, Create Custom Token,
    with the permission Account, Cloudflare Pages, Edit.
@@ -292,6 +294,23 @@ while no server runs. This repository's copy has been at <https://depthwatch.pag
    few minutes: pools already stored keep their creation block, so the seed costs only the factory
    reads.
 
+**When it runs.** The workflow is scheduled every hour, at minute 23 (UTC). Its first job, `due`,
+reads the workflow's earlier runs through GitHub's API with the run's own token (permission
+`actions: read`; no secret) and lets a scheduled run refresh only when the last refresh that
+published started at least 150 minutes ago and no other refresh is running or waiting to run;
+otherwise the run stops there, green, after a few seconds. So the copy is refreshed each time the
+last refresh is at least 2.5 hours old: about every three hours when GitHub starts the hourly
+checks on time, and the data is then under about three hours old. GitHub can start scheduled runs
+late or skip them, and then the data is older: from 1 to 12 November 2026 the earlier schedule,
+every third hour, ran 36 times, at a median gap of 7.3 hours and at most 13.1. With a check every
+hour, a skipped run costs an hour rather than three. A run by hand (Actions, Refresh site, Run
+workflow) always refreshes, and a check that cannot read the API, or fails, lets the run refresh:
+a refresh too many is better than none. A refresh counts once its publish step has succeeded,
+even if a later step fails, as on a refused trade switch; one that fails before publishing does
+not count, so the next hourly check tries again. Only the refresh job joins the concurrency group
+it shares with Trade switch, so a check that is not due never takes the place of a run waiting
+there.
+
 **Tokenized stocks.** Every run's seed also asks each DEX for the pools of the ten tokenized stocks
 of base.org/stocks with the reference tokens, never of two stocks: 6,200 calls, about 13 multicalls
 more ([Seeded discovery](ARCHITECTURE.md#seeded-discovery-factory-views-and-archive-state)). The
@@ -299,24 +318,30 @@ first run once the stocks change is on `main` finds their pools and dates each o
 search of about 26 requests a pool; later runs pay only the factory reads. Every snapshot then
 reads the ten stocks at its block, one multicall of 60 calls on `DEPTHWATCH_RPC_URL` (the
 Chainlink feeds are read onchain, from no data vendor), and tracks every stock pool ranked at
-$10,000 or more besides the 200. The copy's Stocks pages and stock pool pages show them, and every
-page's footer carries the eligibility line (Coinbase tokenized stocks are only available to persons
-in eligible jurisdictions outside of the U.S.); no stock enters the swap panel. No new
+$10,000 or more besides the 200. The copy's Stocks pages and stock pool pages show them with the
+eligibility line (Coinbase tokenized stocks are only available to persons in eligible jurisdictions
+outside of the U.S.), which the footer of the Stocks pages and of a stock's token page repeats; no
+stock enters the swap panel. No new
 secret or variable is needed. The readings are never pruned: ten rows a run, about 30,000 a year
 ([stocks.md §4](design/stocks.md#4-pipeline-appscli)).
 
-Each run snapshots the 200 tracked pools and the stock pools (about 14,000 Alchemy compute units
-for the 200, so about 3.4 M a month at eight runs a day) and keeps 8 days of history
-(`DEPTHWATCH_KEEP_DAYS=8`). The `volume` step sends
-`eth_getLogs` to the optional secret `DEPTHWATCH_LOGS_RPC_URL` first, at 2,000-block chunks for at
-most 300 s, then to Tenderly's public gateway at 1,000-block chunks (250 before 5 November 2026) for
-at most 420 s. The database persists between runs, so a run reads the three hours since the last one
-and the part of the hour before them that held the last run's head: 54,000 to 72,000 blocks per
-event source since Denim, 54 to 72 requests each at 1,000-block chunks. The first run after the
-change that finds blocks by time (5 November 2026) reads a whole 24 h window once when the saved
-database holds coverage from after Denim's activation ([Upgrading](#upgrading)): at most 450 requests per source at 1,000 (432 to 450 once the window is
-all 200 ms blocks), about 1,350 for the three. At the pace measured below (45,000 blocks per source
-at 400-block chunks, some 340 requests for three sources, in 78 s) that is about 310 s, inside the
+Each run snapshots the 200 tracked pools and the stock pools (about 14,000 Alchemy compute units for
+the 200, so about 3.4 M a month at eight runs a day) and keeps 8 days of history
+(`DEPTHWATCH_KEEP_DAYS=8`). While refreshes publish, they are at least 2.5 hours apart, so the
+snapshots come to at most about 4 M units a month, plus any runs by hand. A refresh that reads the
+chain and then fails before publishing, for example on an expired Cloudflare token, is tried again
+at every hourly check: up to about 10 M units a month, within the free tier's 30 M, and a failed run
+every hour until it is fixed. The `volume` step sends `eth_getLogs` to the optional secret
+`DEPTHWATCH_LOGS_RPC_URL` first, at 2,000-block chunks for at most 300 s, then to Tenderly's public
+gateway at 1,000-block chunks (250 before 5 November 2026) for at most 420 s. The database persists
+between runs, so a run reads the time since the last one and the part of the hour before it that
+held the last run's head: after three hours, 54,000 to 72,000 blocks per event source since Denim,
+54 to 72 requests each at 1,000-block chunks; a longer gap reads more, at most the 24 h window. The
+first run after the change that finds blocks by time (5 November 2026) reads a whole 24 h window
+once when the saved database holds coverage from after Denim's activation ([Upgrading](#upgrading)):
+at most 450 requests per source at 1,000 (432 to 450 once the window is all 200 ms blocks), about
+1,350 for the three. At the pace measured below (45,000 blocks per source at 400-block chunks, some
+340 requests for three sources, in 78 s) that is about 310 s, inside the
 420 s; this is inferred, not measured. Should it not fit, every run reads the whole window again,
 since a killed pass stores nothing, until one succeeds. Each try is a fresh process, killed with
 everything it started once its time is up; a killed pass stores nothing. If both fail, the step
@@ -347,6 +372,17 @@ address is the free one. A domain of your own is registered and paid for separat
 Pages project (Custom domains) before creating any DNS record: a subdomain then needs a CNAME
 record to the `pages.dev` address at its DNS host, and an apex domain needs its nameservers on
 Cloudflare.
+
+**The site's address in link previews.** A link to the copy, pasted into a chat, a wallet's browser
+or a social post, unfolds into a card with a title, a description and a picture (`og.png`), read
+from tags the static build writes into `index.html`. Those tags need absolute addresses, so the
+build takes the site's address from `VITE_SITE_URL` and uses <https://depthwatch.pages.dev/> when
+it is unset, which is what the workflows publish to today; nothing needs setting. When the site
+moves to a domain of its own, set `VITE_SITE_URL=https://<your domain>/` in the environment of the
+"Build the static site" step of the Refresh site, Trade switch and Trade preview workflows (or
+change `DEFAULT_SITE_URL` in `apps/web/plugins/siteMeta.ts`). The server build carries no such
+tags: it does not know the address it will be served from.
+
 Repository secrets reach workflow runs started from this repository's own branches, never a pull
 request from a fork; only people with write access can start those, and this workflow publishes
 only from `main`.
@@ -357,10 +393,25 @@ Content-Security-Policy that runs only the site's own scripts and the inline scr
 `index.html` by its hash and lets pages fetch from the site itself only. Every build fails when
 that hash and the inline script differ, or when the file opens a URL pattern in more than one
 block: Pages was seen to serve only the last of them ([Trade preview (the live
-test)](#trade-preview-the-live-test)). `depthwatch serve` does not send these headers, and the
+test)](#trade-preview-the-live-test)). The same file sets caching: the build's scripts and styles
+under `/assets/`, whose names change with their content, may be kept a year (`immutable`); the
+fonts under `/fonts/`, whose names stay, a month; every other file is checked with Pages on each
+visit, so a new copy shows at once; and `data/flags.json` is never cached. Pages joins the values
+of one header from every rule that matches a path, so each path gets its `Cache-Control` from one
+rule only (`apps/web/plugins/securityHeaders.test.ts` checks it). `depthwatch serve` does not send these headers, and the
 server build leaves the file out. A Pages feature that adds a script to the pages, such as
 Cloudflare Web Analytics, would be blocked by this policy: leave it off, or add its host to the
 policy.
+
+The build also ships the not-found page, `apps/web/public/404.html` with its stylesheet
+`404.css`. Pages serves it, with HTTP 404, for every path the copy does not have, `/api/…`
+included; without a `404.html` at the top of the output, Pages would answer those paths with
+`index.html` and HTTP 200. The page sizes itself for phones, follows the system's light or dark
+setting, says that the copy has no API and links home. It runs no script and loads only its
+stylesheet, the icon and one font, all from the site itself, so the same policy applies to it
+unchanged; the static build fails if the page is missing, breaks one of those rules or names a
+file the build does not have. The server build leaves both files out: `depthwatch serve` answers
+unknown paths itself.
 
 ## Trade switch
 
@@ -499,14 +550,21 @@ on a phone):
    Check the published switch comes after the publish, so the new switch may already be served:
    open <https://depthwatch.pages.dev/data/flags.json> before running again. A failure in any
    earlier step published nothing. Correct the variable and run it again, or run Refresh site.
+   Until a refused value is corrected, every refresh of Refresh site also publishes the switch off
+   and fails. A run shown as cancelled was replaced while it waited, by a newer Trade switch or by
+   a refresh (below), and changed nothing itself.
 
-Without step 3, the next Refresh site run, within about three hours, publishes the new value: both
-workflows read the same variable. Trade switch shares Refresh site's concurrency group, so it waits
-for a refresh in progress and then downloads that run's copy. If there is any doubt about what the
-site serves, run Refresh site instead, which rebuilds the bundle from the saved database rather
-than from the published copy. Should GitHub Actions be down, Cloudflare's dashboard can roll the
-Pages project back to an earlier deployment (Workers & Pages, the project, Deployments); this has
-not been tried.
+Without step 3, the next refresh of Refresh site, within about three hours when GitHub starts its
+hourly checks on time, publishes the new value: both workflows read the same variable. Trade
+switch shares the concurrency group of Refresh site's refresh job, so it waits for a refresh in
+progress and then downloads that run's copy. GitHub keeps one run waiting per group: a newer Trade
+switch or a refresh that starts to wait takes the place of a waiting switch, which then shows as
+cancelled; a refresh publishes the same variable, so the new value still goes out. The hourly
+checks that are not due never join the group. If there is any doubt about what the site serves,
+run Refresh site instead, which rebuilds the bundle from the saved database rather than from the
+published copy. Should GitHub Actions be down, Cloudflare's dashboard can roll the Pages project
+back to an earlier deployment (Workers & Pages, the project, Deployments); this has not been
+tried.
 
 ### Trade preview (the live test)
 

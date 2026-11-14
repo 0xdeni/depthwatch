@@ -105,6 +105,8 @@ Commands
               flags.json next to it        --out <file> [--demo] [--note <text>] [--bundle <file>]
                 --demo                   bundle the offline demo instead (runs it in memory)
                 --note <text>            the bundle's note, shown by a live static snapshot
+                --updates several-times-a-day
+                                         the publisher's schedule, stated by a live static snapshot
                 --bundle <file>          write that exported bundle again, only the trade
                                          switch changed (no database read)
   mm          market-maker scorecards (docs/SCORECARDS.md):

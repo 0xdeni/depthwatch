@@ -40,10 +40,14 @@ describe('Pool page: the title section and the band (visual-v4 §6.4)', () => {
     )
   })
 
-  it('names the tab after the pair', async () => {
+  it('names the tab after the pair, the DEX and the fee, and an unknown pool as not found', async () => {
     renderPool(V3_WETH_USDC)
     await loaded()
-    expect(document.title).toBe('WETH / USDC – Depthwatch')
+    expect(document.title).toBe(`WETH / USDC, Uniswap v3 0.05${NB}% – Depthwatch`)
+    cleanup()
+    renderPool('uniswap-v3:0x0000000000000000000000000000000000000001')
+    await screen.findByRole('heading', { level: 1, name: 'pool not found' })
+    expect(document.title).toBe('Pool not found – Depthwatch')
   })
 
   it('draws the mirrored curve on the band, with its numbers behind Show data', async () => {

@@ -1,15 +1,15 @@
 /**
  * The static build's startup (docs/design/web-v2.md §4): the bundle feeds the app on hash
- * routes, the demo banner follows `source`, a live bundle reads as a dated snapshot that does not
- * update (no "… ago" anywhere), the Embed block explains that badge URLs need a server, and a
- * missing bundle is reported instead of a blank page.
+ * routes, the demo banner follows `source`, a live bundle reads as a dated snapshot (its age only
+ * in the banner, on the reader's clock; no "… ago" in the pages), the Embed block explains that
+ * badge URLs need a server, and a missing bundle is reported instead of a blank page.
  */
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMockClient } from './api/mock.js'
 import type { StaticBundle } from './api/types.js'
-import { dated, full } from './lib/format.js'
+import { dated } from './lib/format.js'
 import { startStatic } from './staticBoot.js'
 import { bundleFromClient } from './testing/staticBundle.js'
 
@@ -25,9 +25,9 @@ const LIVE: StaticBundle = {
   source: 'live',
   health: { ...DEMO.health, source: 'live' },
   note: 'The 492 largest pools by TVL, read through a free RPC plan.\n\nBRETT is priced through its WETH pools.\n',
+  updates: 'several-times-a-day',
 }
 const AT_DATED = dated(DEMO.health.latestSnapshotAt)
-const AT_FULL = full(DEMO.health.latestSnapshotAt)
 
 let mounted: { root: Root; container: HTMLElement } | null = null
 
@@ -50,18 +50,22 @@ function unmount(): void {
   mounted = null
 }
 
-/** Everything a reader or a screen reader gets: the text plus labels and native tooltips. */
-function pageText(): string {
-  const attrs = [...document.querySelectorAll('[aria-label], [title]')].flatMap((el) => [
+/**
+ * Everything a reader or a screen reader gets in `scope` (the whole page by default): the text
+ * plus labels and native tooltips.
+ */
+function pageText(scope: Element = document.body): string {
+  const attrs = [...scope.querySelectorAll('[aria-label], [title]')].flatMap((el) => [
     el.getAttribute('aria-label') ?? '',
     el.getAttribute('title') ?? '',
   ])
-  return [document.body.textContent ?? '', ...attrs].join('\n')
+  return [scope.textContent ?? '', ...attrs].join('\n')
 }
 
 afterEach(() => {
   unmount()
   window.location.hash = ''
+  vi.useRealTimers()
 })
 
 describe('static build startup', () => {
@@ -89,7 +93,7 @@ describe('static build startup', () => {
       ).toContain(`#/pools/${encodeURIComponent(top.pool.id)}`),
     )
     // Freshness reads the bundle's health.
-    const fresh = await screen.findByRole('button', { name: /^Data freshness/ })
+    const fresh = await screen.findByRole('button', { name: /^Block 36,123,456, updated / })
     expect(fresh.getAttribute('title')).toMatch(/^Block 36,123,456,/)
   })
 
@@ -139,15 +143,18 @@ describe('static build startup', () => {
     expect(screen.getByRole('link', { name: 'Browse pools' }).getAttribute('href')).toBe('#/pools')
   })
 
-  it('states that a live bundle is a dated snapshot that does not update, with its note', async () => {
+  it('states when a live bundle’s data is from, how old it is and how often it is updated', async () => {
+    // The reader opens the copy 6 hours after the data was read.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(((DEMO.health.latestSnapshotAt ?? 0) + 6 * 3600 + 60) * 1000)
     await boot('#/gaps', async () => LIVE)
     expect(await screen.findByRole('heading', { level: 1, name: 'gaps' })).toBeTruthy()
     const line = screen.getByRole('note', { name: 'Data source' })
     expect(line.querySelector('.snap-wide')?.textContent).toBe(
-      `Snapshot of Base mainnet, ${AT_DATED}. This page does not update.`,
+      `Data from ${AT_DATED}, 6\u00a0h ago. Updated several times a day.`,
     )
-    expect(line.querySelector('.snap-narrow')?.textContent).toBe(
-      `Snapshot of ${AT_DATED}, not live`,
+    expect(line.querySelector('.snap-narrow')?.textContent).toMatch(
+      /^Data from \d\d:\d\d\u00a0UTC, 6\u00a0h ago, updated several times a day$/,
     )
     expect(line.textContent).not.toMatch(/demo/i)
     fireEvent.click(within(line).getByRole('button', { name: 'About this snapshot' }), {
@@ -162,21 +169,23 @@ describe('static build startup', () => {
     expect(
       within(screen.getByRole('contentinfo')).getByText('Data: a Base mainnet snapshot'),
     ).toBeTruthy()
-    // Freshness gives the absolute snapshot time, never an age, and no live (ok) dot.
-    const fresh = await screen.findByRole('button', { name: `Data freshness: as of ${AT_FULL}` })
+    // Freshness: the block first, then the data's time and age, and no live (ok) dot.
+    const fresh = await screen.findByRole('button', {
+      name: `Block 36,123,456, data from ${AT_DATED}, 6\u00a0h ago`,
+    })
     expect(fresh.textContent).toBe('Block 36,123,456')
     expect(fresh.querySelector('.fresh-dot')?.className).toBe('fresh-dot is-snapshot')
     fireEvent.click(fresh, { detail: 0 })
     const pop = screen.getByRole('dialog', { name: 'Data freshness' })
     expect([...pop.querySelectorAll('dt')].map((dt) => dt.textContent)).toEqual([
-      'Snapshot',
+      'Data from',
       'Block',
       'Pools tracked',
       'Exported',
     ])
   })
 
-  it('never says "… ago" on any page of a live snapshot, while the demo does', async () => {
+  it('never says "… ago" in the pages of a live snapshot, while the demo does', async () => {
     const pool = encodeURIComponent(DEMO.pools[0]?.pool.id ?? '')
     const token = DEMO.pools[0]?.pool.token0.address ?? ''
     const routes = ['#/', '#/pools', `#/pools/${pool}`, '#/gaps', `#/tokens/${token}`, '#/mm']
@@ -192,7 +201,9 @@ describe('static build startup', () => {
         await screen.findByRole('heading', { level: 1 })
         const busy = () => document.querySelector('.skel, [aria-busy="true"]')
         await waitFor(() => expect(busy()).toBeNull(), { timeout: 4000 })
-        if (/\bago\b/.test(pageText())) ages[name].push(route)
+        // A snapshot's banner gives the data's age on the reader's clock; its pages never do.
+        const scope = name === 'live' ? document.querySelector('main') : document.body
+        if (/\bago\b/.test(pageText(scope ?? document.body))) ages[name].push(route)
         const main = document.querySelector('main')?.textContent ?? ''
         if (name === 'live' && /\d\d:\d\d\u00a0UTC/.test(main)) stamped.push(route)
         unmount()
@@ -214,7 +225,7 @@ describe('static build startup', () => {
     // NOW is long before the wall clock; against Date.now() this would read "… d ago".
     await boot('#/gaps', async () => DEMO)
     expect(
-      await screen.findByRole('button', { name: 'Data freshness: updated 1\u00a0min ago' }),
+      await screen.findByRole('button', { name: /^Block [\d,]+, updated 1\u00a0min ago$/ }),
     ).toBeTruthy()
   })
 
@@ -242,7 +253,7 @@ describe('static build startup', () => {
       release(DEMO)
       await started
     })
-    expect(await screen.findByRole('button', { name: /^Data freshness: updated/ })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: /^Block [\d,]+, updated / })).toBeTruthy()
     expect(screen.queryByText('Connecting…')).toBeNull()
     expect(screen.getByRole('note').textContent).toMatch(/^Demo data/)
   })

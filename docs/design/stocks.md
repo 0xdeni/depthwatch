@@ -505,9 +505,10 @@ served AGENTS.md's coverage sentence; the Refresh site workflow's first-run comm
 "After Layer 1: tokenized stocks" and three non-goals (no stock in the swap panel, no stock price
 of Depthwatch's own, the feeds read on chain); `apps/web/src/pages/stockPoolLists.test.tsx` +,
 which renders Home, Pools, Gaps and both token pages with a stock pool in their lists, as the API
-answers them from this phase on, and finds the eligibility line in each page's footer, outside
-`<main>` (every route is a child of `Layout`, whose footer is outside the route error boundary;
-the boot's service-down and bundle-error screens show no pool).
+answers them from this phase on, and finds the eligibility line in the stock's token page's
+footer, outside `<main>` (every route is a child of `Layout`, whose footer is outside the route
+error boundary; the boot's service-down and bundle-error screens show no pool), and not in the
+footers of the lists and the quote's token page, which are not about a stock.
 
 In all about 32 hours (6.5 + 4.5 + 3.25 + 3 + 6.25 + 7.25 + 1), a little over the 25–30 h
 target. If time runs short, `PAUSED_SQL` (0.75 h: no pause has occurred, and the stock pages leave
@@ -529,7 +530,7 @@ one that already has their pages and eligibility lines.
 2. **Off-hours depth** and `heldToLive`, computed from the stored readings' pass depth; their
    definition is in stocks-api.md §5 and moves to METRICS.md in the change that implements them.
 3. **Token-page stock marker** (`TokenDetail.stock` or a link, a schema change) and the
-   eligibility line on the token page; until then the footer line covers it (stocks-api.md §3).
+   eligibility line in the token page itself; until then its footer carries it (stocks-api.md §3).
    The valuation label is not deferred: a stock's token page names its price "valuation price"
    with the label (from `GET /api/stocks`, no schema change).
 4. **`isAuthorized(policyId, pool)`** per stock pool and snapshot (one call per pool; every pool

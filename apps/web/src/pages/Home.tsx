@@ -4,13 +4,13 @@
  * lead and the actions, then the focal depth butterfly of Base: where that depth sits pool by
  * pool, the "All of Base" total row with its concentration bracket, and its "Show data" table.
  * Three fact blocks stack over the band's lower edge (24 h volume, median health, biggest gap);
- * two previews hand the reader to the gaps feed and the market-maker scorecards. Home has no URL
- * state (ia-v3 §2); the first view of a session is played by the app shell on the parts marked
- * for it.
+ * the previews hand the reader to the gaps feed and, once a mandate is registered, the
+ * market-maker scorecards (with none, that block and the nav's Scorecards tab stay out). Home has
+ * no URL state (ia-v3 §2); the first view of a session is played by the app shell on the parts
+ * marked for it.
  */
 
-import { useSnapshot } from '../api/context.js'
-import { useGaps, useScorecards, useStats } from '../api/hooks.js'
+import { useGaps, useMandatesListed, useScorecards, useStats } from '../api/hooks.js'
 import type { ButterflyGap } from '../components/charts/index.js'
 import { Overlap } from '../components/ui/Block.js'
 import { useDelayedPending } from '../components/ui/States.js'
@@ -29,8 +29,11 @@ export function Home() {
   // The feed's first page: its biggest gaps, and the API's count of every meaningful one.
   const gaps = useGaps(GAP_FEED)
   const scorecards = useScorecards()
-  const snapshot = useSnapshot() !== undefined
 
+  // Shown once a mandate exists (or to report that the list failed). While the list loads, a
+  // static build goes by the bundle it was built with and a server keeps the block's skeleton, so
+  // the row keeps its shape (`useMandatesListed`).
+  const mandates = useMandatesListed() || scorecards.isError
   const meaningful = gaps.data?.items.filter(isMeaningfulGap)
   const biggest = meaningful?.[0]
   const gap: ButterflyGap | null =
@@ -70,13 +73,11 @@ export function Home() {
           meaningful={meaningful}
           count={gaps.data?.meaningful}
           waiting={waiting}
+          wide={!mandates}
         />
-        <MandatesPreview
-          scorecards={scorecards}
-          pools={all.pools}
-          snapshot={snapshot}
-          waiting={waiting}
-        />
+        {mandates ? (
+          <MandatesPreview scorecards={scorecards} pools={all.pools} waiting={waiting} />
+        ) : null}
       </div>
     </div>
   )

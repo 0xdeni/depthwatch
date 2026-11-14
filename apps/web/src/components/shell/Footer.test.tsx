@@ -3,7 +3,9 @@
  * promise while the switch is on for a venue whose route is not on hold (`tradeSwitchOn`),
  * read-only otherwise, so the switch can be turned on without a release that rewrites the footer.
  * The spec (docs/design/visual-v4.md §5.1) quotes both. The tokenized stocks' eligibility line
- * follows the promise as a paragraph of its own on every page (docs/design/stocks-api.md §3).
+ * follows the promise as a paragraph of its own on the Stocks pages only (docs/design/stocks-api.md
+ * §3). The API link goes to the README's API section from a static copy, which runs no API, and to
+ * the server's own AGENTS.md otherwise. A keyboard ring on the ink is Yellow in both themes.
  */
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -33,6 +35,7 @@ interface Env {
   mock?: boolean
   demo?: boolean
   connecting?: boolean
+  staticBuild?: boolean
 }
 
 function renderAt(path: string, env: Env) {
@@ -43,6 +46,7 @@ function renderAt(path: string, env: Env) {
       mock={env.mock ?? false}
       demo={env.demo}
       connecting={env.connecting}
+      staticBuild={env.staticBuild}
       trade={env.trade}
       queryClient={queryClient}
     >
@@ -101,11 +105,11 @@ describe('the footer promise and the trade switch', () => {
     expect(promise()).toMatch(/^Open source and read-only\./)
   })
 
-  it('carries the stocks’ eligibility line after the promise, on every page and in every state', () => {
+  it('carries the stocks’ eligibility line after the promise on the Stocks pages, in every state', () => {
     for (const [path, env] of [
-      ['/methodology', {}],
-      ['/pools', { trade: ON }],
-      ['/gaps', { mock: true }],
+      ['/stocks', {}],
+      ['/stocks', { trade: ON }],
+      ['/stocks/0xb26e766461630000000000000000000000000000', { mock: true }],
     ] as const) {
       renderAt(path, env)
       const paragraphs = [...screen.getByRole('contentinfo').querySelectorAll('p')]
@@ -117,9 +121,36 @@ describe('the footer promise and the trade switch', () => {
       )
       cleanup()
     }
+    // Elsewhere the footer is the promise alone.
+    for (const path of ['/', '/methodology', '/pools', '/gaps', '/stocksx']) {
+      renderAt(path, {})
+      const texts = [...screen.getByRole('contentinfo').querySelectorAll('p')].map(
+        (p) => p.textContent,
+      )
+      expect(texts, path).toHaveLength(1)
+      cleanup()
+    }
     expect(FOOTER_STOCKS).toBe(
       'Coinbase tokenized stocks are only available to persons in eligible jurisdictions outside of the U.S. Depthwatch measures their markets; it does not offer, route or recommend trades in them.',
     )
+  })
+
+  it('links API to the README’s API section from a static copy, to AGENTS.md on a server', () => {
+    const api = () => within(screen.getByRole('contentinfo')).getByRole('link', { name: 'API' })
+    renderAt('/methodology', { staticBuild: true })
+    expect(api().getAttribute('href')).toBe('https://github.com/0xdeni/depthwatch#api')
+    expect(api().getAttribute('rel')).toBe('noopener')
+    cleanup()
+    renderAt('/methodology', {})
+    expect(api().getAttribute('href')).toBe('/AGENTS.md')
+  })
+
+  it('rings keyboard focus in Yellow on the ink, in both themes (footer.css)', () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'styles', 'footer.css'),
+      'utf8',
+    )
+    expect(css).toMatch(/\.foot :focus-visible \{\s*outline-color: var\(--focus-band\);\s*\}/)
   })
 
   it('is quoted in both states by its spec, visual-v4.md §5.1', () => {

@@ -124,10 +124,6 @@
   height: 48px;
   margin-block: 6px;
 }
-.lists-skel-inline {
-  display: inline-block;
-  vertical-align: -0.1em;
-}
 .lists-skel-rows .skel-stack {
   gap: 0;
 }

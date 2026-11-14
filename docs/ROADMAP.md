@@ -68,8 +68,8 @@ backend-specific code (`VITE_MOCK=1` still works).
 - Measure and document RPC usage per cycle; tune chunk sizes and `--top`.
 - Public deployment with the API and dashboard; persistence 24h/7d populated for tracked pools.
   **Open.** Since 29 October 2026 a public static copy of the dashboard, without the API, has been
-  at <https://depthwatch.pages.dev>, replaced about every three hours
-  ([DEPLOY.md](DEPLOY.md#a-free-static-copy)).
+  at <https://depthwatch.pages.dev>, replaced when an hourly check finds the last copy at least 2.5
+  hours old ([DEPLOY.md](DEPLOY.md#a-free-static-copy)).
 
 Acceptance: the 7-day run completes without manual restarts; the swap cross-check report is
 committed under `docs/validation/`; the README status note is updated from "not yet validated" to a
@@ -129,7 +129,7 @@ panel, and no stock page links to a swap.
   reading per stock with its depth; a pool whose stock's transfers are paused is unrated
   (`transfers-paused`) and left out of the depth sums; `GET /api/stocks` and
   `GET /api/stocks/:token`, the Stocks pages, a stock pool's tokenized-stock section and the
-  eligibility line in every page's footer; the served AGENTS.md section "How to read a stock's
+  eligibility line on those pages and their footer; the served AGENTS.md section "How to read a stock's
   liquidity".
 - **Next** ([design/stocks.md](design/stocks.md#8-deferred-not-in-the-mvp) §8): a history route
   per stock and the off-hours depth, computed from the stored readings (kept from the first pass

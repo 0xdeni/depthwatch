@@ -372,13 +372,6 @@
 .trade-facts {
   width: 100%;
 }
-.trade-steps {
-  margin: 0;
-  padding-left: var(--s5);
-  list-style: decimal;
-  display: grid;
-  gap: var(--s1);
-}
 .trade-actions {
   display: flex;
   flex-wrap: wrap;

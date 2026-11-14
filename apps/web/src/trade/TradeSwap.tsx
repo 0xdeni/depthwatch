@@ -172,7 +172,7 @@ export function TradeSwap({
       if (result.kind === 'plan')
         setPhase({ p: 'review', plan: result.plan, note: null, approval: null })
       else if (result.kind === 'refused' && result.decision.kind === 'refuse')
-        toForm(refusalText(result.decision))
+        toForm(refusalText(result.decision, fresh.quoted.live.feePips / 100))
       else toForm(stopText(result.kind === 'stopped' ? result.reason : 'refused'))
     } catch (error) {
       toForm(
@@ -225,7 +225,7 @@ export function TradeSwap({
       case 'stopped':
         return failed(
           result.reason === 'refused' && result.decision?.kind === 'refuse'
-            ? `${refusalText(result.decision)} ${approved ? 'The swap was not sent.' : 'Nothing was sent.'}`
+            ? `${refusalText(result.decision, plan.quoted.live.feePips / 100)} ${approved ? 'The swap was not sent.' : 'Nothing was sent.'}`
             : stopText(result.reason, what, approved),
         )
     }

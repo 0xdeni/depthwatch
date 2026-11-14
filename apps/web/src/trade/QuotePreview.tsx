@@ -190,7 +190,7 @@ export function QuotePreview({
   let message: { tone: 'warn' | 'bad' | 'note'; text: string } | null = null
   if (!updating && outcome?.q === 'error') message = { tone: 'note', text: outcome.text }
   else if (!updating && decision?.kind === 'refuse')
-    message = { tone: 'bad', text: refusalText(decision) }
+    message = { tone: 'bad', text: refusalText(decision, live ? feeBps(live.feePips) : undefined) }
   else if (!updating && decision?.kind === 'warn' && live)
     message = {
       tone: 'warn',

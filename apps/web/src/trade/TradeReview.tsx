@@ -221,8 +221,8 @@ export function ReviewView({
           <dd className="num">{rateText(plan, inUnit, outUnit)}</dd>
         </div>
         <div>
-          <dt>Cost against the pool’s price</dt>
-          <dd className="num">{bpsPercent(impact)}, fee included</dd>
+          <dt>Total cost, pool fee included</dt>
+          <dd className="num">{bpsPercent(impact)}</dd>
         </div>
         <div>
           <dt>Live pool fee</dt>

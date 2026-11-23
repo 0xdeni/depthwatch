@@ -26,7 +26,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^5.0.0",
-    "ox": "0.14.57",
+    "ox": "1.8.14",
     "vite": "^7.1.0"
   }
 }
